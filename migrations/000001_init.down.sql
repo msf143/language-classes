@@ -1,0 +1,16 @@
+DROP TABLE IF EXISTS outbox_event;
+DROP TABLE IF EXISTS session_note;
+DROP VIEW  IF EXISTS account_balance;
+DROP TABLE IF EXISTS credit_ledger;
+DROP FUNCTION IF EXISTS reject_ledger_change();
+DROP TABLE IF EXISTS payment;
+DROP TABLE IF EXISTS booking_attendee;
+DROP TABLE IF EXISTS booking;
+DROP TABLE IF EXISTS price_tier;
+DROP TABLE IF EXISTS session;
+DROP TABLE IF EXISTS availability_block;
+DROP TABLE IF EXISTS learner_level;
+DROP TABLE IF EXISTS learner;
+DROP TABLE IF EXISTS teacher;
+DROP TABLE IF EXISTS account;
+DROP FUNCTION IF EXISTS set_updated_at();
