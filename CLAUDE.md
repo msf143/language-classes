@@ -96,7 +96,9 @@ go vet ./... && go build ./... && go test ./...       # check before committing
   returned in the response header and included in every log line for that request.
 - Log errors with the **real cause** (`logFrom(r).Error("what failed", "err", err)`), but send
   clients a generic message via `writeError`, which includes the `request_id`.
-- Structured JSON logs to stdout (Cloud Run collects them).
+- Structured JSON logs to stdout (Cloud Run collects them). The request log includes the query
+  string; `redactQuery` masks any parameter whose name contains "token". Name secret
+  parameters accordingly (`token`, `invite_token`) so they're never logged.
 - Validate query/body input and return 400 with a clear message rather than silently
   returning empty results.
 - Always check `rows.Err()` after iterating query results.

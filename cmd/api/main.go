@@ -8,8 +8,10 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -97,10 +99,23 @@ func withRequestLog(next http.Handler) http.Handler {
 			"request_id", id,
 			"method", r.Method,
 			"path", r.URL.Path,
+			"query", redactQuery(r.URL.Query()),
 			"status", rec.status,
 			"duration_ms", time.Since(start).Milliseconds(),
 		)
 	})
+}
+
+// redactQuery returns the query string for logging, with the value of any
+// parameter whose name contains "token" (login links, invites) replaced,
+// so anyone who can read the logs can't reuse a token.
+func redactQuery(q url.Values) string {
+	for key := range q {
+		if strings.Contains(strings.ToLower(key), "token") {
+			q.Set(key, "REDACTED")
+		}
+	}
+	return q.Encode()
 }
 
 // statusRecorder remembers the status code a handler wrote, for logging.
