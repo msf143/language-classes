@@ -28,6 +28,11 @@ type sessionDTO struct {
 // Seats taken = sum of party sizes on bookings that aren't cancelled.
 // An empty-string filter parameter means "don't filter on this".
 // Audience 'all' sessions are open to any age, so they match every audience filter.
+//
+// Group sessions are public. A private session is listed only for the
+// accounts it belongs to ($4): its teacher, the payer of a live booking, or
+// a friend whose learner joined that booking. When nobody is signed in, $4 is
+// NULL, every "= $4" is unknown (not true), and only group sessions remain.
 const listSessionsSQL = `
 SELECT s.id::text,
        s.kind,
@@ -46,12 +51,20 @@ WHERE s.status IN ('scheduled', 'confirmed')
   AND ($1::text = '' OR s.kind = $1)
   AND ($2::text = '' OR s.target_language = $2)
   AND ($3::text = '' OR s.audience IN ($3, 'all'))
+  AND (s.kind = 'group'
+       OR EXISTS (SELECT 1 FROM teacher t WHERE t.id = s.teacher_id AND t.account_id = $4)
+       OR EXISTS (SELECT 1 FROM booking pb
+                  LEFT JOIN booking_attendee ba ON ba.booking_id = pb.id AND ba.status = 'joined'
+                  LEFT JOIN learner l ON l.id = ba.learner_id
+                  WHERE pb.session_id = s.id AND pb.status <> 'cancelled'
+                    AND (pb.payer_account_id = $4 OR l.account_id = $4)))
 GROUP BY s.id
 ORDER BY s.starts_at
 LIMIT 100`
 
 // listSessions handles GET /sessions?kind=group&language=es&audience=kids
-// All filters are optional.
+// All filters are optional. Wrap it in signedIn: private sessions are only
+// listed for the accounts they belong to, and kind=private needs a sign-in.
 func listSessions(pool *pgxpool.Pool) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		q := r.URL.Query()
@@ -72,7 +85,15 @@ func listSessions(pool *pgxpool.Pool) http.HandlerFunc {
 			return
 		}
 
-		rows, err := pool.Query(r.Context(), listSessionsSQL, kind, lang, audience)
+		var accountID *string // nil (SQL NULL) when signed out
+		if a, ok := accountFrom(r); ok {
+			accountID = &a.ID
+		} else if kind == "private" {
+			writeError(w, r, http.StatusUnauthorized, "please sign in to see your private sessions")
+			return
+		}
+
+		rows, err := pool.Query(r.Context(), listSessionsSQL, kind, lang, audience, accountID)
 		if err != nil {
 			logFrom(r).Error("list sessions: query failed", "err", err)
 			writeError(w, r, http.StatusInternalServerError, "could not load sessions")

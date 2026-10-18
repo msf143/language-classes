@@ -49,7 +49,7 @@ func main() {
 		writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 	})
 
-	mux.HandleFunc("GET /sessions", listSessions(pool))
+	mux.HandleFunc("GET /sessions", signedIn(pool, listSessions(pool)))
 
 	sendLoginLink := noLoginSender
 	if os.Getenv("APP_ENV") == "dev" {

@@ -7,16 +7,21 @@
   <link rel="stylesheet" href="styles.css">
   <!-- defer: run the scripts after the HTML is parsed, so the DOM exists -->
   <script src="i18n.js" defer></script>
+  <script src="common.js" defer></script>
   <script src="app.js" defer></script>
 </head>
 <body>
   <header class="site-header">
     <div class="wrap header-row">
       <span class="brand">Hablemos</span>
-      <!-- Language switch for the interface itself -->
-      <div class="lang-switch" role="group" aria-label="Interface language">
-        <button type="button" data-ui-lang="en">EN</button>
-        <button type="button" data-ui-lang="es">ES</button>
+      <div class="header-actions">
+        <!-- Sign-in button, or the signed-in name + Sign out (built in app.js) -->
+        <div id="account-area" class="account-area"></div>
+        <!-- Language switch for the interface itself -->
+        <div class="lang-switch" role="group" aria-label="Interface language">
+          <button type="button" data-ui-lang="en">EN</button>
+          <button type="button" data-ui-lang="es">ES</button>
+        </div>
       </div>
     </div>
   </header>
@@ -60,6 +65,33 @@
       <ul id="session-list" class="session-list"></ul>
     </section>
   </main>
+
+  <!-- Sign-in dialog. <dialog> + showModal() gives a real modal for free:
+       focus moves into it, the page behind is inert, and Esc closes it. -->
+  <dialog id="signin-dialog" class="dialog" aria-labelledby="signin-title">
+    <h2 id="signin-title" data-i18n="signinTitle"></h2>
+
+    <form id="signin-form" novalidate>
+      <p data-i18n="signinIntro"></p>
+      <label class="field">
+        <span data-i18n="emailLabel"></span>
+        <input type="email" name="email" autocomplete="email" required>
+      </label>
+      <p id="signin-error" class="form-error" aria-live="polite"></p>
+      <div class="dialog-actions">
+        <button type="button" class="btn-secondary" data-action="close-signin" data-i18n="cancel"></button>
+        <button type="submit" class="btn-primary" id="signin-submit"></button>
+      </div>
+    </form>
+
+    <div id="signin-sent" hidden>
+      <p id="signin-sent-text"></p>
+      <p id="signin-sent-hint" class="muted"></p>
+      <div class="dialog-actions">
+        <button type="button" class="btn-primary" data-action="close-signin" data-i18n="close"></button>
+      </div>
+    </div>
+  </dialog>
 
   <div id="toast" class="toast" role="status" hidden></div>
 </body>

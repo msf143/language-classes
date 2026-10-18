@@ -45,12 +45,13 @@ Two kinds of classes:
 .devcontainer/      devcontainer.json + compose.yaml (app + db services)
 cmd/api/            main.go    server wiring, middleware, shared helpers (writeJSON, writeError, oneOf)
                     ids.go     newUUIDv7 (primary keys)
-                    auth.go    sign-in: login links (newSecret/hashSecret), sessions
+                    auth.go    sign-in: login links, verify, signedIn/requireSignIn middleware, /me, logout
                     sessions.go GET /sessions
                     one file per resource as the API grows (bookings.go, ...); *_test.go beside it
 migrations/         000NNN_description.up.sql / .down.sql  (numbered, append-only)
 scripts/seed.sql    dev seed data (idempotent; times relative to now())
-web/                index.html, styles.css, i18n.js (all UI strings), app.js
+web/                index.html + app.js (catalog, sign-in dialog), signin.html + signin.js (emailed link
+                    lands here), common.js (shared t/h/api helpers), i18n.js (all UI strings), styles.css
 ```
 
 ## Commands

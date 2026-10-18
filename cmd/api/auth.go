@@ -30,10 +30,14 @@ type account struct {
 	DisplayName       string `json:"display_name"`
 	PreferredLanguage string `json:"preferred_language"`
 	Timezone          string `json:"timezone"`
+	IsTeacher         bool   `json:"is_teacher"` // derived: has an active teacher profile
 }
 
 // accountColumns selects an account (aliased "a") in the field order of account.
-const accountColumns = `a.id::text, a.email, a.display_name, a.preferred_language, a.timezone`
+// is_teacher is computed on every read rather than stored, so it can't drift
+// from the teacher table.
+const accountColumns = `a.id::text, a.email, a.display_name, a.preferred_language, a.timezone,
+	EXISTS (SELECT 1 FROM teacher t WHERE t.account_id = a.id AND t.status = 'active')`
 
 // loginSender delivers a login link. In dev it writes the link to the log;
 // in production it will call the email provider.
@@ -144,7 +148,10 @@ func requestLoginLink(pool *pgxpool.Pool, send loginSender, baseURL string) http
 			}
 		}
 
-		writeJSON(w, http.StatusOK, map[string]string{"message": "check your email for a sign-in link"})
+		writeJSON(w, http.StatusOK, map[string]any{
+			"message":            "check your email for a sign-in link",
+			"expires_in_minutes": int(loginTokenTTL.Minutes()), // so the UI doesn't hard-code it
+		})
 	}
 }
 
@@ -210,7 +217,7 @@ func verifyLoginToken(pool *pgxpool.Pool) http.HandlerFunc {
 		var status string
 		err = tx.QueryRow(ctx, `
 			SELECT `+accountColumns+`, a.status FROM account a WHERE lower(a.email) = $1`,
-			email).Scan(&acct.ID, &acct.Email, &acct.DisplayName, &acct.PreferredLanguage, &acct.Timezone, &status)
+			email).Scan(&acct.ID, &acct.Email, &acct.DisplayName, &acct.PreferredLanguage, &acct.Timezone, &acct.IsTeacher, &status)
 		if err != nil {
 			logFrom(r).Error("verify: load account failed", "err", err)
 			writeError(w, r, http.StatusInternalServerError, "could not sign you in")
@@ -276,7 +283,7 @@ func signedIn(pool *pgxpool.Pool, next http.HandlerFunc) http.HandlerFunc {
 			FROM web_session s JOIN account a ON a.id = s.account_id
 			WHERE s.token_hash = $1 AND s.revoked_at IS NULL AND s.expires_at > now()
 			  AND a.status = 'active'`,
-			hashSecret(c.Value)).Scan(&a.ID, &a.Email, &a.DisplayName, &a.PreferredLanguage, &a.Timezone)
+			hashSecret(c.Value)).Scan(&a.ID, &a.Email, &a.DisplayName, &a.PreferredLanguage, &a.Timezone, &a.IsTeacher)
 		if errors.Is(err, pgx.ErrNoRows) {
 			next(w, r)
 			return
