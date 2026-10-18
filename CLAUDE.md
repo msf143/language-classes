@@ -44,7 +44,8 @@ Two kinds of classes:
 ```
 .devcontainer/      devcontainer.json + compose.yaml (app + db services) + post-create.sh (installs gcloud,
                     psql, jq, migrate, Claude Code; Terraform comes from a devcontainer feature)
-infra/              bootstrap.sh (one-time: base APIs + Terraform state bucket); Terraform files go here
+infra/              bootstrap.sh (one-time: base APIs + Terraform state bucket); Terraform files (*.tf)
+docs/               deploy.md: how Terraform provisions and how the deployed app runs (Mermaid diagrams)
 cmd/api/            main.go    server wiring, middleware, shared helpers (writeJSON, writeError, oneOf)
                     ids.go     newUUIDv7 (primary keys)
                     auth.go    sign-in: login links, verify, signedIn/requireSignIn middleware, /me, logout
