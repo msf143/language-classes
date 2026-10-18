@@ -1,1 +1,4 @@
 /api
+
+# Terraform: provider downloads (the .terraform.lock.hcl file IS committed)
+.terraform/
