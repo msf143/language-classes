@@ -7,6 +7,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 func TestNormalizeEmail(t *testing.T) {
@@ -133,6 +135,118 @@ func TestRequestLoginLink(t *testing.T) {
 		}
 		if len(c.links) != 0 {
 			t.Errorf("sent a link to a disabled account")
+		}
+	})
+}
+
+// newLoginToken stores a token for email that expires after ttl (negative = already
+// expired) and returns the raw secret, as if it had come from an emailed link.
+func newLoginToken(t *testing.T, pool *pgxpool.Pool, email string, ttl time.Duration) string {
+	t.Helper()
+	secret := newSecret()
+	_, err := pool.Exec(context.Background(), `
+		INSERT INTO login_token (id, email, token_hash, created_at, expires_at)
+		VALUES ($1, $2, $3, now() - interval '1 hour', now() + $4::int * interval '1 second')`,
+		newUUIDv7(), email, hashSecret(secret), int(ttl.Seconds()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return secret
+}
+
+func postVerify(t *testing.T, h http.HandlerFunc, body string) *httptest.ResponseRecorder {
+	t.Helper()
+	req := httptest.NewRequest("POST", "/auth/verify", strings.NewReader(body))
+	rec := httptest.NewRecorder()
+	h(rec, req)
+	return rec
+}
+
+func TestVerifyLoginToken(t *testing.T) {
+	pool := testPool(t)
+	ctx := context.Background()
+	h := verifyLoginToken(pool)
+
+	t.Run("bad input is rejected", func(t *testing.T) {
+		for _, body := range []string{`not json`, `{}`, `{"token": ""}`, `{"token": "` + strings.Repeat("x", 101) + `"}`} {
+			if rec := postVerify(t, h, body); rec.Code != http.StatusBadRequest {
+				t.Errorf("body %.30s: status %d, want 400", body, rec.Code)
+			}
+		}
+	})
+
+	t.Run("first sign-in creates account and session; token is single-use", func(t *testing.T) {
+		email := testEmail()
+		token := newLoginToken(t, pool, email, 10*time.Minute)
+
+		rec := postVerify(t, h, `{"token": "`+token+`"}`)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("status %d, body %s", rec.Code, rec.Body)
+		}
+		cookies := rec.Result().Cookies()
+		if len(cookies) != 1 || cookies[0].Name != sessionCookie {
+			t.Fatalf("cookies = %v, want one %q cookie", cookies, sessionCookie)
+		}
+		c := cookies[0]
+		if !c.HttpOnly || !c.Secure || c.SameSite != http.SameSiteLaxMode || c.Path != "/" {
+			t.Errorf("cookie flags wrong: %+v", c)
+		}
+
+		// The cookie's value is the secret; the database holds only its hash.
+		var accountEmail, displayName string
+		err := pool.QueryRow(ctx, `
+			SELECT a.email, a.display_name FROM web_session s JOIN account a ON a.id = s.account_id
+			WHERE s.token_hash = $1 AND s.revoked_at IS NULL AND s.expires_at > now()`,
+			hashSecret(c.Value)).Scan(&accountEmail, &displayName)
+		if err != nil {
+			t.Fatalf("no live web_session for the cookie: %v", err)
+		}
+		if accountEmail != email || displayName != strings.Split(email, "@")[0] {
+			t.Errorf("account = %q / %q", accountEmail, displayName)
+		}
+
+		if rec := postVerify(t, h, `{"token": "`+token+`"}`); rec.Code != http.StatusBadRequest {
+			t.Errorf("second use: status %d, want 400", rec.Code)
+		}
+	})
+
+	t.Run("existing account is reused, not duplicated", func(t *testing.T) {
+		email := testEmail()
+		id := newUUIDv7()
+		_, err := pool.Exec(ctx, `INSERT INTO account (id, email, display_name) VALUES ($1, $2, 'Existing')`, id, email)
+		if err != nil {
+			t.Fatal(err)
+		}
+		rec := postVerify(t, h, `{"token": "`+newLoginToken(t, pool, strings.ToLower(email), time.Minute)+`"}`)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("status %d, body %s", rec.Code, rec.Body)
+		}
+		if !strings.Contains(rec.Body.String(), id) || !strings.Contains(rec.Body.String(), "Existing") {
+			t.Errorf("body %s doesn't describe the existing account %s", rec.Body, id)
+		}
+	})
+
+	t.Run("expired token is rejected", func(t *testing.T) {
+		token := newLoginToken(t, pool, testEmail(), -time.Minute)
+		if rec := postVerify(t, h, `{"token": "`+token+`"}`); rec.Code != http.StatusBadRequest {
+			t.Errorf("status %d, want 400", rec.Code)
+		}
+	})
+
+	t.Run("disabled account gets no session", func(t *testing.T) {
+		email := testEmail()
+		_, err := pool.Exec(ctx, `
+			INSERT INTO account (id, email, display_name, status) VALUES ($1, $2, 'Disabled', 'disabled')`,
+			newUUIDv7(), email)
+		if err != nil {
+			t.Fatal(err)
+		}
+		rec := postVerify(t, h, `{"token": "`+newLoginToken(t, pool, email, time.Minute)+`"}`)
+		if rec.Code != http.StatusForbidden {
+			t.Errorf("status %d, want 403", rec.Code)
+		}
+		if len(rec.Result().Cookies()) != 0 {
+			t.Errorf("disabled account got a cookie")
 		}
 	})
 }

@@ -16,8 +16,10 @@ import (
 )
 
 const (
-	loginTokenTTL    = 15 * time.Minute // how long an emailed link works
-	loginLinksPerTTL = 5                // max links per email address within that window
+	loginTokenTTL    = 15 * time.Minute    // how long an emailed link works
+	loginLinksPerTTL = 5                   // max links per email address within that window
+	webSessionTTL    = 30 * 24 * time.Hour // how long a browser stays signed in
+	sessionCookie    = "session"           // cookie holding the web_session secret
 )
 
 // loginSender delivers a login link. In dev it writes the link to the log;
@@ -130,5 +132,114 @@ func requestLoginLink(pool *pgxpool.Pool, send loginSender, baseURL string) http
 		}
 
 		writeJSON(w, http.StatusOK, map[string]string{"message": "check your email for a sign-in link"})
+	}
+}
+
+// verifyLoginToken handles POST /auth/verify with body {"token": "..."}.
+// The sign-in page sends the token from the link when the person clicks
+// "Sign in".
+//
+// In one transaction it uses up the token, finds or creates the account, and
+// opens a web_session. Then it sets the session cookie. Expired, used and
+// unknown tokens all get the same answer.
+func verifyLoginToken(pool *pgxpool.Pool) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		var body struct {
+			Token string `json:"token"`
+		}
+		r.Body = http.MaxBytesReader(w, r.Body, 1<<10)
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.Token == "" || len(body.Token) > 100 {
+			writeError(w, r, http.StatusBadRequest, `body must be JSON like {"token": "..."}`)
+			return
+		}
+		ctx := r.Context()
+
+		tx, err := pool.Begin(ctx)
+		if err != nil {
+			logFrom(r).Error("verify: begin failed", "err", err)
+			writeError(w, r, http.StatusInternalServerError, "could not sign you in")
+			return
+		}
+		// Rollback undoes everything if we return early. After Commit it does nothing.
+		defer tx.Rollback(ctx)
+
+		// Use up the token: a conditional UPDATE, so only one request can win
+		// even if the button is double-clicked (the second finds used_at set).
+		var email string
+		err = tx.QueryRow(ctx, `
+			UPDATE login_token SET used_at = now()
+			WHERE token_hash = $1 AND used_at IS NULL AND expires_at > now()
+			RETURNING email`,
+			hashSecret(body.Token)).Scan(&email)
+		if errors.Is(err, pgx.ErrNoRows) {
+			writeError(w, r, http.StatusBadRequest, "this sign-in link is invalid, used, or expired; please request a new one")
+			return
+		}
+		if err != nil {
+			logFrom(r).Error("verify: claim token failed", "err", err)
+			writeError(w, r, http.StatusInternalServerError, "could not sign you in")
+			return
+		}
+
+		// First sign-in creates the account. ON CONFLICT targets the unique
+		// index on lower(email), so an existing account is left alone. The
+		// display name starts as the part before "@"; the student can change it.
+		_, err = tx.Exec(ctx, `
+			INSERT INTO account (id, email, display_name) VALUES ($1, $2, $3)
+			ON CONFLICT ((lower(email))) DO NOTHING`,
+			newUUIDv7(), email, email[:strings.Index(email, "@")])
+		if err != nil {
+			logFrom(r).Error("verify: create account failed", "err", err)
+			writeError(w, r, http.StatusInternalServerError, "could not sign you in")
+			return
+		}
+		var acct struct {
+			ID          string `json:"id"`
+			Email       string `json:"email"`
+			DisplayName string `json:"display_name"`
+			Status      string `json:"-"` // used here, not sent to the client
+		}
+		err = tx.QueryRow(ctx, `
+			SELECT id::text, email, display_name, status FROM account WHERE lower(email) = $1`,
+			email).Scan(&acct.ID, &acct.Email, &acct.DisplayName, &acct.Status)
+		if err != nil {
+			logFrom(r).Error("verify: load account failed", "err", err)
+			writeError(w, r, http.StatusInternalServerError, "could not sign you in")
+			return
+		}
+		if acct.Status == "disabled" {
+			writeError(w, r, http.StatusForbidden, "this account is disabled")
+			return
+		}
+
+		secret := newSecret()
+		_, err = tx.Exec(ctx, `
+			INSERT INTO web_session (id, account_id, token_hash, expires_at)
+			VALUES ($1, $2, $3, now() + $4::int * interval '1 second')`,
+			newUUIDv7(), acct.ID, hashSecret(secret), int(webSessionTTL.Seconds()))
+		if err != nil {
+			logFrom(r).Error("verify: create web session failed", "err", err)
+			writeError(w, r, http.StatusInternalServerError, "could not sign you in")
+			return
+		}
+		if err := tx.Commit(ctx); err != nil {
+			logFrom(r).Error("verify: commit failed", "err", err)
+			writeError(w, r, http.StatusInternalServerError, "could not sign you in")
+			return
+		}
+
+		// HttpOnly: page JavaScript can't read it (limits what an XSS bug could steal).
+		// Secure: only sent over HTTPS (browsers treat http://localhost as secure too).
+		// SameSite=Lax: not sent on form posts or fetches from other sites (CSRF).
+		http.SetCookie(w, &http.Cookie{
+			Name:     sessionCookie,
+			Value:    secret,
+			Path:     "/",
+			MaxAge:   int(webSessionTTL.Seconds()),
+			HttpOnly: true,
+			Secure:   true,
+			SameSite: http.SameSiteLaxMode,
+		})
+		writeJSON(w, http.StatusOK, map[string]any{"account": acct})
 	}
 }

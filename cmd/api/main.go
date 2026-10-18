@@ -56,6 +56,7 @@ func main() {
 		sendLoginLink = logLoginLink
 	}
 	mux.HandleFunc("POST /auth/login", requestLoginLink(pool, sendLoginLink, baseURL()))
+	mux.HandleFunc("POST /auth/verify", verifyLoginToken(pool))
 
 	// Serve the front-end (the web folder) for every other GET request.
 	mux.Handle("GET /", http.FileServer(http.Dir("web")))
