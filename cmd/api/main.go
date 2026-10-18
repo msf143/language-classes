@@ -51,6 +51,12 @@ func main() {
 
 	mux.HandleFunc("GET /sessions", listSessions(pool))
 
+	sendLoginLink := noLoginSender
+	if os.Getenv("APP_ENV") == "dev" {
+		sendLoginLink = logLoginLink
+	}
+	mux.HandleFunc("POST /auth/login", requestLoginLink(pool, sendLoginLink, baseURL()))
+
 	// Serve the front-end (the web folder) for every other GET request.
 	mux.Handle("GET /", http.FileServer(http.Dir("web")))
 
@@ -133,6 +139,19 @@ func (s *statusRecorder) WriteHeader(code int) {
 func logFrom(r *http.Request) *slog.Logger {
 	id, _ := r.Context().Value(requestIDKey).(string)
 	return slog.With("request_id", id)
+}
+
+// baseURL is the public address of the site, used to build links in emails.
+// APP_BASE_URL wins; in a Codespace it's the forwarded port-8080 address;
+// otherwise localhost.
+func baseURL() string {
+	if u := os.Getenv("APP_BASE_URL"); u != "" {
+		return strings.TrimSuffix(u, "/")
+	}
+	if name := os.Getenv("CODESPACE_NAME"); name != "" {
+		return "https://" + name + "-8080." + os.Getenv("GITHUB_CODESPACES_PORT_FORWARDING_DOMAIN")
+	}
+	return "http://localhost:8080"
 }
 
 // newRequestID returns a short random ID for tracing one request through the logs.

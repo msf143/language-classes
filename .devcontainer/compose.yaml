@@ -6,6 +6,7 @@ services:
     command: sleep infinity
     environment:
       DATABASE_URL: postgres://app:app@db:5432/app?sslmode=disable
+      APP_ENV: dev   # login links go to the log instead of email
 
   db:
     image: postgres:16

@@ -45,6 +45,7 @@ Two kinds of classes:
 .devcontainer/      devcontainer.json + compose.yaml (app + db services)
 cmd/api/            main.go    server wiring, middleware, shared helpers (writeJSON, writeError, oneOf)
                     ids.go     newUUIDv7 (primary keys)
+                    auth.go    sign-in: login links (newSecret/hashSecret), sessions
                     sessions.go GET /sessions
                     one file per resource as the API grows (bookings.go, ...); *_test.go beside it
 migrations/         000NNN_description.up.sql / .down.sql  (numbered, append-only)
@@ -65,6 +66,12 @@ go vet ./... && go build ./... && go test ./...       # check before committing
 ```
 
 `DATABASE_URL` is set by the devcontainer (`postgres://app:app@db:5432/app?sslmode=disable`).
+`APP_ENV=dev` (also set by the devcontainer) makes login links go to the log; without it and
+without an email provider, `POST /auth/login` fails on purpose. `APP_BASE_URL` overrides the
+site address used in links (default: the Codespace's forwarded 8080 URL, else localhost).
+
+Try sign-in: `curl -s -X POST localhost:8080/auth/login -d '{"email":"ana@example.com"}'`,
+then find the link in the log.
 
 ## Conventions (follow these)
 
@@ -162,19 +169,30 @@ go vet ./... && go build ./... && go test ./...       # check before committing
 ## Status and roadmap
 
 For what's already built, read the code and `git log`. Next, in order:
-1. **Sign-in:** email login link + session cookie. In dev, print the link to the log (no email
-   provider yet). Then restrict `GET /sessions?kind=private` to the owner.
-2. **Booking:** `POST /bookings` in one transaction (check seats, debit credits, insert booking +
+1. **Sign-in** (build it ourselves, no Auth0): emailed login links + session cookie. In small steps:
+   a. Migration 000003: `login_token` and `web_session` (store only SHA-256 hashes of secrets).
+   b. `POST /auth/login` (always answers "check your email"; rate-limited; in dev the link goes
+      to the log). The link opens a page with a **Sign in button** that POSTs the token, because
+      email scanners open links automatically and would use up a GET-only token.
+   c. `POST /auth/verify`: checks the token (unused, unexpired), creates the account on first
+      use, sets an `HttpOnly; Secure; SameSite=Lax` cookie.
+   d. `GET /me`, `POST /auth/logout`, and middleware that loads the signed-in account.
+   e. Sign-in UI (bilingual), then restrict `GET /sessions?kind=private` to the owner.
+2. **Deploy early:** multi-stage Dockerfile (distroless), Terraform (small: registry, Cloud SQL,
+   secret, service account, Cloud Run, domain), GitHub Actions with Workload Identity Federation,
+   region `us-east1`. Email provider (Postmark or Resend, plain HTTPS POST) for real login links.
+   Needs from Mike: a domain name and a Google Cloud account with billing.
+3. **Booking:** `POST /bookings` in one transaction (check seats, debit credits, insert booking +
    attendees + outbox event), with idempotency keys. First handler + transaction tests go here.
-3. **Teacher side:** publish availability blocks; API computes bookable private slots.
-4. **Worker:** process `outbox_event` (claim rows with `FOR UPDATE SKIP LOCKED`), send emails and
-   reminders, run the 24h group-minimum check. Same Go binary, `worker` mode, separate Cloud Run service.
-5. **Payments:** buy credit packs; processor webhooks (provider TBD; must support payouts to Colombia).
+4. **Teacher side:** publish availability blocks; API computes bookable private slots.
+5. **Worker:** process `outbox_event` (claim rows with `FOR UPDATE SKIP LOCKED`), send emails and
+   reminders, run the 24h group-minimum check, purge expired login tokens and web sessions.
+   Same Go binary, `worker` mode, separate Cloud Run service.
+6. **Payments:** buy credit packs; processor webhooks (provider TBD; must support payouts to Colombia).
    Credit expiry (see Business rules) and a bilingual **policies page** (cancellation, refunds,
    credit expiry period, children) that reads its numbers from the same config the code uses.
-6. **Setup path:** first-run setup that creates the teacher account and profile (bio, buffer,
+7. **Setup path:** first-run setup that creates the teacher account and profile (bio, buffer,
    offered durations, price tiers). Until then, `scripts/seed.sql` creates the dev teacher.
-7. **Deployment:** multi-stage Dockerfile (distroless), Terraform, Cloud Run, Cloud SQL, GitHub Actions.
 
 Deliberately **not** building yet: roles/permissions system, teacher payouts/splits, topics or
 levels on sessions, reviews, a message broker (the outbox table is the queue).

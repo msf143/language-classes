@@ -100,12 +100,15 @@ the database are skipped when `DATABASE_URL` isn't set.
 |----------------|--------------------------------------|---------|
 | `DATABASE_URL` | Postgres connection string           | (set by the dev container) |
 | `PORT`         | HTTP port                            | `8080`  |
+| `APP_ENV`      | `dev` writes login links to the log instead of emailing them | (set to `dev` by the dev container) |
+| `APP_BASE_URL` | Public site address used in login links | Codespace URL, else `http://localhost:8080` |
 
 ## API
 
 | Method & path   | Description |
 |-----------------|-------------|
 | `GET /health`   | `{"status":"ok"}`, or 503 if the database can't be reached |
+| `POST /auth/login` | Body `{"email": "..."}`. Sends a sign-in link (in dev: writes it to the log). Same reply whether or not the address has an account; at most 5 links per address per 15 minutes (429 after that). |
 | `GET /sessions` | Upcoming sessions with seat counts. Optional filters: `kind` (`group`/`private`), `language` (`es`/`en`), `audience` (`adults`/`kids`/`all`). Invalid values return 400. |
 
 Every response has an `X-Request-ID` header (taken from the request if you send one).
