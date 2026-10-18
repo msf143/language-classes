@@ -26,7 +26,8 @@ type sessionDTO struct {
 
 // Upcoming, bookable sessions with seat counts.
 // Seats taken = sum of party sizes on bookings that aren't cancelled.
-// Empty filter parameters ('') mean "don't filter on this".
+// An empty-string filter parameter means "don't filter on this".
+// Audience 'all' sessions are open to any age, so they match every audience filter.
 const listSessionsSQL = `
 SELECT s.id::text,
        s.kind,
@@ -44,7 +45,7 @@ WHERE s.status IN ('scheduled', 'confirmed')
   AND s.starts_at > now()
   AND ($1::text = '' OR s.kind = $1)
   AND ($2::text = '' OR s.target_language = $2)
-  AND ($3::text = '' OR s.audience = $3)
+  AND ($3::text = '' OR s.audience IN ($3, 'all'))
 GROUP BY s.id
 ORDER BY s.starts_at
 LIMIT 100`
@@ -104,20 +105,4 @@ func listSessions(pool *pgxpool.Pool) http.HandlerFunc {
 
 		writeJSON(w, http.StatusOK, sessions)
 	}
-}
-
-// writeError sends a JSON error body that includes the request ID,
-// so a user or the front-end can quote it when reporting a problem.
-func writeError(w http.ResponseWriter, r *http.Request, status int, msg string) {
-	id, _ := r.Context().Value(requestIDKey).(string)
-	writeJSON(w, status, map[string]string{"error": msg, "request_id": id})
-}
-
-func oneOf(v string, allowed ...string) bool {
-	for _, a := range allowed {
-		if v == a {
-			return true
-		}
-	}
-	return false
 }

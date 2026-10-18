@@ -1,5 +1,6 @@
 -- Development seed data. Safe to run repeatedly: fixed IDs + ON CONFLICT.
--- Session times are relative to now(), so there are always upcoming classes.
+-- Session times are relative to now() and refreshed on every run (ON CONFLICT DO UPDATE),
+-- so re-running the seed brings classes back into the future.
 -- Usage: psql "$DATABASE_URL" -f scripts/seed.sql
 
 BEGIN;
@@ -22,6 +23,9 @@ INSERT INTO learner (id, account_id, display_name, native_language) VALUES
 ON CONFLICT (id) DO NOTHING;
 
 -- Sessions. occupied = start .. end + 5-minute buffer.
+-- Keep every session's hour distinct: on a re-run, rows move one at a time and the
+-- no-double-booking constraint checks each move, so a shared hour on different days
+-- could collide with another row's old slot.
 INSERT INTO session (id, teacher_id, kind, target_language, audience, title,
                      starts_at, ends_at, occupied, min_seats, max_seats, status, cancel_reason)
 SELECT v.id::uuid, '01900000-0000-7000-8000-0000000000a1', v.kind, v.lang, v.audience, v.title,
@@ -34,13 +38,17 @@ FROM (VALUES
   ('01900000-0000-7000-8000-0000000000b2', 'group',   'en', 'adults', 'English Conversation – Intermediate',   2, 13, 60, 2, NULL, 'scheduled', NULL),
   ('01900000-0000-7000-8000-0000000000b3', 'private', 'es', 'adults', NULL,                                     3, 15, 45, 1, 4,    'scheduled', NULL),
   ('01900000-0000-7000-8000-0000000000b4', 'group',   'es', 'kids',   'Spanish for Kids',                       4, 21, 30, 2, 6,    'scheduled', NULL),
-  ('01900000-0000-7000-8000-0000000000b5', 'group',   'es', 'adults', 'Past class (should not appear)',        -1, 23, 60, 2, 8,    'completed', NULL),
-  ('01900000-0000-7000-8000-0000000000b6', 'group',   'en', 'adults', 'Cancelled class (should not appear)',    5, 13, 60, 2, 8,    'cancelled', 'under_minimum')
+  ('01900000-0000-7000-8000-0000000000b7', 'group',   'es', 'all',    'Family Spanish – All Ages',              6, 16, 45, 2, 10,   'scheduled', NULL),
+  ('01900000-0000-7000-8000-0000000000b5', 'group',   'es', 'adults', 'Past class (should not appear)',        -1, 19, 60, 2, 8,    'completed', NULL),
+  ('01900000-0000-7000-8000-0000000000b6', 'group',   'en', 'adults', 'Cancelled class (should not appear)',    5, 18, 60, 2, 8,    'cancelled', 'under_minimum')
 ) AS v(id, kind, lang, audience, title, day, hr, mins, min_seats, max_seats, status, reason)
 CROSS JOIN LATERAL (
   SELECT date_trunc('day', now()) + v.day * interval '1 day' + v.hr * interval '1 hour' AS starts
 ) AS t
-ON CONFLICT (id) DO NOTHING;
+ON CONFLICT (id) DO UPDATE SET   -- EXCLUDED = the row this INSERT tried to add
+  starts_at = EXCLUDED.starts_at,
+  ends_at   = EXCLUDED.ends_at,
+  occupied  = EXCLUDED.occupied;
 
 -- Bookings: Ana takes a seat in the beginners group; Luis books a private for 2.
 INSERT INTO booking (id, session_id, payer_account_id, party_size,

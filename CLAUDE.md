@@ -43,8 +43,11 @@ Two kinds of classes:
 
 ```
 .devcontainer/      devcontainer.json + compose.yaml (app + db services)
-cmd/api/            main.go (server, middleware, helpers), sessions.go (GET /sessions)
-migrations/         000001_init.up.sql / .down.sql  (numbered, append-only)
+cmd/api/            main.go    server wiring, middleware, shared helpers (writeJSON, writeError, oneOf)
+                    ids.go     newUUIDv7 (primary keys)
+                    sessions.go GET /sessions
+                    one file per resource as the API grows (bookings.go, ...); *_test.go beside it
+migrations/         000NNN_description.up.sql / .down.sql  (numbered, append-only)
 scripts/seed.sql    dev seed data (idempotent; times relative to now())
 web/                index.html, styles.css, i18n.js (all UI strings), app.js
 ```
@@ -57,7 +60,8 @@ migrate -path migrations -database "$DATABASE_URL" up # apply migrations
 psql "$DATABASE_URL" -f scripts/seed.sql              # load dev seed data
 psql "$DATABASE_URL"                                  # SQL shell
 curl -s localhost:8080/sessions | jq                  # try the API
-go vet ./... && go build ./...                        # check before committing
+go test ./...                                         # run tests (DB tests need DATABASE_URL)
+go vet ./... && go build ./... && go test ./...       # check before committing
 ```
 
 `DATABASE_URL` is set by the devcontainer (`postgres://app:app@db:5432/app?sslmode=disable`).
@@ -65,7 +69,9 @@ go vet ./... && go build ./...                        # check before committing
 ## Conventions (follow these)
 
 **Database**
-- IDs are **UUIDv7, generated in Go** (no DB default), so the app knows IDs before insert.
+- IDs are **UUIDv7, generated in Go** with `newUUIDv7()` (`cmd/api/ids.go`, standard library only;
+  no DB default), so the app knows IDs before insert. `newRequestID()` is for log tracing only,
+  never for keys. (The comment in migration 000001 mentions `google/uuid`; that's outdated.)
 - All timestamps are `timestamptz`, stored in **UTC**. Convert to local time only for display
   (the front-end does this with `Intl.DateTimeFormat`).
 - Money is **integer cents + currency** (USD only for now). Never floats.
@@ -97,6 +103,15 @@ go vet ./... && go build ./...                        # check before committing
 - Handlers needing the DB are built as closures: `listSessions(pool) http.HandlerFunc`.
 - Respect `PORT` env var; shut down gracefully on SIGTERM.
 
+**Testing**
+- Standard library `testing`, table-driven where there are several cases. No test frameworks.
+- Test against the **real Postgres** (`DATABASE_URL`), not mocks. Much of the correctness lives
+  in constraints and transactions, and only the real database exercises those. Get a pool with
+  `testPool(t)` (in `ids_test.go`), which skips the test when `DATABASE_URL` isn't set.
+- Tests create their own rows with fresh `newUUIDv7()` IDs and don't depend on seed data, so
+  they can run repeatedly against the dev database.
+- Handler tests use `net/http/httptest` (call the handler directly; no running server needed).
+
 **Front-end**
 - Pattern: one `state` object → `render()` functions derive the DOM from it → one delegated
   click listener. Fetch from the server when data changes; re-render only for UI-only changes.
@@ -113,17 +128,30 @@ go vet ./... && go build ./...                        # check before committing
   cash refund of unused credit on request.
 - **Student cancels:** more than 24h before start → full refund; within 24h → 50%; no-show → none.
 - **Teacher cancels** (any time) or a group auto-cancels → full refund.
-- **Teacher no-show** → full refund plus a small goodwill credit.
+- **Teacher no-show** → full refund **plus** a goodwill credit equal to the full amount paid
+  (ledger: one `refund` entry and one `goodwill` entry).
+- **Credits expire** after a configurable period (stored as data, not hard-coded). Expiry is a
+  new negative ledger entry, never an edit. Which credits expire first and where the setting
+  lives get decided in the Payments step (the ledger's `entry_type` CHECK has no `expiry` yet,
+  so that needs a migration). The period is shown to students on a public policies page.
 - **Group minimum:** checked 24h before start. Fewer than 2 seats booked → auto-cancel with full
-  refunds. At 2+ it's confirmed and runs even if someone later drops.
+  refunds. At 2+ it's confirmed and runs even if someone later drops. Enforced in the schema:
+  group sessions must have `min_seats >= 2` (constraint `session_group_min_seats`).
 - **Private sessions:** minimum notice 1 hour; party size 1–4; party size locks 24h before start
-  (changes before that reprice the booking).
+  (changes before that reprice the booking). If the party shrinks after the lock, the payer
+  gets back **50% of each dropped person's share** (same as a within-24h cancel), at the
+  locked per-person price. The booking is not repriced.
 - **Availability:** teacher publishes blocks (e.g. Tue 9:00–12:00) and the lengths he offers
   (`teacher.offered_durations`). Bookable slots are computed on a 15-minute grid: block minus
   existing sessions minus buffers. Default buffer 5 minutes (`teacher.buffer_minutes`).
 - **Pricing** varies by kind × duration × party size only (`price_tier`, versioned by validity window).
 - **Children:** a parent's account holds learner profiles; kids never log in. Kids' group
   sessions use `audience = 'kids'`. Policy: a parent nearby for minors on video.
+- **Audience values:** `adults` (adults only), `kids` (minors only), and `all` ("All ages" in
+  the UI: no age restriction; mixing minors and adults is fine). Catalog filters treat `all` as
+  matching both Adults and Kids. At booking, check attendees against `learner.is_minor` for
+  `adults`/`kids` sessions; `all` accepts anyone. The parent-nearby policy applies to any minor
+  attending, including in `all` sessions.
 - **Learner levels** use CEFR (A1–C2), set by the teacher. Session notes are either
   `shared` (student sees) or `private` (teacher only).
 - **Accounts required** (no guest checkout). Sign-in via emailed login links, no passwords.
@@ -131,22 +159,20 @@ go vet ./... && go build ./...                        # check before committing
 
 ## Status and roadmap
 
-Done:
-1. Dev environment (Codespaces, Postgres), schema migration 000001, seed data
-2. API skeleton: `/health`, request-ID logging, graceful shutdown
-3. `GET /sessions` (filters: kind, language, audience; seat counts)
-4. Class catalog page (vanilla JS, bilingual, local time zones, filters, error state with reference ID)
-
-Next, in order:
+For what's already built, read the code and `git log`. Next, in order:
 1. **Sign-in:** email login link + session cookie. In dev, print the link to the log (no email
    provider yet). Then restrict `GET /sessions?kind=private` to the owner.
 2. **Booking:** `POST /bookings` in one transaction (check seats, debit credits, insert booking +
-   attendees + outbox event), with idempotency keys. First real tests go here.
+   attendees + outbox event), with idempotency keys. First handler + transaction tests go here.
 3. **Teacher side:** publish availability blocks; API computes bookable private slots.
 4. **Worker:** process `outbox_event` (claim rows with `FOR UPDATE SKIP LOCKED`), send emails and
    reminders, run the 24h group-minimum check. Same Go binary, `worker` mode, separate Cloud Run service.
 5. **Payments:** buy credit packs; processor webhooks (provider TBD; must support payouts to Colombia).
-6. **Deployment:** multi-stage Dockerfile (distroless), Terraform, Cloud Run, Cloud SQL, GitHub Actions.
+   Credit expiry (see Business rules) and a bilingual **policies page** (cancellation, refunds,
+   credit expiry period, children) that reads its numbers from the same config the code uses.
+6. **Setup path:** first-run setup that creates the teacher account and profile (bio, buffer,
+   offered durations, price tiers). Until then, `scripts/seed.sql` creates the dev teacher.
+7. **Deployment:** multi-stage Dockerfile (distroless), Terraform, Cloud Run, Cloud SQL, GitHub Actions.
 
 Deliberately **not** building yet: roles/permissions system, teacher payouts/splits, topics or
 levels on sessions, reviews, a message broker (the outbox table is the queue).

@@ -85,7 +85,7 @@ func withRequestLog(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		id := r.Header.Get("X-Request-ID")
 		if id == "" || len(id) > 64 {
-			id = newID()
+			id = newRequestID()
 		}
 		w.Header().Set("X-Request-ID", id)
 
@@ -120,7 +120,9 @@ func logFrom(r *http.Request) *slog.Logger {
 	return slog.With("request_id", id)
 }
 
-func newID() string {
+// newRequestID returns a short random ID for tracing one request through the logs.
+// It is not a database key; use newUUIDv7 (ids.go) for those.
+func newRequestID() string {
 	b := make([]byte, 8)
 	_, _ = rand.Read(b)
 	return hex.EncodeToString(b)
@@ -130,4 +132,20 @@ func writeJSON(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(v)
+}
+
+// writeError sends a JSON error body that includes the request ID,
+// so a user or the front-end can quote it when reporting a problem.
+func writeError(w http.ResponseWriter, r *http.Request, status int, msg string) {
+	id, _ := r.Context().Value(requestIDKey).(string)
+	writeJSON(w, status, map[string]string{"error": msg, "request_id": id})
+}
+
+func oneOf(v string, allowed ...string) bool {
+	for _, a := range allowed {
+		if v == a {
+			return true
+		}
+	}
+	return false
 }
