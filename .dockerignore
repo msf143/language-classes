@@ -1,0 +1,9 @@
+# Keep the build context small and free of anything secret or irrelevant.
+# Only go.mod, go.sum, cmd/ and web/ are needed.
+.git
+.devcontainer
+.claude
+api
+*.md
+scripts/
+migrations/
