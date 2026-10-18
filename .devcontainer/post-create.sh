@@ -15,5 +15,8 @@ sudo apt-get install -y postgresql-client jq google-cloud-cli
 # Database migrations.
 go install -tags postgres github.com/golang-migrate/migrate/v4/cmd/migrate@latest
 
+# Cloud SQL Auth Proxy: reach the prod database from here (see docs/deploy.md, "Running migrations").
+go install github.com/GoogleCloudPlatform/cloud-sql-proxy/v2@latest
+
 # Claude Code.
 curl -fsSL https://claude.ai/install.sh | bash

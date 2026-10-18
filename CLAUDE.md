@@ -25,6 +25,9 @@ Two kinds of classes:
 - I prefer **little abstraction**: standard library over frameworks, plain SQL over ORMs,
   vanilla JS over React. Don't add a dependency without asking.
 - My architectural theme: **"as simple as possible, yet easily adaptable to change."**
+- I'll have to explain the infrastructure to others in detail: say what each command does, what
+  output to expect, and record procedures and diagrams in `docs/deploy.md`. Mark placeholders
+  clearly; prefer commands that paste safely as-is.
 - Make small, reviewable changes. Run and verify things (build, curl, tests) before
   saying they work. Suggest a commit message after each working step.
 
@@ -52,7 +55,8 @@ cmd/api/            main.go    server wiring, middleware, shared helpers (writeJ
                     sessions.go GET /sessions
                     one file per resource as the API grows (bookings.go, ...); *_test.go beside it
 migrations/         000NNN_description.up.sql / .down.sql  (numbered, append-only)
-scripts/seed.sql    dev seed data (idempotent; times relative to now())
+scripts/seed.sql    dev seed data (idempotent; times relative to now()); never on prod
+scripts/prod-db.sh  migrate/psql against the prod database through the Cloud SQL Auth Proxy
 web/                index.html + app.js (catalog, sign-in dialog), signin.html + signin.js (emailed link
                     lands here), common.js (shared t/h/api helpers), i18n.js (all UI strings), styles.css
 ```
@@ -191,23 +195,40 @@ For what's already built, read the code and `git log`. Next, in order:
    - Cloudflare API token (DNS edit + zone read, this zone only) is the Codespaces secret
      `CLOUDFLARE_API_TOKEN`, so it's an env var in the Codespace. Never print or commit it.
    - Terraform state bucket `gs://hablemos-live-tfstate` (us-east1, versioned).
-   - After every Codespace rebuild, Mike must sign in again (credentials live in the home dir):
+   - **Resuming after a break or rebuild** (credentials expire or live in the home dir). Mike runs:
      `gcloud auth login --no-launch-browser`, `gcloud auth application-default login --no-launch-browser`,
-     `gcloud config set project hablemos-live`.
+     `gcloud config set project hablemos-live`. Check: `gcloud auth list`, and
+     `cd infra && terraform plan` should say "no differences" (Terraform and the proxy use the
+     application-default login; `docker push` uses the first). Claude's auto mode may not read
+     prod (secret, prod DB), so Mike runs `scripts/prod-db.sh` himself.
+   - Built so far (all in `infra/`, applied): APIs, Artifact Registry repo `app`
+     (`us-east1-docker.pkg.dev/hablemos-live/app`, image `api:257f07a` pushed), service account
+     `hablemos-api`, Cloud SQL `hablemos-pg` (Postgres 16, db-f1-micro, connection name
+     `hablemos-live:us-east1:hablemos-pg`, db/user `app`), secret `database-url` (full keyword DSN;
+     password ephemeral/write-only, never in state), IAM grants (cloudsql.client, secretAccessor).
+     How it all fits: `docs/deploy.md`.
 
    Decisions: app served at the apex `hablemos.live` (`www` redirects to it). Custom domain via Cloud
    Run **domain mapping** (no load balancer), with Cloudflare records **DNS only (grey cloud)**.
    Google domain verification needs a TXT record (add it with the token). Cloud Run reaches Cloud SQL
    through its built-in socket (`host=/cloudsql/PROJECT:REGION:INSTANCE` in `DATABASE_URL`; DB
    password in Secret Manager). Terraform turns on all APIs except the two bootstrap enables. Smallest
-   Cloud SQL tier (~$10–12/month, the only real fixed cost). How prod migrations run (Cloud Run Job,
-   or `migrate` through the Cloud SQL Auth Proxy) is still to decide.
+   Cloud SQL tier (~$10–12/month, the only real fixed cost). Prod migrations: for now by hand with
+   `scripts/prod-db.sh migrate up` (Cloud SQL Auth Proxy on 127.0.0.1:5433, password read from the
+   secret); move to a Cloud Run Job with GitHub Actions. Never load `scripts/seed.sql` on prod.
 
    Steps:
    - [x] Multi-stage distroless Dockerfile.
    - [x] gcloud + Terraform in the devcontainer; `infra/bootstrap.sh` run (APIs + state bucket).
-   - [ ] Terraform part 1: APIs, Artifact Registry, app service account, Cloud SQL, Secret Manager,
-         Cloud Run. First manual deploy; curl the `run.app` URL.
+   - [ ] Terraform part 1, in small applied steps:
+     - [x] Foundation: GCS backend, APIs, Artifact Registry, service account (`infra/main.tf`).
+     - [x] Build + push image: `TAG=$(git rev-parse --short HEAD)`, `docker build/push`
+           `us-east1-docker.pkg.dev/hablemos-live/app/api:$TAG` (commit first).
+     - [x] Cloud SQL + `database-url` secret + IAM (`infra/database.tf`).
+     - [ ] **← resume here:** run prod migrations: `scripts/prod-db.sh migrate version` (expect
+           "no migration"), `migrate up` (1–3), `migrate version` (3), `scripts/prod-db.sh psql -c '\dt'`.
+     - [ ] `infra/run.tf`: Cloud Run service (image tag, runs as `hablemos-api`, secret as
+           `DATABASE_URL`, min instances 0). Apply; curl the `run.app` URL.
    - [ ] Terraform part 2: Cloudflare provider (DNS records) + Cloud Run domain mapping → https://hablemos.live.
    - [ ] GitHub Actions (repo `msf143/language-classes`) with Workload Identity Federation: push to
          `main` → build + deploy. No stored Google keys.
