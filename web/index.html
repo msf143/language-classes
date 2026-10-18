@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Language Classes</title>
+  <link rel="stylesheet" href="styles.css">
+  <!-- defer: run the scripts after the HTML is parsed, so the DOM exists -->
+  <script src="i18n.js" defer></script>
+  <script src="app.js" defer></script>
+</head>
+<body>
+  <header class="site-header">
+    <div class="wrap header-row">
+      <span class="brand">Hablemos</span>
+      <!-- Language switch for the interface itself -->
+      <div class="lang-switch" role="group" aria-label="Interface language">
+        <button type="button" data-ui-lang="en">EN</button>
+        <button type="button" data-ui-lang="es">ES</button>
+      </div>
+    </div>
+  </header>
+
+  <main class="wrap">
+    <section class="hero">
+      <h1 data-i18n="heroTitle"></h1>
+      <p data-i18n="heroSubtitle"></p>
+    </section>
+
+    <section class="catalog">
+      <div class="catalog-head">
+        <h2 data-i18n="upcoming"></h2>
+        <p class="tz-note" id="tz-note"></p>
+      </div>
+
+      <!-- Filters: each group sets one key in state.filters -->
+      <div class="filters">
+        <div class="filter">
+          <span class="filter-label" data-i18n="filterLanguage"></span>
+          <div class="segmented" data-filter="language">
+            <button type="button" data-value="" data-i18n="all"></button>
+            <button type="button" data-value="es" data-i18n="learnSpanish"></button>
+            <button type="button" data-value="en" data-i18n="learnEnglish"></button>
+          </div>
+        </div>
+        <div class="filter">
+          <span class="filter-label" data-i18n="filterAudience"></span>
+          <div class="segmented" data-filter="audience">
+            <button type="button" data-value="" data-i18n="all"></button>
+            <button type="button" data-value="adults" data-i18n="adults"></button>
+            <button type="button" data-value="kids" data-i18n="kids"></button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Loading / empty / error messages go here -->
+      <div id="status" class="status" aria-live="polite"></div>
+
+      <!-- Class cards are built in app.js -->
+      <ul id="session-list" class="session-list"></ul>
+    </section>
+  </main>
+
+  <div id="toast" class="toast" role="status" hidden></div>
+</body>
+</html>
