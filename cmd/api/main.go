@@ -49,6 +49,9 @@ func main() {
 
 	mux.HandleFunc("GET /sessions", listSessions(pool))
 
+	// Serve the front-end (the web folder) for every other GET request.
+	mux.Handle("GET /", http.FileServer(http.Dir("web")))
+
 	port := os.Getenv("PORT")
 	if port == "" {
 		port = "8080"
