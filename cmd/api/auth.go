@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/base64"
@@ -21,6 +22,18 @@ const (
 	webSessionTTL    = 30 * 24 * time.Hour // how long a browser stays signed in
 	sessionCookie    = "session"           // cookie holding the web_session secret
 )
+
+// account is the signed-in person, as the API returns it (GET /me, POST /auth/verify).
+type account struct {
+	ID                string `json:"id"`
+	Email             string `json:"email"`
+	DisplayName       string `json:"display_name"`
+	PreferredLanguage string `json:"preferred_language"`
+	Timezone          string `json:"timezone"`
+}
+
+// accountColumns selects an account (aliased "a") in the field order of account.
+const accountColumns = `a.id::text, a.email, a.display_name, a.preferred_language, a.timezone`
 
 // loginSender delivers a login link. In dev it writes the link to the log;
 // in production it will call the email provider.
@@ -193,21 +206,17 @@ func verifyLoginToken(pool *pgxpool.Pool) http.HandlerFunc {
 			writeError(w, r, http.StatusInternalServerError, "could not sign you in")
 			return
 		}
-		var acct struct {
-			ID          string `json:"id"`
-			Email       string `json:"email"`
-			DisplayName string `json:"display_name"`
-			Status      string `json:"-"` // used here, not sent to the client
-		}
+		var acct account
+		var status string
 		err = tx.QueryRow(ctx, `
-			SELECT id::text, email, display_name, status FROM account WHERE lower(email) = $1`,
-			email).Scan(&acct.ID, &acct.Email, &acct.DisplayName, &acct.Status)
+			SELECT `+accountColumns+`, a.status FROM account a WHERE lower(a.email) = $1`,
+			email).Scan(&acct.ID, &acct.Email, &acct.DisplayName, &acct.PreferredLanguage, &acct.Timezone, &status)
 		if err != nil {
 			logFrom(r).Error("verify: load account failed", "err", err)
 			writeError(w, r, http.StatusInternalServerError, "could not sign you in")
 			return
 		}
-		if acct.Status == "disabled" {
+		if status == "disabled" {
 			writeError(w, r, http.StatusForbidden, "this account is disabled")
 			return
 		}
@@ -241,5 +250,96 @@ func verifyLoginToken(pool *pgxpool.Pool) http.HandlerFunc {
 			SameSite: http.SameSiteLaxMode,
 		})
 		writeJSON(w, http.StatusOK, map[string]any{"account": acct})
+	}
+}
+
+// accountKey is where signedIn stores the *account in the request context.
+const accountKey ctxKey = "account"
+
+// signedIn wraps a handler that works with or without a signed-in person.
+// If the session cookie matches a live web_session of an active account, the
+// account is put in the request context; read it with accountFrom. A missing,
+// expired, revoked or unknown cookie just means "signed out", not an error.
+//
+// It wraps single routes rather than the whole server so that requests for
+// static files (which also carry the cookie) don't each cost a query.
+func signedIn(pool *pgxpool.Pool, next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		c, err := r.Cookie(sessionCookie)
+		if err != nil || c.Value == "" || len(c.Value) > 100 {
+			next(w, r)
+			return
+		}
+		var a account
+		err = pool.QueryRow(r.Context(), `
+			SELECT `+accountColumns+`
+			FROM web_session s JOIN account a ON a.id = s.account_id
+			WHERE s.token_hash = $1 AND s.revoked_at IS NULL AND s.expires_at > now()
+			  AND a.status = 'active'`,
+			hashSecret(c.Value)).Scan(&a.ID, &a.Email, &a.DisplayName, &a.PreferredLanguage, &a.Timezone)
+		if errors.Is(err, pgx.ErrNoRows) {
+			next(w, r)
+			return
+		}
+		if err != nil {
+			logFrom(r).Error("auth: session lookup failed", "err", err)
+			writeError(w, r, http.StatusInternalServerError, "could not check your sign-in")
+			return
+		}
+		next(w, r.WithContext(context.WithValue(r.Context(), accountKey, &a)))
+	}
+}
+
+// requireSignIn is signedIn for routes that only make sense signed in:
+// without an account it answers 401 and never calls next.
+func requireSignIn(pool *pgxpool.Pool, next http.HandlerFunc) http.HandlerFunc {
+	return signedIn(pool, func(w http.ResponseWriter, r *http.Request) {
+		if _, ok := accountFrom(r); !ok {
+			writeError(w, r, http.StatusUnauthorized, "please sign in")
+			return
+		}
+		next(w, r)
+	})
+}
+
+// accountFrom returns the account signedIn found, if any.
+func accountFrom(r *http.Request) (*account, bool) {
+	a, ok := r.Context().Value(accountKey).(*account)
+	return a, ok
+}
+
+// getMe handles GET /me (wrapped in requireSignIn).
+func getMe(w http.ResponseWriter, r *http.Request) {
+	a, _ := accountFrom(r)
+	writeJSON(w, http.StatusOK, map[string]any{"account": a})
+}
+
+// logout handles POST /auth/logout. It revokes this browser's web_session
+// (the row stays, with revoked_at set) and tells the browser to delete the
+// cookie. It succeeds even if nobody was signed in, so it's safe to repeat.
+func logout(pool *pgxpool.Pool) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if c, err := r.Cookie(sessionCookie); err == nil && c.Value != "" {
+			_, err := pool.Exec(r.Context(), `
+				UPDATE web_session SET revoked_at = now()
+				WHERE token_hash = $1 AND revoked_at IS NULL`,
+				hashSecret(c.Value))
+			if err != nil {
+				logFrom(r).Error("logout: revoke failed", "err", err)
+				writeError(w, r, http.StatusInternalServerError, "could not sign you out")
+				return
+			}
+		}
+		// Same name, path and flags as when it was set; MaxAge < 0 means "delete now".
+		http.SetCookie(w, &http.Cookie{
+			Name:     sessionCookie,
+			Value:    "",
+			Path:     "/",
+			MaxAge:   -1,
+			HttpOnly: true,
+			Secure:   true,
+			SameSite: http.SameSiteLaxMode,
+		})
+		writeJSON(w, http.StatusOK, map[string]string{"message": "signed out"})
 	}
 }

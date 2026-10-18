@@ -250,3 +250,112 @@ func TestVerifyLoginToken(t *testing.T) {
 		}
 	})
 }
+
+// signIn runs a fresh login token through verifyLoginToken and returns the
+// session cookie, as a browser would hold it after clicking "Sign in".
+func signIn(t *testing.T, pool *pgxpool.Pool, email string) *http.Cookie {
+	t.Helper()
+	rec := postVerify(t, verifyLoginToken(pool), `{"token": "`+newLoginToken(t, pool, email, time.Minute)+`"}`)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("sign-in: status %d, body %s", rec.Code, rec.Body)
+	}
+	return rec.Result().Cookies()[0]
+}
+
+// call sends a request to h, with the cookie if it isn't nil.
+func call(h http.HandlerFunc, method, path string, cookie *http.Cookie) *httptest.ResponseRecorder {
+	req := httptest.NewRequest(method, path, nil)
+	if cookie != nil {
+		req.AddCookie(cookie)
+	}
+	rec := httptest.NewRecorder()
+	h(rec, req)
+	return rec
+}
+
+func TestSignedIn(t *testing.T) {
+	pool := testPool(t)
+	ctx := context.Background()
+	me := requireSignIn(pool, getMe)
+
+	t.Run("signed out: 401 without a cookie or with an unknown one", func(t *testing.T) {
+		for _, c := range []*http.Cookie{nil, {Name: sessionCookie, Value: newSecret()}} {
+			if rec := call(me, "GET", "/me", c); rec.Code != http.StatusUnauthorized {
+				t.Errorf("cookie %v: status %d, want 401", c, rec.Code)
+			}
+		}
+	})
+
+	t.Run("signedIn lets signed-out requests through without an account", func(t *testing.T) {
+		called := false
+		h := signedIn(pool, func(w http.ResponseWriter, r *http.Request) {
+			called = true
+			if _, ok := accountFrom(r); ok {
+				t.Error("found an account without a cookie")
+			}
+		})
+		call(h, "GET", "/", nil)
+		if !called {
+			t.Error("handler not called")
+		}
+	})
+
+	t.Run("me, logout, then the old cookie no longer works", func(t *testing.T) {
+		email := testEmail()
+		cookie := signIn(t, pool, email)
+
+		rec := call(me, "GET", "/me", cookie)
+		if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), email) {
+			t.Fatalf("GET /me: status %d, body %s", rec.Code, rec.Body)
+		}
+
+		rec = call(logout(pool), "POST", "/auth/logout", cookie)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("logout: status %d", rec.Code)
+		}
+		if cs := rec.Result().Cookies(); len(cs) != 1 || cs[0].Name != sessionCookie || cs[0].MaxAge >= 0 {
+			t.Errorf("logout should delete the cookie, got %v", cs)
+		}
+		var revoked bool
+		err := pool.QueryRow(ctx, `SELECT revoked_at IS NOT NULL FROM web_session WHERE token_hash = $1`,
+			hashSecret(cookie.Value)).Scan(&revoked)
+		if err != nil || !revoked {
+			t.Errorf("web_session not revoked (err %v)", err)
+		}
+
+		// Someone who kept a copy of the cookie can't use it after logout.
+		if rec := call(me, "GET", "/me", cookie); rec.Code != http.StatusUnauthorized {
+			t.Errorf("GET /me after logout: status %d, want 401", rec.Code)
+		}
+	})
+
+	t.Run("logout when signed out still succeeds", func(t *testing.T) {
+		if rec := call(logout(pool), "POST", "/auth/logout", nil); rec.Code != http.StatusOK {
+			t.Errorf("status %d, want 200", rec.Code)
+		}
+	})
+
+	t.Run("expired session is signed out", func(t *testing.T) {
+		cookie := signIn(t, pool, testEmail())
+		_, err := pool.Exec(ctx, `
+			UPDATE web_session SET created_at = now() - interval '2 days', expires_at = now() - interval '1 day'
+			WHERE token_hash = $1`, hashSecret(cookie.Value))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if rec := call(me, "GET", "/me", cookie); rec.Code != http.StatusUnauthorized {
+			t.Errorf("status %d, want 401", rec.Code)
+		}
+	})
+
+	t.Run("disabling an account signs it out everywhere", func(t *testing.T) {
+		email := testEmail()
+		cookie := signIn(t, pool, email)
+		if _, err := pool.Exec(ctx, `UPDATE account SET status = 'disabled' WHERE email = $1`, email); err != nil {
+			t.Fatal(err)
+		}
+		if rec := call(me, "GET", "/me", cookie); rec.Code != http.StatusUnauthorized {
+			t.Errorf("status %d, want 401", rec.Code)
+		}
+	})
+}

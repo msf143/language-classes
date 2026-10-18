@@ -57,6 +57,8 @@ func main() {
 	}
 	mux.HandleFunc("POST /auth/login", requestLoginLink(pool, sendLoginLink, baseURL()))
 	mux.HandleFunc("POST /auth/verify", verifyLoginToken(pool))
+	mux.HandleFunc("POST /auth/logout", logout(pool))
+	mux.HandleFunc("GET /me", requireSignIn(pool, getMe))
 
 	// Serve the front-end (the web folder) for every other GET request.
 	mux.Handle("GET /", http.FileServer(http.Dir("web")))
