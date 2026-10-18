@@ -5,10 +5,11 @@
   "workspaceFolder": "/workspaces/${localWorkspaceFolderBasename}",
   "forwardPorts": [8080],
   "features": {
-     "ghcr.io/devcontainers/features/docker-in-docker:2": { "moby": false }
+     "ghcr.io/devcontainers/features/docker-in-docker:2": { "moby": false },
+     "ghcr.io/devcontainers/features/terraform:1": {}
    },
   "customizations": {
     "vscode": { "extensions": ["golang.go", "anthropic.claude-code"] }
   },
-  "postCreateCommand": "sudo apt-get update && sudo apt-get install -y postgresql-client jq && go install -tags postgres github.com/golang-migrate/migrate/v4/cmd/migrate@latest && curl -fsSL https://claude.ai/install.sh | bash"
+  "postCreateCommand": "bash .devcontainer/post-create.sh"
 }
