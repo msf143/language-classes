@@ -42,7 +42,9 @@ Two kinds of classes:
 ## Layout
 
 ```
-.devcontainer/      devcontainer.json + compose.yaml (app + db services)
+.devcontainer/      devcontainer.json + compose.yaml (app + db services) + post-create.sh (installs gcloud,
+                    psql, jq, migrate, Claude Code; Terraform comes from a devcontainer feature)
+infra/              bootstrap.sh (one-time: base APIs + Terraform state bucket); Terraform files go here
 cmd/api/            main.go    server wiring, middleware, shared helpers (writeJSON, writeError, oneOf)
                     ids.go     newUUIDv7 (primary keys)
                     auth.go    sign-in: login links, verify, signedIn/requireSignIn middleware, /me, logout
@@ -179,10 +181,37 @@ For what's already built, read the code and `git log`. Next, in order:
       use, sets an `HttpOnly; Secure; SameSite=Lax` cookie.
    d. `GET /me`, `POST /auth/logout`, and middleware that loads the signed-in account.
    e. Sign-in UI (bilingual), then restrict `GET /sessions?kind=private` to the owner.
-2. **Deploy early:** multi-stage Dockerfile (distroless), Terraform (small: registry, Cloud SQL,
-   secret, service account, Cloud Run, domain), GitHub Actions with Workload Identity Federation,
-   region `us-east1`. Email provider (Postmark or Resend, plain HTTPS POST) for real login links.
-   Needs from Mike: a domain name and a Google Cloud account with billing.
+2. **Deploy early** (in progress). Region `us-east1`.
+   Facts:
+   - Google Cloud project ID `hablemos-live` (number 529979780991), billing linked, $25/month budget
+     alert, no organization.
+   - Domain `hablemos.live`, registered at Cloudflare. Cloudflare zone ID
+     `0a909059c691a0ff1b1f2f1eca481b2e` (no DNS records yet as of 2026-10-18).
+   - Cloudflare API token (DNS edit + zone read, this zone only) is the Codespaces secret
+     `CLOUDFLARE_API_TOKEN`, so it's an env var in the Codespace. Never print or commit it.
+   - Terraform state bucket `gs://hablemos-live-tfstate` (us-east1, versioned).
+   - After every Codespace rebuild, Mike must sign in again (credentials live in the home dir):
+     `gcloud auth login --no-launch-browser`, `gcloud auth application-default login --no-launch-browser`,
+     `gcloud config set project hablemos-live`.
+
+   Decisions: app served at the apex `hablemos.live` (`www` redirects to it). Custom domain via Cloud
+   Run **domain mapping** (no load balancer), with Cloudflare records **DNS only (grey cloud)**.
+   Google domain verification needs a TXT record (add it with the token). Cloud Run reaches Cloud SQL
+   through its built-in socket (`host=/cloudsql/PROJECT:REGION:INSTANCE` in `DATABASE_URL`; DB
+   password in Secret Manager). Terraform turns on all APIs except the two bootstrap enables. Smallest
+   Cloud SQL tier (~$10–12/month, the only real fixed cost). How prod migrations run (Cloud Run Job,
+   or `migrate` through the Cloud SQL Auth Proxy) is still to decide.
+
+   Steps:
+   - [x] Multi-stage distroless Dockerfile.
+   - [x] gcloud + Terraform in the devcontainer; `infra/bootstrap.sh` run (APIs + state bucket).
+   - [ ] Terraform part 1: APIs, Artifact Registry, app service account, Cloud SQL, Secret Manager,
+         Cloud Run. First manual deploy; curl the `run.app` URL.
+   - [ ] Terraform part 2: Cloudflare provider (DNS records) + Cloud Run domain mapping → https://hablemos.live.
+   - [ ] GitHub Actions (repo `msf143/language-classes`) with Workload Identity Federation: push to
+         `main` → build + deploy. No stored Google keys.
+   - [ ] Email provider (Resend preferred, or Postmark; Mike needs an account): DKIM/SPF DNS records,
+         send real login links. Until then prod sign-in fails on purpose.
 3. **Booking:** `POST /bookings` in one transaction (check seats, debit credits, insert booking +
    attendees + outbox event), with idempotency keys. First handler + transaction tests go here.
 4. **Teacher side:** publish availability blocks; API computes bookable private slots.
