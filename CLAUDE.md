@@ -225,10 +225,10 @@ For what's already built, read the code and `git log`. Next, in order:
      - [x] Build + push image: `TAG=$(git rev-parse --short HEAD)`, `docker build/push`
            `us-east1-docker.pkg.dev/hablemos-live/app/api:$TAG` (commit first).
      - [x] Cloud SQL + `database-url` secret + IAM (`infra/database.tf`).
-     - [ ] **← resume here:** run prod migrations: `scripts/prod-db.sh migrate version` (expect
-           "no migration"), `migrate up` (1–3), `migrate version` (3), `scripts/prod-db.sh psql -c '\dt'`.
-     - [ ] `infra/run.tf`: Cloud Run service (image tag, runs as `hablemos-api`, secret as
-           `DATABASE_URL`, min instances 0). Apply; curl the `run.app` URL.
+     - [x] Prod migrations with `scripts/prod-db.sh migrate up` (prod at version 3, 2026-10-19).
+     - [ ] **← resume here:** `infra/run.tf` written (Cloud Run service `hablemos-api`, image tag in
+           `local.image_tag`, secret as `DATABASE_URL`, min 0 / max 2 instances, public invoker).
+           Apply; curl `<service_url>/health` → `{"status":"ok"}`.
    - [ ] Terraform part 2: Cloudflare provider (DNS records) + Cloud Run domain mapping → https://hablemos.live.
    - [ ] GitHub Actions (repo `msf143/language-classes`) with Workload Identity Federation: push to
          `main` → build + deploy. No stored Google keys.
