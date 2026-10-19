@@ -77,7 +77,30 @@ flowchart LR
     app -- "JSON logs (stdout)" --> log
 ```
 
-Until the domain is set up, the app is at a Google-made `…run.app` address.
+Until the domain is set up, the app is at a Google-made address. Cloud Run answers on two:
+`https://hablemos-api-529979780991.us-east1.run.app` (the newer, predictable form:
+service-projectnumber.region, used for `APP_BASE_URL` in `infra/run.tf`) and
+`https://hablemos-api-bfox5zpazq-ue.a.run.app` (the older hashed form, which `terraform output
+service_url` reports). Both reach the same service.
+
+## Deploying a new version (by hand, until GitHub Actions)
+
+```bash
+cd /workspaces/language-classes
+git status                                   # commit first: the tag is the commit
+TAG=$(git rev-parse --short HEAD)
+IMAGE=us-east1-docker.pkg.dev/hablemos-live/app/api:$TAG
+docker build -t $IMAGE . && docker push $IMAGE
+scripts/prod-db.sh migrate up                # only if there are new migrations
+# edit infra/run.tf: local.image_tag = "<the TAG printed above>"
+cd infra && terraform apply
+curl -s "$(terraform output -raw service_url)/health"; echo   # expect {"status":"ok"}
+```
+
+Migrations go first, so the new code never runs against an old schema. Keep migrations
+backward-compatible (add columns/tables; drop only in a later release), because the old
+revision keeps serving until the new one is ready. Each apply creates a new Cloud Run
+**revision**; the previous one stays available for rollback (set the old tag and apply again).
 
 ### Following one request
 

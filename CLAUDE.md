@@ -201,7 +201,7 @@ For what's already built, read the code and `git log`. Next, in order:
      `cd infra && terraform plan` should say "no differences" (Terraform and the proxy use the
      application-default login; `docker push` uses the first). Claude's auto mode may not read
      prod (secret, prod DB), so Mike runs `scripts/prod-db.sh` himself.
-   - Built so far (all in `infra/`, applied): APIs, Artifact Registry repo `app`
+   - Built so far (all in `infra/`, applied): Cloud Run service `hablemos-api` (`run.tf`), APIs, Artifact Registry repo `app`
      (`us-east1-docker.pkg.dev/hablemos-live/app`, image `api:257f07a` pushed), service account
      `hablemos-api`, Cloud SQL `hablemos-pg` (Postgres 16, db-f1-micro, connection name
      `hablemos-live:us-east1:hablemos-pg`, db/user `app`), secret `database-url` (full keyword DSN;
@@ -220,16 +220,18 @@ For what's already built, read the code and `git log`. Next, in order:
    Steps:
    - [x] Multi-stage distroless Dockerfile.
    - [x] gcloud + Terraform in the devcontainer; `infra/bootstrap.sh` run (APIs + state bucket).
-   - [ ] Terraform part 1, in small applied steps:
+   - [x] Terraform part 1 (done 2026-10-19; live at https://hablemos-api-529979780991.us-east1.run.app,
+         also reported as https://hablemos-api-bfox5zpazq-ue.a.run.app), in small applied steps:
      - [x] Foundation: GCS backend, APIs, Artifact Registry, service account (`infra/main.tf`).
      - [x] Build + push image: `TAG=$(git rev-parse --short HEAD)`, `docker build/push`
            `us-east1-docker.pkg.dev/hablemos-live/app/api:$TAG` (commit first).
      - [x] Cloud SQL + `database-url` secret + IAM (`infra/database.tf`).
      - [x] Prod migrations with `scripts/prod-db.sh migrate up` (prod at version 3, 2026-10-19).
-     - [ ] **← resume here:** `infra/run.tf` written (Cloud Run service `hablemos-api`, image tag in
-           `local.image_tag`, secret as `DATABASE_URL`, min 0 / max 2 instances, public invoker).
-           Apply; curl `<service_url>/health` → `{"status":"ok"}`.
-   - [ ] Terraform part 2: Cloudflare provider (DNS records) + Cloud Run domain mapping → https://hablemos.live.
+     - [x] `infra/run.tf`: Cloud Run service `hablemos-api` (image tag in `local.image_tag`, secret as
+           `DATABASE_URL`, min 0 / max 2 instances, public invoker). `/health` → ok.
+     - Deploy a new version by hand until GitHub Actions: commit, build + push `api:$TAG`, set
+       `local.image_tag`, `terraform apply`; run `scripts/prod-db.sh migrate up` first if there are new migrations.
+   - [ ] **← resume here:** Terraform part 2: Cloudflare provider (DNS records) + Cloud Run domain mapping → https://hablemos.live.
    - [ ] GitHub Actions (repo `msf143/language-classes`) with Workload Identity Federation: push to
          `main` → build + deploy. No stored Google keys.
    - [ ] Email provider (Resend preferred, or Postmark; Mike needs an account): DKIM/SPF DNS records,
