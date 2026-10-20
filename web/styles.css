@@ -168,3 +168,13 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .small { font-size: 0.85rem; }
 .book-price { font-weight: 600; font-size: 1.05rem; margin-bottom: 4px !important; }
 .is-short { color: var(--danger) !important; }
+
+/* ---------- test-site banner (staging, dev) ---------- */
+/* Diagonal yellow stripes: hard to mistake for the real site. */
+.test-banner {
+  background: repeating-linear-gradient(-45deg, #fde68a 0 14px, #fcd34d 14px 28px);
+  color: #422006; font-size: 0.9rem; font-weight: 600;
+}
+.test-banner-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; padding-block: 8px; }
+.test-banner-credit { margin-left: auto; }
+.test-banner .btn-secondary { background: #fffbeb; color: #422006; border-color: #b45309; }

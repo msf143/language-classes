@@ -9,6 +9,9 @@ const state = {
   sessions: [],
   error: null,                     // { requestId } when status is "error"
 
+  testSite: false,                 // staging or dev (from GET /env): show the banner + test credit
+  addingCredit: false,             // a test-credit request is on its way
+
   me: undefined,                   // undefined = not checked yet, null = signed out, else the account
                                    // plus balanceCents and learners (from GET /me)
   book: {
@@ -78,6 +81,31 @@ async function loadMe() {
   render();
 }
 
+// Is this a test site (staging, dev)? If the call fails, assume production:
+// better to hide the banner than to show it on the real site.
+async function loadEnv() {
+  const res = await api("GET", "/env");
+  state.testSite = res.ok && res.data.test_site === true;
+  render();
+}
+
+// Test sites only: +$50 of fake credit (the server refuses beyond $500).
+async function addTestCredit() {
+  state.addingCredit = true;
+  render();
+  const res = await api("POST", "/test-credit");
+  state.addingCredit = false;
+  if (res.ok) {
+    state.me.balanceCents = res.data.balance_cents;
+    showToast(t("testCreditAdded", money(res.data.balance_cents)));
+  } else if (res.data.code === "test_credit_limit") {
+    showToast(t("testCreditLimit"));
+  } else {
+    showToast(`${t("somethingWrong")} ${t("reference")}: ${res.requestId}`);
+  }
+  render();
+}
+
 async function requestLink(email) {
   state.signin.status = "sending";
   state.signin.error = null;
@@ -113,6 +141,7 @@ async function logout() {
 
 function render() {
   renderStaticText();
+  renderBanner();
   tzNoteEl.textContent = t("timesShown", visitorTimeZone);
   renderAccount();
   renderSignin();
@@ -120,6 +149,20 @@ function render() {
   renderFilters();
   renderStatus();
   renderList();
+}
+
+// The test-site strip: hidden on production; the credit and the button only
+// when someone is signed in.
+function renderBanner() {
+  document.querySelector("#test-banner").hidden = !state.testSite;
+  if (!state.testSite) return;
+  const signedIn = Boolean(state.me);
+  const credit = document.querySelector("#test-banner-credit");
+  credit.textContent = signedIn ? t("yourCredit", money(state.me.balanceCents)) : "";
+  const btn = document.querySelector("#test-credit-btn");
+  btn.hidden = !signedIn;
+  btn.textContent = t("addTestCredit", money(5000));
+  btn.disabled = state.addingCredit;
 }
 
 // Header: nothing until we know, then "Sign in" or name + "Sign out".
@@ -444,6 +487,7 @@ document.addEventListener("click", (e) => {
   if (action === "open-signin") openSignin();
   if (action === "close-signin") { state.signin.open = false; render(); }
   if (action === "logout") logout();
+  if (action === "test-credit" && !state.addingCredit) addTestCredit();
 });
 
 // "submit" bubbles like "click", so one document listener handles every form.
@@ -490,5 +534,6 @@ if (location.hash === "#signin") {
   state.signin.open = true;
 }
 
+loadEnv();
 loadMe();
 loadSessions();

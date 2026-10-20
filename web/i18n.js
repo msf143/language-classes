@@ -48,6 +48,13 @@ const STRINGS = {
     errAudience: "Someone you picked can't attend this class (age group).",
     errSignedOut: "Your sign-in has expired. Please sign in again.",
 
+    // Test-site banner (staging and dev only)
+    testBanner: "Test site: classes and credit here are not real.",
+    yourCredit: (amount) => `Your credit: ${amount}`,
+    addTestCredit: (amount) => `Add ${amount} test credit`,
+    testCreditAdded: (amount) => `Test credit added. Your credit: ${amount}.`,
+    testCreditLimit: "You already have plenty of test credit.",
+
     // Sign-in (header + dialog)
     signIn: "Sign in",
     signOut: "Sign out",
@@ -120,6 +127,12 @@ const STRINGS = {
     errAlreadyBooked: "Alguien que elegiste ya tiene un cupo en esta clase.",
     errAudience: "Alguien que elegiste no puede asistir a esta clase (grupo de edad).",
     errSignedOut: "Tu sesión expiró. Por favor, inicia sesión de nuevo.",
+
+    testBanner: "Sitio de prueba: las clases y el crédito aquí no son reales.",
+    yourCredit: (amount) => `Tu crédito: ${amount}`,
+    addTestCredit: (amount) => `Añadir ${amount} de crédito de prueba`,
+    testCreditAdded: (amount) => `Crédito de prueba añadido. Tu crédito: ${amount}.`,
+    testCreditLimit: "Ya tienes suficiente crédito de prueba.",
 
     // Sign-in (header + dialog)
     signIn: "Iniciar sesión",

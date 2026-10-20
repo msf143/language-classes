@@ -300,7 +300,8 @@ For what's already built, read the code and `git log`. Next, in order:
          (3) app: [x] 3a server (`cmd/api/testmode.go`: `GET /env`, `POST /test-credit` registered only
          when APP_ENV is dev/staging, +$50 up to $500; `[TEST] ` subject prefix on staging; `api migrate
          --seed` loads embedded `scripts/seed.sql`, refused unless dev/staging; staging job args via
-         `job_args` in envs.tf); [ ] 3b page: banner + "Add test credit" button. (4) [ ] pipeline approval.
+         `job_args` in envs.tf); [x] 3b page: striped banner on test sites (from `GET /env`), credit + "Add $50 test credit" button
+         when signed in; hidden on production (checked in headless Chrome both ways). (4) [ ] pipeline approval.
    - [ ] 3d. Cancel a booking: refund rules (>24h full, within 24h 50%) as new ledger entries. Also
          "my bookings": show "You're booked" on catalog cards (today you only learn it by trying)
          and list upcoming bookings with a Cancel button.
