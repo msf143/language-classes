@@ -168,7 +168,12 @@ sequenceDiagram
 ```
 
 DNS records are **DNS only** (grey cloud): browsers look the name up at Cloudflare, then connect
-straight to Google. Check progress with
+straight to Google.
+
+`www.hablemos.live` has its own domain mapping (so Google accepts it and issues it a certificate)
+and a CNAME to `ghs.googlehosted.com`. The app answers any `www.` request with a **308** redirect
+to the bare domain, same path and query (`redirectWWW` in `cmd/api/main.go`). Doing it in the app
+avoids needing Cloudflare's proxy or a Google load balancer just for a redirect. Check progress with
 `gcloud beta run domain-mappings describe --domain hablemos.live --region us-east1`
 (the `CertificateProvisioned` condition turns `True` when HTTPS is ready).
 

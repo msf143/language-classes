@@ -233,7 +233,9 @@ For what's already built, read the code and `git log`. Next, in order:
            `DATABASE_URL`, min 0 / max 2 instances, public invoker). `/health` → ok.
      - Deploy a new version by hand until GitHub Actions: commit, build + push `api:$TAG`, set
        `local.image_tag`, `terraform apply`; run `scripts/prod-db.sh migrate up` first if there are new migrations.
-   - [ ] **← resume here:** Terraform part 2: Cloudflare provider (DNS records) + Cloud Run domain mapping → https://hablemos.live.
+   - [ ] **← resume here:** Terraform part 2 (applied 2026-10-20: verification, apex A/AAAA, apex
+         mapping; then www mapping + CNAME, `redirectWWW` in Go, `APP_BASE_URL=https://hablemos.live`;
+         waiting on Google's certificates, check `gcloud beta run domain-mappings describe`): Cloudflare provider (DNS records) + Cloud Run domain mapping → https://hablemos.live.
    - [ ] GitHub Actions (repo `msf143/language-classes`) with Workload Identity Federation: push to
          `main` → build + deploy. No stored Google keys.
    - [ ] Email provider (Resend preferred, or Postmark; Mike needs an account): DKIM/SPF DNS records,

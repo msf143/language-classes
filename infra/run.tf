@@ -11,10 +11,9 @@ locals {
   # this, apply. GitHub Actions takes this job over later.
   image_tag = "257f07a"
 
-  # The address Cloud Run gives a service is predictable:
-  # https://<service name>-<project number>.<region>.run.app
-  # The app uses it to build login links. Becomes https://hablemos.live in part 2.
-  base_url = "https://hablemos-api-529979780991.${local.region}.run.app"
+  # The site's public address; the app uses it to build login links. (The
+  # service also answers at https://hablemos-api-529979780991.us-east1.run.app.)
+  base_url = "https://${local.domain}"
 }
 
 resource "google_cloud_run_v2_service" "api" {

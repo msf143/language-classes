@@ -69,7 +69,7 @@ func main() {
 	}
 	srv := &http.Server{
 		Addr:              ":" + port,
-		Handler:           withRequestLog(mux),
+		Handler:           withRequestLog(redirectWWW(mux)),
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 
@@ -112,6 +112,20 @@ func withRequestLog(next http.Handler) http.Handler {
 			"status", rec.status,
 			"duration_ms", time.Since(start).Milliseconds(),
 		)
+	})
+}
+
+// redirectWWW sends any request for "www.<site>" to "https://<site>" with the same
+// path and query, so the site has one address (better for bookmarks, search
+// engines and cookies, which are per host). 308 means "moved permanently, repeat
+// the same request there": unlike the older 301, a POST stays a POST.
+func redirectWWW(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if bare, ok := strings.CutPrefix(r.Host, "www."); ok {
+			http.Redirect(w, r, "https://"+bare+r.URL.RequestURI(), http.StatusPermanentRedirect)
+			return
+		}
+		next.ServeHTTP(w, r)
 	})
 }
 

@@ -98,6 +98,36 @@ resource "cloudflare_dns_record" "apex_aaaa" {
   comment  = "Cloud Run domain mapping (Terraform)"
 }
 
+# ---------- 4. www.hablemos.live -> hablemos.live ----------
+
+# www is mapped to the same service; the app itself answers with a redirect to
+# the bare domain (redirectWWW in cmd/api/main.go). Google needs the mapping
+# so it accepts www requests and issues a certificate for that name too.
+resource "google_cloud_run_domain_mapping" "www" {
+  name     = "www.${local.domain}"
+  location = local.region
+  metadata {
+    namespace = local.project
+  }
+  spec {
+    route_name = google_cloud_run_v2_service.api.name
+  }
+
+  depends_on = [google_site_verification_web_resource.domain]
+}
+
+# A subdomain can be a CNAME (an alias for another name). Google's front end
+# for custom domains is ghs.googlehosted.com.
+resource "cloudflare_dns_record" "www" {
+  zone_id = local.zone_id
+  name    = "www.${local.domain}"
+  type    = "CNAME"
+  content = "ghs.googlehosted.com"
+  ttl     = 1
+  proxied = false
+  comment = "Cloud Run domain mapping (Terraform)"
+}
+
 output "domain_mapping_records" {
   description = "DNS records the domain mapping asks for (should match the A/AAAA records above)"
   value       = google_cloud_run_domain_mapping.apex.status[0].resource_records
