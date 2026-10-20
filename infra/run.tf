@@ -9,7 +9,7 @@ locals {
   # Which image to run: a tag pushed to Artifact Registry (the git commit it was
   # built from). To deploy a new version for now: build + push a new tag, change
   # this, apply. GitHub Actions takes this job over later.
-  image_tag = "c644394"
+  image_tag = "d8c4617"
   image     = "${local.region}-docker.pkg.dev/${local.project}/${google_artifact_registry_repository.app.repository_id}/api:${local.image_tag}"
 
   # The site's public address; the app uses it to build login links. (The
