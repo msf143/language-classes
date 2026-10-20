@@ -239,18 +239,17 @@ For what's already built, read the code and `git log`. Next, in order:
      - Deploying: push to `main` (GitHub Actions). Rollback and a by-hand fallback: `docs/deploy.md`.
    - [x] Terraform part 2 (done 2026-10-20; https://hablemos.live live, certificates issued; `www`
          308-redirects via `redirectWWW` in Go; `APP_BASE_URL=https://hablemos.live`; running `c644394`): Cloudflare provider (DNS records) + Cloud Run domain mapping → https://hablemos.live.
-   - [ ] GitHub Actions (repo `msf143/language-classes`, ID 1422089795) with Workload Identity Federation:
+   - [x] GitHub Actions (repo `msf143/language-classes`, ID 1422089795) with Workload Identity Federation:
          push to `main` → test, build, migrate, deploy. No stored Google keys. In small steps:
      - [x] `infra/github.tf` applied (pool `github`, provider `github-actions` limited to
            repo ID + owner ID + `refs/heads/main`, SA `github-deployer` with AR writer, run.developer,
            actAs hablemos-api).
      - [x] Migration job: `api migrate` mode in our binary (no new dependency) + Cloud Run Job `migrate`.
            Deployed `d8c4617`; first execution applied 0, version 3.
-     - [ ] **← resume here:** `.github/workflows/deploy.yml` written (test on push/PR with Postgres service;
-           main only: build/push `api:<short sha>`, run `migrate` job, update service, curl /health).
-           CI owns the image (`ignore_changes` in `run.tf`). Push it and watch the first run; then
-           `terraform plan` should still say "no differences".
-   - [ ] Email provider (Resend preferred, or Postmark; Mike needs an account): DKIM/SPF DNS records,
+     - [x] `.github/workflows/deploy.yml` (test on push/PR with Postgres service; main only:
+           build/push `api:<short sha>`, run `migrate` job, update service, curl /health). CI owns the
+           image (`ignore_changes` in `run.tf`). First run green 2026-10-20 (`1f668ae`, revision 00004).
+   - [ ] **← resume here:** Email provider: Resend (Mike created the account 2026-10-20): DKIM/SPF DNS records,
          send real login links. Until then prod sign-in fails on purpose.
 3. **Booking:** `POST /bookings` in one transaction (check seats, debit credits, insert booking +
    attendees + outbox event), with idempotency keys. First handler + transaction tests go here.
