@@ -242,7 +242,8 @@ For what's already built, read the code and `git log`. Next, in order:
      - [x] Prod migrations with `scripts/prod-db.sh migrate up` (prod at version 3, 2026-10-19).
      - [x] `infra/run.tf`: Cloud Run service `hablemos-api` (image tag in `local.image_tag`, secret as
            `DATABASE_URL`, min 0 / max 2 instances, public invoker). `/health` → ok.
-     - Deploying: push to `main` (GitHub Actions). Rollback and a by-hand fallback: `docs/deploy.md`.
+     - Deploying: push to `main` → staging automatically → approve → production. Rollback and a by-hand
+       fallback: `docs/deploy.md`.
    - [x] Terraform part 2 (done 2026-10-20; https://hablemos.live live, certificates issued; `www`
          308-redirects via `redirectWWW` in Go; `APP_BASE_URL=https://hablemos.live`; running `c644394`): Cloudflare provider (DNS records) + Cloud Run domain mapping → https://hablemos.live.
    - [x] GitHub Actions (repo `msf143/language-classes`, ID 1422089795) with Workload Identity Federation:
@@ -287,25 +288,14 @@ For what's already built, read the code and `git log`. Next, in order:
          teachers); (3) [x] the Book `<dialog>` (pick learners, live price, balance before/after; signed
          out → sign-in first); (4) [x] POST with an Idempotency-Key (new per open / tick change, reused on retry), translated
          error codes, reload balance + seats. Verified in headless Chrome (2026-10-20).
-   - [ ] **← resume here:** 3c. **Staging environment** `https://dev.hablemos.live`, so friends can test with fake money.
-         Second Cloud Run service `hablemos-staging` and a second database `staging` (own user) on the same
-         Cloud SQL instance (~$0 extra); own service account and `database-url-staging` secret; seed data
-         allowed; staging-only "add $50 test credit" button and a "Test site" banner; `[TEST]` in email
-         subjects. Terraform: `for_each` over an environments map, `moved` blocks so prod resources are
-         renamed, not recreated (check the plan). Pipeline: main → staging automatically → GitHub
-         environment approval → the same image to prod.
-         Parts: (1) [x] Terraform restructure: per-environment resources use `for_each = local.envs`
-         (`infra/envs.tf`, prod entry = today's names), `infra/moved.tf` renames 12 resources in state;
-         plan must be 0/0/0 with only "has moved". (2) [x] `staging` entry + `dev.hablemos.live` (live 2026-10-20; tables made by `migrate-staging`).
-         (3) app: [x] 3a server (`cmd/api/testmode.go`: `GET /env`, `POST /test-credit` registered only
-         when APP_ENV is dev/staging, +$50 up to $500; `[TEST] ` subject prefix on staging; `api migrate
-         --seed` loads embedded `scripts/seed.sql`, refused unless dev/staging; staging job args via
-         `job_args` in envs.tf); [x] 3b page: striped banner on test sites (from `GET /env`), credit + "Add $50 test credit" button
-         when signed in; hidden on production (checked in headless Chrome both ways). (4) [ ] pipeline: workflow written (test → build once → deploy-staging → deploy-prod with
-         `environment: production`); GitHub environments created 2026-10-20 in repo Settings: `staging`
-         (no rules), `production` (required reviewer msf143, self-review allowed, branch `main` only).
-         Next: push and watch the first run pause for approval.
-   - [ ] 3d. Cancel a booking: refund rules (>24h full, within 24h 50%) as new ledger entries. Also
+   - [x] 3c. **Staging** at `https://dev.hablemos.live` (done 2026-10-20): second Cloud Run service
+         `hablemos-staging`, job `migrate-staging` (runs `migrate --seed`), database/user `staging` on the
+         shared instance, secret `database-url-staging`, SA `hablemos-staging`, `APP_ENV=staging` (banner,
+         test credit up to $500, `[TEST]` email subjects; staging emails often land in spam at first).
+         Terraform: `for_each = local.envs` (`infra/envs.tf`), renames in `infra/moved.tf`. Pipeline: test →
+         build once → deploy-staging → **approval** (GitHub environment `production`, reviewer msf143) →
+         same image to prod. How to approve and roll back: `docs/deploy.md`.
+   - [ ] **← resume here:** 3d. Cancel a booking: refund rules (>24h full, within 24h 50%) as new ledger entries. Also
          "my bookings": show "You're booked" on catalog cards (today you only learn it by trying)
          and list upcoming bookings with a Cancel button.
 4. **Teacher side:** publish availability blocks; API computes bookable private slots.
