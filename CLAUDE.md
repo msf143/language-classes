@@ -52,6 +52,8 @@ docs/               deploy.md: how Terraform provisions and how the deployed app
 cmd/api/            main.go    server wiring, middleware, shared helpers (writeJSON, writeError, oneOf)
                     ids.go     newUUIDv7 (primary keys)
                     auth.go    sign-in: login links, verify, signedIn/requireSignIn middleware, /me, logout
+                    email.go   resendSender (login links by email through Resend)
+                    migrate.go `api migrate` (embedded migrations, one transaction each)
                     sessions.go GET /sessions
                     one file per resource as the API grows (bookings.go, ...); *_test.go beside it
 migrations/         000NNN_description.up.sql / .down.sql  (numbered, append-only)
@@ -74,8 +76,9 @@ go vet ./... && go build ./... && go test ./...       # check before committing
 ```
 
 `DATABASE_URL` is set by the devcontainer (`postgres://app:app@db:5432/app?sslmode=disable`).
-`APP_ENV=dev` (also set by the devcontainer) makes login links go to the log; without it and
-without an email provider, `POST /auth/login` fails on purpose. `APP_BASE_URL` overrides the
+`APP_ENV=dev` (also set by the devcontainer) makes login links go to the log, even if a key is
+set. Otherwise `RESEND_API_KEY` makes them go out by email (`cmd/api/email.go`); with neither,
+`POST /auth/login` fails on purpose. `APP_BASE_URL` overrides the
 site address used in links (default: the Codespace's forwarded 8080 URL, else localhost).
 
 Try sign-in: `curl -s -X POST localhost:8080/auth/login -d '{"email":"ana@example.com"}'`,
@@ -249,10 +252,11 @@ For what's already built, read the code and `git log`. Next, in order:
      - [x] `.github/workflows/deploy.yml` (test on push/PR with Postgres service; main only:
            build/push `api:<short sha>`, run `migrate` job, update service, curl /health). CI owns the
            image (`ignore_changes` in `run.tf`). First run green 2026-10-20 (`1f668ae`, revision 00004).
-   - [ ] **← resume here:** Email provider: Resend (Mike created the account 2026-10-20). Step 1: DNS records
-         in `infra/email.tf` (DKIM, send/rsend CNAMEs, DMARC p=none), then Verify in Resend. Step 2: API key in
-         Secret Manager. Step 3: Go sender via net/http.
-         Until then prod sign-in fails on purpose.
+   - [ ] **← resume here:** Email provider: Resend (account: Mike). Done: DNS records in `infra/email.tf`
+         (DKIM, send/rsend CNAMEs, DMARC p=none), domain verified 2026-10-20; key in secret `resend-api-key`
+         (sending-only, hablemos.live). Written: `resendSender` (`cmd/api/email.go`, plain-text bilingual
+         email from login@hablemos.live) + `RESEND_API_KEY` env in `run.tf`. To finish: apply, push, test a
+         real sign-in on https://hablemos.live. Later: tighten DMARC to quarantine.
 3. **Booking:** `POST /bookings` in one transaction (check seats, debit credits, insert booking +
    attendees + outbox event), with idempotency keys. First handler + transaction tests go here.
 4. **Teacher side:** publish availability blocks; API computes bookable private slots.

@@ -73,8 +73,19 @@ resource "google_cloud_run_v2_service" "api" {
         name  = "APP_BASE_URL"
         value = local.base_url
       }
-      # No APP_ENV here: that's dev only. Without it and without an email provider,
-      # POST /auth/login fails on purpose (see CLAUDE.md).
+      # Lets the app email login links through Resend (cmd/api/email.go). The
+      # value is added by hand (docs/deploy.md); "latest" picks up a rotated key
+      # whenever a new instance starts after the next deploy.
+      env {
+        name = "RESEND_API_KEY"
+        value_source {
+          secret_key_ref {
+            secret  = google_secret_manager_secret.resend_api_key.secret_id
+            version = "latest"
+          }
+        }
+      }
+      # No APP_ENV here: that's dev only (links go to the log instead of email).
 
       volume_mounts {
         name       = "cloudsql"
@@ -85,9 +96,10 @@ resource "google_cloud_run_v2_service" "api" {
 
   depends_on = [
     google_project_service.api,
-    # The service account must be able to read the secret before the first
-    # instance starts, or that start fails.
+    # The service account must be able to read the secrets before an instance
+    # starts, or that start fails.
     google_secret_manager_secret_iam_member.api_database_url,
+    google_secret_manager_secret_iam_member.api_resend_api_key,
     google_project_iam_member.api_sql_client,
   ]
 

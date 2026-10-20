@@ -64,9 +64,14 @@ func main() {
 
 	mux.HandleFunc("GET /sessions", signedIn(pool, listSessions(pool)))
 
+	// How login links reach people. Dev always logs them, so a dev setup can
+	// never email a real address by accident.
 	sendLoginLink := noLoginSender
-	if os.Getenv("APP_ENV") == "dev" {
+	switch {
+	case os.Getenv("APP_ENV") == "dev":
 		sendLoginLink = logLoginLink
+	case os.Getenv("RESEND_API_KEY") != "":
+		sendLoginLink = resendSender(os.Getenv("RESEND_API_KEY"), resendEndpoint)
 	}
 	mux.HandleFunc("POST /auth/login", requestLoginLink(pool, sendLoginLink, baseURL()))
 	mux.HandleFunc("POST /auth/verify", verifyLoginToken(pool))
