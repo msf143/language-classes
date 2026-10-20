@@ -100,31 +100,41 @@ service_url` reports). Both reach the same service.
 
 ## Deploying a new version
 
-**Push to `main`.** [`.github/workflows/deploy.yml`](../.github/workflows/deploy.yml) does the rest:
+**Push to `main`, try it on staging, approve.** [`.github/workflows/deploy.yml`](../.github/workflows/deploy.yml):
 
 ```mermaid
 flowchart LR
     push["git push<br/>(main)"] --> test["test<br/>go vet, go test<br/>+ throwaway Postgres"]
     pr["pull request"] --> test
     test -- "main only,<br/>tests passed" --> build["build + push<br/>api:&lt;short sha&gt;"]
-    build --> mig["Cloud Run job<br/>migrate"]
-    mig -- "succeeded" --> svc["Cloud Run service<br/>new revision"]
-    svc --> check["curl<br/>hablemos.live/health"]
+    build --> stg["staging<br/>migrate-staging (+ seed)<br/>hablemos-staging<br/>check dev.hablemos.live"]
+    stg --> wait{{"waits for<br/>Approve"}}
+    wait --> prod["production<br/>migrate, hablemos-api<br/>check hablemos.live"]
 ```
 
-Any failing step stops the run, and the version already live keeps serving. Watch runs on the
-repository's **Actions** tab, or with `gh run watch`.
+The image is built **once**; staging and production run the exact same image. Any failing step stops
+the run, and the version already live keeps serving.
 
-- **Order matters:** migrations run before the new code is deployed. Keep migrations
-  backward-compatible (add columns/tables; drop only in a later release), because the old
+**Approving:** after staging is deployed, the run shows "Waiting for review" on the repository's
+**Actions** tab (GitHub also emails the reviewer). Try the change on https://dev.hablemos.live, then
+**Review deployments** > tick `production` > **Approve and deploy**. Reject (or just leave it) to keep
+production as it is. If a newer push arrives while one waits, the newer run takes its place.
+
+The approval rule lives in GitHub, not in the workflow file: repository **Settings > Environments >
+production > Required reviewers**. `staging` has no rule. `production` also only accepts deployments
+from the `main` branch.
+
+- **Order matters:** migrations run before the new code is deployed, in each environment. Keep
+  migrations backward-compatible (add columns/tables; drop only in a later release), because the old
   revision keeps serving until the new one is ready.
 - **Pull requests** run the tests only; they never get Google credentials.
-- **One deploy at a time:** a second push waits for the first to finish (`concurrency`).
-- **Who owns the image:** the workflow. Terraform ignores image changes on the service and the job
+- **One deploy per environment at a time** (`concurrency`).
+- **Who owns the image:** the workflow. Terraform ignores image changes on the services and jobs
   (`lifecycle { ignore_changes }` in `infra/run.tf`), so `terraform apply` never rolls back a deploy.
   Terraform still owns everything else (env vars, scaling, secrets).
 - **Which commit is live:** the image tag is the commit's short hash:
   `gcloud run services describe hablemos-api --region us-east1 --format='value(spec.template.spec.containers[0].image)'`
+  (`hablemos-staging` for staging).
 
 ### Rolling back
 

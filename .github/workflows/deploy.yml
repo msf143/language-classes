@@ -1,8 +1,13 @@
-# Test every push and pull request; deploy pushes to main to https://hablemos.live.
+# Test every push and pull request; deploy pushes to main to staging, then
+# (after a person approves) the same image to production.
 #
-#   test:   go vet + go test against a real Postgres (a throwaway container)
-#   deploy: only for main, only if test passed:
-#           build image -> push -> run migration job -> deploy service -> check /health
+#   test:           go vet + go test against a real Postgres (a throwaway container)
+#   build:          build the image once, push it to Artifact Registry
+#   deploy-staging: migrate-staging job (migrations + seed data), hablemos-staging
+#                   service, check https://dev.hablemos.live
+#   deploy-prod:    waits for approval on the "production" environment (repository
+#                   Settings > Environments), then the same image: migrate job,
+#                   hablemos-api service, check https://hablemos.live
 #
 # Google sign-in uses Workload Identity Federation (infra/github.tf): no key is
 # stored in GitHub. Google only trusts runs of this repository on main.
@@ -53,17 +58,15 @@ jobs:
       - run: go vet ./...
       - run: go test ./...
 
-  deploy:
+  build:
     needs: test
     if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-24.04
     permissions:
       contents: read
       id-token: write # lets the job ask GitHub for its signed identity token
-    # One deploy at a time; a newer push waits rather than cancelling one mid-way.
-    concurrency:
-      group: deploy-prod
-      cancel-in-progress: false
+    outputs:
+      image: ${{ steps.image.outputs.image }} # handed to both deploy jobs
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
@@ -73,23 +76,86 @@ jobs:
           workload_identity_provider: projects/529979780991/locations/global/workloadIdentityPools/github/providers/github-actions
           service_account: github-deployer@hablemos-live.iam.gserviceaccount.com
 
-      - name: Image name (tag = short commit hash, as when deploying by hand)
-        run: echo "IMAGE=$IMAGE_REPO:${GITHUB_SHA::7}" >> "$GITHUB_ENV"
+      - name: Image name (tag = short commit hash)
+        id: image
+        run: echo "image=$IMAGE_REPO:${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
 
       - name: Build and push
+        env:
+          IMAGE: ${{ steps.image.outputs.image }}
         run: |
           gcloud auth configure-docker us-east1-docker.pkg.dev --quiet
           docker build -t "$IMAGE" .
           docker push "$IMAGE"
 
-      # Migrations first, so the new code never runs against an old schema.
+  deploy-staging:
+    needs: build
+    runs-on: ubuntu-24.04
+    environment:
+      name: staging
+      url: https://dev.hablemos.live
+    permissions:
+      contents: read
+      id-token: write
+    # One deploy per environment at a time; a newer push waits its turn.
+    concurrency:
+      group: deploy-staging
+      cancel-in-progress: false
+    env:
+      IMAGE: ${{ needs.build.outputs.image }}
+    steps:
+      - name: Sign in to Google (Workload Identity Federation)
+        uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3.0.0
+        with:
+          workload_identity_provider: projects/529979780991/locations/global/workloadIdentityPools/github/providers/github-actions
+          service_account: github-deployer@hablemos-live.iam.gserviceaccount.com
+
+      # Migrations first, so the new code never runs against an old schema. On
+      # staging the job also reloads the seed data, moving its classes to future dates.
+      - name: Migrate (and seed) the staging database
+        run: |
+          gcloud run jobs update migrate-staging --image "$IMAGE" --region "$REGION" --quiet
+          gcloud run jobs execute migrate-staging --region "$REGION" --wait
+
+      - name: Deploy the staging service
+        run: gcloud run services update hablemos-staging --image "$IMAGE" --region "$REGION" --quiet
+
+      - name: Check the staging site
+        run: |
+          curl -fsS --retry 5 --retry-delay 3 --retry-all-errors https://dev.hablemos.live/health
+          echo
+          curl -fsS https://dev.hablemos.live/env | grep -q '"env":"staging"'
+
+  deploy-prod:
+    needs: [build, deploy-staging]
+    runs-on: ubuntu-24.04
+    # The "production" environment requires a reviewer: the run pauses here
+    # until someone clicks "Review deployments" > Approve on the Actions page.
+    environment:
+      name: production
+      url: https://hablemos.live
+    permissions:
+      contents: read
+      id-token: write
+    concurrency:
+      group: deploy-prod
+      cancel-in-progress: false
+    env:
+      IMAGE: ${{ needs.build.outputs.image }} # the exact image staging just ran
+    steps:
+      - name: Sign in to Google (Workload Identity Federation)
+        uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3.0.0
+        with:
+          workload_identity_provider: projects/529979780991/locations/global/workloadIdentityPools/github/providers/github-actions
+          service_account: github-deployer@hablemos-live.iam.gserviceaccount.com
+
       # If this fails, the deploy stops and the current version keeps serving.
-      - name: Migrate the database
+      - name: Migrate the production database
         run: |
           gcloud run jobs update migrate --image "$IMAGE" --region "$REGION" --quiet
           gcloud run jobs execute migrate --region "$REGION" --wait
 
-      - name: Deploy the service
+      - name: Deploy the production service
         run: gcloud run services update hablemos-api --image "$IMAGE" --region "$REGION" --quiet
 
       - name: Check the live site

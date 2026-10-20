@@ -301,7 +301,10 @@ For what's already built, read the code and `git log`. Next, in order:
          when APP_ENV is dev/staging, +$50 up to $500; `[TEST] ` subject prefix on staging; `api migrate
          --seed` loads embedded `scripts/seed.sql`, refused unless dev/staging; staging job args via
          `job_args` in envs.tf); [x] 3b page: striped banner on test sites (from `GET /env`), credit + "Add $50 test credit" button
-         when signed in; hidden on production (checked in headless Chrome both ways). (4) [ ] pipeline approval.
+         when signed in; hidden on production (checked in headless Chrome both ways). (4) [ ] pipeline: workflow written (test → build once → deploy-staging → deploy-prod with
+         `environment: production`); GitHub environments created 2026-10-20 in repo Settings: `staging`
+         (no rules), `production` (required reviewer msf143, self-review allowed, branch `main` only).
+         Next: push and watch the first run pause for approval.
    - [ ] 3d. Cancel a booking: refund rules (>24h full, within 24h 50%) as new ledger entries. Also
          "my bookings": show "You're booked" on catalog cards (today you only learn it by trying)
          and list upcoming bookings with a Cancel button.
