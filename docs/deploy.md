@@ -177,6 +177,38 @@ avoids needing Cloudflare's proxy or a Google load balancer just for a redirect.
 `gcloud beta run domain-mappings describe --domain hablemos.live --region us-east1`
 (the `CertificateProvisioned` condition turns `True` when HTTPS is ready).
 
+## GitHub Actions: deploying without a stored key
+
+`infra/github.tf` sets up **Workload Identity Federation**: Google trusts identity tokens that
+GitHub signs for each workflow run, so no Google key is stored in GitHub.
+
+```mermaid
+sequenceDiagram
+    participant GH as GitHub Actions run
+    participant OIDC as GitHub's token service
+    participant STS as Google STS
+    participant IAM as Google IAM Credentials
+    participant GCP as Artifact Registry / Cloud Run
+
+    GH->>OIDC: request an identity token
+    OIDC-->>GH: signed token: repository_id 1422089795, ref refs/heads/main (valid minutes)
+    GH->>STS: exchange this token
+    Note over STS: checks GitHub's signature and the condition: our repo IDs, main branch only
+    STS-->>GH: federated token
+    GH->>IAM: act as github-deployer
+    IAM-->>GH: access token (about 1 hour)
+    GH->>GCP: push image, run migration job, deploy
+```
+
+The **condition** on the provider only accepts tokens whose claims match our repository's
+numeric ID, its owner's numeric ID, and `refs/heads/main`. IDs, not names: if the repo were
+ever deleted or renamed, someone else could create one with the same name but never with the
+same IDs. Pull requests and other branches can run tests but never get Google credentials.
+
+`github-deployer` may only push images to repository `app`, deploy Cloud Run revisions and run
+jobs (`roles/run.developer`), and act as `hablemos-api` (needed to deploy a revision that runs as
+it). It cannot touch IAM, the database instance, DNS, or Terraform state.
+
 ## Running migrations on prod
 
 For now migrations are run by hand from the Codespace with

@@ -22,9 +22,8 @@ data "google_site_verification_token" "domain" {
   type                = "INET_DOMAIN"
   identifier          = local.domain
   verification_method = "DNS_TXT"
-
-  # Read it only once the Site Verification API is on (the first apply turns it on).
-  depends_on = [google_project_service.api]
+  # Read while planning, so the Site Verification API must already be on:
+  # bootstrap.sh turns it on (main.tf also lists it).
 }
 
 resource "cloudflare_dns_record" "google_verification" {

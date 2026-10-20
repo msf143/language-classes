@@ -10,11 +10,13 @@ PROJECT=hablemos-live
 REGION=us-east1
 STATE_BUCKET="gs://${PROJECT}-tfstate"
 
-# APIs Terraform itself needs in order to manage the project. Terraform turns on
-# the rest (Cloud Run, Cloud SQL, ...) so that list lives in one place.
+# APIs Terraform itself needs before it can plan. Terraform turns on the rest
+# (Cloud Run, Cloud SQL, ...) so that list lives in one place. Site Verification
+# is here because domain.tf reads a token from it while planning.
 gcloud services enable --project "$PROJECT" \
   cloudresourcemanager.googleapis.com \
-  iam.googleapis.com
+  iam.googleapis.com \
+  siteverification.googleapis.com
 
 # Bucket for Terraform's state file (its record of what it created).
 # Versioning keeps every previous state, so a bad apply can be recovered.

@@ -191,7 +191,7 @@ For what's already built, read the code and `git log`. Next, in order:
    - Google Cloud project ID `hablemos-live` (number 529979780991), billing linked, $25/month budget
      alert, no organization.
    - Domain `hablemos.live`, registered at Cloudflare. Cloudflare zone ID
-     `0a909059c691a0ff1b1f2f1eca481b2e` (no DNS records yet as of 2026-10-18).
+     `0a909059c691a0ff1b1f2f1eca481b2e` (DNS records managed by Terraform in `infra/domain.tf`).
    - Cloudflare API token (DNS edit + zone read, this zone only) is the Codespaces secret
      `CLOUDFLARE_API_TOKEN`, so it's an env var in the Codespace. Never print or commit it.
    - Terraform state bucket `gs://hablemos-live-tfstate` (us-east1, versioned).
@@ -233,11 +233,15 @@ For what's already built, read the code and `git log`. Next, in order:
            `DATABASE_URL`, min 0 / max 2 instances, public invoker). `/health` → ok.
      - Deploy a new version by hand until GitHub Actions: commit, build + push `api:$TAG`, set
        `local.image_tag`, `terraform apply`; run `scripts/prod-db.sh migrate up` first if there are new migrations.
-   - [ ] **← resume here:** Terraform part 2 (applied 2026-10-20: verification, apex A/AAAA, apex
-         mapping; then www mapping + CNAME, `redirectWWW` in Go, `APP_BASE_URL=https://hablemos.live`;
-         waiting on Google's certificates, check `gcloud beta run domain-mappings describe`): Cloudflare provider (DNS records) + Cloud Run domain mapping → https://hablemos.live.
-   - [ ] GitHub Actions (repo `msf143/language-classes`) with Workload Identity Federation: push to
-         `main` → build + deploy. No stored Google keys.
+   - [x] Terraform part 2 (done 2026-10-20; https://hablemos.live live, certificates issued; `www`
+         308-redirects via `redirectWWW` in Go; `APP_BASE_URL=https://hablemos.live`; running `c644394`): Cloudflare provider (DNS records) + Cloud Run domain mapping → https://hablemos.live.
+   - [ ] GitHub Actions (repo `msf143/language-classes`, ID 1422089795) with Workload Identity Federation:
+         push to `main` → test, build, migrate, deploy. No stored Google keys. In small steps:
+     - [ ] **← resume here:** `infra/github.tf` written (pool `github`, provider `github-actions` limited to
+           repo ID + owner ID + `refs/heads/main`, SA `github-deployer` with AR writer, run.developer,
+           actAs hablemos-api). Apply.
+     - [ ] Migration job (Cloud Run Job; decide: `migrate` image vs a `migrate` mode in our binary).
+     - [ ] `.github/workflows/deploy.yml`; CI owns the image tag (`ignore_changes` on image in `run.tf`).
    - [ ] Email provider (Resend preferred, or Postmark; Mike needs an account): DKIM/SPF DNS records,
          send real login links. Until then prod sign-in fails on purpose.
 3. **Booking:** `POST /bookings` in one transaction (check seats, debit credits, insert booking +

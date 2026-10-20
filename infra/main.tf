@@ -15,6 +15,8 @@ resource "google_project_service" "api" {
     "sqladmin.googleapis.com",         # Cloud SQL
     "secretmanager.googleapis.com",    # DB password
     "siteverification.googleapis.com", # prove we own hablemos.live
+    "sts.googleapis.com",              # swaps GitHub tokens for Google ones (github.tf)
+    "iamcredentials.googleapis.com",   # short-lived service account tokens (github.tf)
   ])
   service = each.key
 
