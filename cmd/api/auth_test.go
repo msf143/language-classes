@@ -391,3 +391,25 @@ func TestGetMeBalanceAndLearners(t *testing.T) {
 		t.Errorf("learners = %+v, want the adult then the child (not the archived one)", me.Learners)
 	}
 }
+
+// The first sign-in creates the account and a learner for the account holder;
+// signing in again doesn't add another.
+func TestFirstSignInCreatesLearner(t *testing.T) {
+	pool := testPool(t)
+	email := testEmail() // no account yet
+	learners := func() int {
+		return count(t, pool, `
+			SELECT count(*) FROM learner l JOIN account a ON a.id = l.account_id
+			WHERE lower(a.email) = lower($1) AND l.status = 'active' AND NOT l.is_minor
+			  AND l.display_name = a.display_name`, email)
+	}
+
+	signIn(t, pool, email)
+	if n := learners(); n != 1 {
+		t.Fatalf("after first sign-in: %d learners, want 1", n)
+	}
+	signIn(t, pool, email)
+	if n := learners(); n != 1 {
+		t.Errorf("after second sign-in: %d learners, want still 1", n)
+	}
+}

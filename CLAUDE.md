@@ -281,8 +281,11 @@ For what's already built, read the code and `git log`. Next, in order:
          Seats taken = `SUM(party_size)` of confirmed bookings. Errors via `writeErrorCode`; codes also
          `session_not_found`, `unknown_learner`, `idempotency_key_reused` (422).
    - [ ] **← resume here:** 3b. "Book" button in the catalog: pick learners, confirm price, show balance.
-         The front-end needs to know the price and the balance before booking (e.g. price on
-         `GET /sessions`, balance and learners on `GET /me`).
+         Pieces: (1) [x] `GET /me` returns `balance_cents` + `learners`; (2) [x] `GET /sessions` returns
+         `prices` per party size (tests now cancel their sessions via `cancelWhenDone`); (2b) [x] every
+         account holder has a learner: created at first sign-in, migration 000004 backfills (skips
+         teachers); (3) [ ] the Book `<dialog>` (pick learners, live price, balance before/after; signed
+         out → sign-in first); (4) [ ] POST with an Idempotency-Key, translated error codes, refresh.
    - [ ] 3c. **Staging environment** `https://dev.hablemos.live`, so friends can test with fake money.
          Second Cloud Run service `hablemos-staging` and a second database `staging` (own user) on the same
          Cloud SQL instance (~$0 extra); own service account and `database-url-staging` secret; seed data

@@ -204,14 +204,33 @@ func verifyLoginToken(pool *pgxpool.Pool) http.HandlerFunc {
 		// First sign-in creates the account. ON CONFLICT targets the unique
 		// index on lower(email), so an existing account is left alone. The
 		// display name starts as the part before "@"; the student can change it.
-		_, err = tx.Exec(ctx, `
+		// RETURNING gives a row only when a row was inserted, so newAccountID
+		// is set exactly when this is a brand-new account.
+		name := email[:strings.Index(email, "@")]
+		var newAccountID string
+		err = tx.QueryRow(ctx, `
 			INSERT INTO account (id, email, display_name) VALUES ($1, $2, $3)
-			ON CONFLICT ((lower(email))) DO NOTHING`,
-			newUUIDv7(), email, email[:strings.Index(email, "@")])
-		if err != nil {
+			ON CONFLICT ((lower(email))) DO NOTHING
+			RETURNING id::text`,
+			newUUIDv7(), email, name).Scan(&newAccountID)
+		if err != nil && !errors.Is(err, pgx.ErrNoRows) {
 			logFrom(r).Error("verify: create account failed", "err", err)
 			writeError(w, r, http.StatusInternalServerError, "could not sign you in")
 			return
+		}
+		// A new account holder can book classes for themselves right away: give
+		// them a learner profile (an adult; children are added later). Same
+		// transaction, so there's never an account without one.
+		if newAccountID != "" {
+			_, err = tx.Exec(ctx, `
+				INSERT INTO learner (id, account_id, display_name, native_language)
+				SELECT $1, a.id, a.display_name, a.preferred_language FROM account a WHERE a.id = $2`,
+				newUUIDv7(), newAccountID)
+			if err != nil {
+				logFrom(r).Error("verify: create learner failed", "err", err)
+				writeError(w, r, http.StatusInternalServerError, "could not sign you in")
+				return
+			}
 		}
 		var acct account
 		var status string

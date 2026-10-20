@@ -1,0 +1,2 @@
+-- Intentionally empty: 000004 only added data (learner profiles), and business
+-- records are never deleted. The learners it created stay.
