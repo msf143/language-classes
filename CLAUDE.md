@@ -296,9 +296,11 @@ For what's already built, read the code and `git log`. Next, in order:
          environment approval → the same image to prod.
          Parts: (1) [x] Terraform restructure: per-environment resources use `for_each = local.envs`
          (`infra/envs.tf`, prod entry = today's names), `infra/moved.tf` renames 12 resources in state;
-         plan must be 0/0/0 with only "has moved". (2) [ ] add the `staging` entry + `dev.hablemos.live` (written: 14 to add, 0 change; first image
-         `5689021`; after apply run `gcloud run jobs execute migrate-staging --region us-east1 --wait`).
-         (3) [ ] app: banner, `[TEST]` subjects, test-credit button, staging seed. (4) [ ] pipeline approval.
+         plan must be 0/0/0 with only "has moved". (2) [x] `staging` entry + `dev.hablemos.live` (live 2026-10-20; tables made by `migrate-staging`).
+         (3) app: [x] 3a server (`cmd/api/testmode.go`: `GET /env`, `POST /test-credit` registered only
+         when APP_ENV is dev/staging, +$50 up to $500; `[TEST] ` subject prefix on staging; `api migrate
+         --seed` loads embedded `scripts/seed.sql`, refused unless dev/staging; staging job args via
+         `job_args` in envs.tf); [ ] 3b page: banner + "Add test credit" button. (4) [ ] pipeline approval.
    - [ ] 3d. Cancel a booking: refund rules (>24h full, within 24h 50%) as new ledger entries. Also
          "my bookings": show "You're booked" on catalog cards (today you only learn it by trying)
          and list upcoming bookings with a Cancel button.

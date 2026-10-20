@@ -16,8 +16,9 @@ const (
 
 // resendSender returns a loginSender that emails the link through Resend's
 // REST API: one HTTPS POST with a JSON body, so no SDK is needed. endpoint is
-// a parameter so tests can point it at a fake server.
-func resendSender(apiKey, endpoint string) loginSender {
+// a parameter so tests can point it at a fake server. subjectPrefix goes in
+// front of the subject ("[TEST] " on staging, "" on production).
+func resendSender(apiKey, endpoint, subjectPrefix string) loginSender {
 	// Never wait forever on an outside service: the student is waiting too.
 	client := &http.Client{Timeout: 10 * time.Second}
 
@@ -26,7 +27,7 @@ func resendSender(apiKey, endpoint string) loginSender {
 		body, err := json.Marshal(map[string]any{
 			"from":    loginEmailFrom,
 			"to":      []string{email},
-			"subject": "Your sign-in link · Tu enlace para entrar",
+			"subject": subjectPrefix + "Your sign-in link · Tu enlace para entrar",
 			// Plain text, both languages: the request doesn't say which one the
 			// student reads, and every mail program shows plain text and makes
 			// the link clickable.

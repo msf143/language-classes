@@ -1,10 +1,13 @@
 # Keep the build context small and free of anything secret or irrelevant.
-# Only go.mod, go.sum, cmd/, migrations/ and web/ are needed.
+# Only go.mod, go.sum, cmd/, migrations/, web/ and the seed (scripts/seed.sql +
+# scripts/embed.go, compiled in for staging) are needed.
 .git
 .devcontainer
 .claude
 api
 *.md
-scripts/
+scripts/*
+!scripts/seed.sql
+!scripts/embed.go
 infra/
 docs/

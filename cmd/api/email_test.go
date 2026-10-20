@@ -41,7 +41,7 @@ func TestResendSender(t *testing.T) {
 			}))
 			defer fake.Close()
 
-			send := resendSender(key, fake.URL+"/emails")
+			send := resendSender(key, fake.URL+"/emails", "[TEST] ")
 			err := send(httptest.NewRequest("POST", "/auth/login", nil), "ana@example.com", link)
 
 			if (err != nil) != tt.wantError {
@@ -58,6 +58,9 @@ func TestResendSender(t *testing.T) {
 			}
 			if to, _ := got.body["to"].([]any); len(to) != 1 || to[0] != "ana@example.com" {
 				t.Errorf("to = %v", got.body["to"])
+			}
+			if subject, _ := got.body["subject"].(string); !strings.HasPrefix(subject, "[TEST] ") {
+				t.Errorf("subject = %q, want the [TEST] prefix", subject)
 			}
 			if got.body["from"] != loginEmailFrom {
 				t.Errorf("from = %v", got.body["from"])

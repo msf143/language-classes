@@ -18,6 +18,7 @@ locals {
       secret_id           = "database-url"          # its DATABASE_URL
       base_url            = "https://hablemos.live" # used in login links
       app_env             = ""                      # APP_ENV; "" = production (not set)
+      job_args            = ["migrate"]             # what the migration job runs
     }
 
     # https://dev.hablemos.live: a full copy for testing with fake money.
@@ -32,7 +33,8 @@ locals {
       db_password_version = 1
       secret_id           = "database-url-staging"
       base_url            = "https://dev.hablemos.live"
-      app_env             = "staging" # turns on the test banner, test credit, [TEST] emails
+      app_env             = "staging"             # turns on the test banner, test credit, [TEST] emails
+      job_args            = ["migrate", "--seed"] # migrations, then the seed data (refreshes class times)
     }
   }
 }

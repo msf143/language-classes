@@ -143,7 +143,7 @@ resource "google_cloud_run_v2_job" "migrate" {
 
       containers {
         image = local.image
-        args  = ["migrate"]
+        args  = each.value.job_args # ["migrate"], or ["migrate", "--seed"] on staging
 
         resources {
           limits = {
@@ -159,6 +159,14 @@ resource "google_cloud_run_v2_job" "migrate" {
               secret  = google_secret_manager_secret.database_url[each.key].secret_id
               version = google_secret_manager_secret_version.database_url[each.key].version
             }
+          }
+        }
+        # The seed refuses to load unless APP_ENV is staging (or dev).
+        dynamic "env" {
+          for_each = each.value.app_env == "" ? [] : [each.value.app_env]
+          content {
+            name  = "APP_ENV"
+            value = env.value
           }
         }
 

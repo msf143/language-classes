@@ -18,6 +18,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/msf143/language-classes/migrations"
+	"github.com/msf143/language-classes/scripts"
 )
 
 type ctxKey string
@@ -39,10 +40,20 @@ func main() {
 	}
 	defer pool.Close()
 
+	// "" in production; "staging" on dev.hablemos.live; "dev" in the Codespace.
+	appEnv := os.Getenv("APP_ENV")
+
 	// `api migrate`: apply new migrations and exit, instead of serving.
 	// The Cloud Run migration job runs this before each deploy.
+	// `api migrate --seed` then loads the seed data (staging's job only).
 	if len(os.Args) > 1 && os.Args[1] == "migrate" {
-		if err := runMigrations(ctx, pool, migrations.FS); err != nil {
+		err := runMigrations(ctx, pool, migrations.FS)
+		if err == nil && len(os.Args) > 2 && os.Args[2] == "--seed" {
+			if err = runSeed(ctx, pool, appEnv, scripts.Seed); err == nil {
+				slog.Info("seed data loaded")
+			}
+		}
+		if err != nil {
 			slog.Error("migrate failed", "err", err)
 			pool.Close()
 			os.Exit(1) // os.Exit skips deferred calls, hence the explicit Close
@@ -65,14 +76,26 @@ func main() {
 	mux.HandleFunc("GET /sessions", signedIn(pool, listSessions(pool)))
 	mux.HandleFunc("POST /bookings", requireSignIn(pool, createBooking(pool)))
 
+	// Which environment this is (the page shows a banner on test sites), and
+	// fake credit, which only exists on test sites: on production this route
+	// isn't registered at all.
+	mux.HandleFunc("GET /env", getEnv(appEnv))
+	if isTestSite(appEnv) {
+		mux.HandleFunc("POST /test-credit", requireSignIn(pool, addTestCredit(pool)))
+	}
+
 	// How login links reach people. Dev always logs them, so a dev setup can
-	// never email a real address by accident.
+	// never email a real address by accident. Staging's emails say [TEST].
 	sendLoginLink := noLoginSender
 	switch {
-	case os.Getenv("APP_ENV") == "dev":
+	case appEnv == "dev":
 		sendLoginLink = logLoginLink
 	case os.Getenv("RESEND_API_KEY") != "":
-		sendLoginLink = resendSender(os.Getenv("RESEND_API_KEY"), resendEndpoint)
+		subjectPrefix := ""
+		if appEnv == "staging" {
+			subjectPrefix = "[TEST] "
+		}
+		sendLoginLink = resendSender(os.Getenv("RESEND_API_KEY"), resendEndpoint, subjectPrefix)
 	}
 	mux.HandleFunc("POST /auth/login", requestLoginLink(pool, sendLoginLink, baseURL()))
 	mux.HandleFunc("POST /auth/verify", verifyLoginToken(pool))
