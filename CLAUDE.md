@@ -194,7 +194,7 @@ For what's already built, read the code and `git log`. Next, in order:
       use, sets an `HttpOnly; Secure; SameSite=Lax` cookie.
    d. `GET /me`, `POST /auth/logout`, and middleware that loads the signed-in account.
    e. Sign-in UI (bilingual), then restrict `GET /sessions?kind=private` to the owner.
-2. **Deploy early** (in progress). Region `us-east1`.
+2. **Deploy early** (done 2026-10-20). Region `us-east1`.
    Facts:
    - Google Cloud project ID `hablemos-live` (number 529979780991), billing linked, $25/month budget
      alert, no organization.
@@ -252,12 +252,12 @@ For what's already built, read the code and `git log`. Next, in order:
      - [x] `.github/workflows/deploy.yml` (test on push/PR with Postgres service; main only:
            build/push `api:<short sha>`, run `migrate` job, update service, curl /health). CI owns the
            image (`ignore_changes` in `run.tf`). First run green 2026-10-20 (`1f668ae`, revision 00004).
-   - [ ] **← resume here:** Email provider: Resend (account: Mike). Done: DNS records in `infra/email.tf`
-         (DKIM, send/rsend CNAMEs, DMARC p=none), domain verified 2026-10-20; key in secret `resend-api-key`
-         (sending-only, hablemos.live). Written: `resendSender` (`cmd/api/email.go`, plain-text bilingual
-         email from login@hablemos.live) + `RESEND_API_KEY` env in `run.tf`. To finish: apply, push, test a
-         real sign-in on https://hablemos.live. Later: tighten DMARC to quarantine.
-3. **Booking:** `POST /bookings` in one transaction (check seats, debit credits, insert booking +
+   - [x] Email provider: Resend (account: Mike). DNS records in `infra/email.tf` (DKIM, send/rsend
+         CNAMEs, DMARC p=none), domain verified; key in secret `resend-api-key` (sending-only,
+         hablemos.live); `resendSender` (`cmd/api/email.go`, plain-text bilingual email from
+         login@hablemos.live). Real sign-in on https://hablemos.live works (2026-10-20, `ccd5222`).
+         Later: tighten DMARC to `quarantine` once mail has flowed cleanly for a while.
+3. **← resume here: Booking:** `POST /bookings` in one transaction (check seats, debit credits, insert booking +
    attendees + outbox event), with idempotency keys. First handler + transaction tests go here.
 4. **Teacher side:** publish availability blocks; API computes bookable private slots.
 5. **Worker:** process `outbox_event` (claim rows with `FOR UPDATE SKIP LOCKED`), send emails and
