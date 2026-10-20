@@ -75,7 +75,23 @@ func newSession(t *testing.T, pool *pgxpool.Pool, teacherID string, o sessionOpt
 	if err != nil {
 		t.Fatal(err)
 	}
+	cancelWhenDone(t, pool, id)
 	return id
+}
+
+// cancelWhenDone cancels a test's session when the test ends, so test sessions
+// don't pile up in the dev database's catalog (or crowd real ones out of the
+// 100 that GET /sessions returns). Cancelled, not deleted: business records
+// are never deleted.
+func cancelWhenDone(t *testing.T, pool *pgxpool.Pool, sessionID string) {
+	t.Cleanup(func() {
+		_, err := pool.Exec(context.Background(), `
+			UPDATE session SET status = 'cancelled', cancel_reason = 'teacher_cancelled'
+			WHERE id = $1 AND status <> 'cancelled'`, sessionID)
+		if err != nil {
+			t.Errorf("cancelling test session: %v", err)
+		}
+	})
 }
 
 type student struct {

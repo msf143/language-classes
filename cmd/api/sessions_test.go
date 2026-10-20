@@ -62,6 +62,8 @@ func TestListSessionsPrivacy(t *testing.T) {
 	exec(`INSERT INTO session (id, teacher_id, kind, target_language, starts_at, ends_at, occupied)
 	      VALUES ($1, $2, 'private', 'es', now() + interval '11 days', now() + interval '11 days 1 hour',
 	              tstzrange(now() + interval '11 days', now() + interval '11 days 1 hour'))`, privateID, teacherID)
+	cancelWhenDone(t, pool, groupID)
+	cancelWhenDone(t, pool, privateID)
 
 	// The payer books a party of 2; a friend (another account) joins with their learner.
 	payerAcct, payerEmail := newAccount(t, pool)
@@ -138,4 +140,42 @@ func TestListSessionsPrivacy(t *testing.T) {
 			}
 		}
 	})
+}
+
+// Each listed session carries the prices in force now, one per party size.
+func TestListSessionsPrices(t *testing.T) {
+	pool := testPool(t)
+	teacher := newTeacher(t, pool) // group prices for 30/45/60 minutes, none for 90
+	priced := newSession(t, pool, teacher, sessionOpts{minutes: 60, slot: 40})
+	unpriced := newSession(t, pool, teacher, sessionOpts{minutes: 90, slot: 41})
+
+	rec := call(signedIn(pool, listSessions(pool)), "GET", "/sessions?kind=group", nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status %d, body %s", rec.Code, rec.Body)
+	}
+	var sessions []sessionDTO
+	if err := json.NewDecoder(rec.Body).Decode(&sessions); err != nil {
+		t.Fatal(err)
+	}
+	found := map[string]sessionDTO{}
+	for _, s := range sessions {
+		found[s.ID] = s
+	}
+
+	p, ok := found[priced]
+	if !ok {
+		t.Fatal("priced session not listed")
+	}
+	if len(p.Prices) != 4 {
+		t.Fatalf("prices = %+v, want party sizes 1-4", p.Prices)
+	}
+	for i, price := range p.Prices {
+		if price.PartySize != i+1 || price.PricePerPersonCents != 1500 || price.Currency != "USD" {
+			t.Errorf("prices[%d] = %+v, want size %d at 1500 USD", i, price, i+1)
+		}
+	}
+
+	if u, ok := found[unpriced]; !ok || u.Prices == nil || len(u.Prices) != 0 {
+		t.Errorf("unpriced session: listed %v, prices %#v; want listed with prices []", ok, u.Prices)
+	}
 }
