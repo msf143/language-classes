@@ -16,6 +16,8 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+
+	"github.com/msf143/language-classes/migrations"
 )
 
 type ctxKey string
@@ -36,6 +38,17 @@ func main() {
 		os.Exit(1)
 	}
 	defer pool.Close()
+
+	// `api migrate`: apply new migrations and exit, instead of serving.
+	// The Cloud Run migration job runs this before each deploy.
+	if len(os.Args) > 1 && os.Args[1] == "migrate" {
+		if err := runMigrations(ctx, pool, migrations.FS); err != nil {
+			slog.Error("migrate failed", "err", err)
+			pool.Close()
+			os.Exit(1) // os.Exit skips deferred calls, hence the explicit Close
+		}
+		return
+	}
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /health", func(w http.ResponseWriter, r *http.Request) {

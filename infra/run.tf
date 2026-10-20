@@ -10,6 +10,7 @@ locals {
   # built from). To deploy a new version for now: build + push a new tag, change
   # this, apply. GitHub Actions takes this job over later.
   image_tag = "c644394"
+  image     = "${local.region}-docker.pkg.dev/${local.project}/${google_artifact_registry_repository.app.repository_id}/api:${local.image_tag}"
 
   # The site's public address; the app uses it to build login links. (The
   # service also answers at https://hablemos-api-529979780991.us-east1.run.app.)
@@ -44,7 +45,7 @@ resource "google_cloud_run_v2_service" "api" {
     }
 
     containers {
-      image = "${local.region}-docker.pkg.dev/${local.project}/${google_artifact_registry_repository.app.repository_id}/api:${local.image_tag}"
+      image = local.image
 
       resources {
         limits = {
@@ -85,6 +86,67 @@ resource "google_cloud_run_v2_service" "api" {
     google_project_service.api,
     # The service account must be able to read the secret before the first
     # instance starts, or that start fails.
+    google_secret_manager_secret_iam_member.api_database_url,
+    google_project_iam_member.api_sql_client,
+  ]
+}
+
+# The migration job: the same image, started with the argument "migrate", so it
+# applies new migrations and exits instead of serving (cmd/api/migrate.go).
+# A job runs to completion when executed, rather than waiting for requests:
+#   gcloud run jobs execute migrate --region us-east1 --wait
+# Deploys run it first, so new code never meets an old schema.
+resource "google_cloud_run_v2_job" "migrate" {
+  name                = "migrate"
+  location            = local.region
+  deletion_protection = false # holds no data
+
+  template {
+    task_count = 1 # one copy; the advisory lock would serialize extras anyway
+
+    template {
+      service_account = google_service_account.api.email # same permissions as the app
+      max_retries     = 0                                # a failed migration needs a human, not a retry
+      timeout         = "600s"
+
+      volumes {
+        name = "cloudsql"
+        cloud_sql_instance {
+          instances = [google_sql_database_instance.main.connection_name]
+        }
+      }
+
+      containers {
+        image = local.image
+        args  = ["migrate"]
+
+        resources {
+          limits = {
+            cpu    = "1"
+            memory = "512Mi"
+          }
+        }
+
+        env {
+          name = "DATABASE_URL"
+          value_source {
+            secret_key_ref {
+              secret  = google_secret_manager_secret.database_url.secret_id
+              version = google_secret_manager_secret_version.database_url.version
+            }
+          }
+        }
+
+        volume_mounts {
+          name       = "cloudsql"
+          mount_path = "/cloudsql"
+        }
+      }
+    }
+  }
+
+  depends_on = [
+    google_project_service.api,
     google_secret_manager_secret_iam_member.api_database_url,
     google_project_iam_member.api_sql_client,
   ]

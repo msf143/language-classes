@@ -211,9 +211,31 @@ it). It cannot touch IAM, the database instance, DNS, or Terraform state.
 
 ## Running migrations on prod
 
-For now migrations are run by hand from the Codespace with
-[`scripts/prod-db.sh`](../scripts/prod-db.sh). (When GitHub Actions deploys, this moves to a
-Cloud Run Job so "migrate, then deploy" happens on every push.)
+Prod migrations run in the cloud as the Cloud Run **job** `migrate` (`infra/run.tf`): the app's own
+image started as `api migrate` (`cmd/api/migrate.go`). The migration files are compiled into the
+binary (`migrations/embed.go`), so the image always carries exactly the migrations its code expects.
+
+```bash
+gcloud run jobs execute migrate --region us-east1 --wait   # deploys run this first
+gcloud run jobs executions list --job migrate --region us-east1 --limit 5
+```
+
+How `api migrate` works:
+1. Takes a Postgres **advisory lock**, so two runs (two quick deploys) can't overlap.
+2. Reads the version from `schema_migrations`, the same one-row table the `migrate` CLI uses in dev.
+3. Applies each newer `*.up.sql` file in order, **each in one transaction together with its
+   version bump**. Postgres DDL is transactional, so a failing migration rolls back completely and
+   the version stays put; fix the file and run again. (Hence the rule: no statements that can't run
+   in a transaction, like `CREATE INDEX CONCURRENTLY`.)
+4. Logs `migration applied` per file and `migrations done` with the final version, to Cloud Logging.
+
+It only goes up; down migrations are a dev tool. The job has `max_retries = 0`: a failed migration
+needs a person, and the deploy stops there, so the old code keeps serving the old schema.
+
+### By hand from the Codespace
+
+[`scripts/prod-db.sh`](../scripts/prod-db.sh) is still there for a SQL shell on prod, or for
+running the `migrate` CLI directly (`version`, or `force` after a dirty dev-style failure).
 
 ```bash
 scripts/prod-db.sh migrate version   # where prod is

@@ -16,6 +16,8 @@ COPY go.mod go.sum ./
 RUN go mod download
 
 COPY cmd/ ./cmd/
+# The *.up.sql files are compiled into the binary (migrations/embed.go) for `api migrate`.
+COPY migrations/ ./migrations/
 # CGO_ENABLED=0: pure Go, no C library, so the binary runs on an image with no libc.
 # -trimpath: no build-machine paths inside the binary.
 # -ldflags="-s -w": drop debug symbols (smaller file; stack traces still work).

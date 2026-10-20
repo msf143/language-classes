@@ -105,6 +105,11 @@ then find the link in the log.
 **Migrations**
 - Never edit a migration that has already been applied. Add the next number
   (`000002_description.up.sql` + `.down.sql`).
+- Prod applies `*.up.sql` with `api migrate` (`cmd/api/migrate.go`, files embedded via
+  `migrations/embed.go`), each file in **one transaction** with its version bump. So no statements
+  that can't run in a transaction (`CREATE INDEX CONCURRENTLY`), and no `BEGIN`/`COMMIT` in files.
+- Keep migrations backward-compatible with the previous release (add first, drop later): the
+  old revision keeps serving while the new one starts.
 
 **Go / API**
 - Every request gets a request ID (`X-Request-ID`, accepted from the client or generated),
@@ -237,10 +242,12 @@ For what's already built, read the code and `git log`. Next, in order:
          308-redirects via `redirectWWW` in Go; `APP_BASE_URL=https://hablemos.live`; running `c644394`): Cloudflare provider (DNS records) + Cloud Run domain mapping → https://hablemos.live.
    - [ ] GitHub Actions (repo `msf143/language-classes`, ID 1422089795) with Workload Identity Federation:
          push to `main` → test, build, migrate, deploy. No stored Google keys. In small steps:
-     - [ ] **← resume here:** `infra/github.tf` written (pool `github`, provider `github-actions` limited to
+     - [x] `infra/github.tf` applied (pool `github`, provider `github-actions` limited to
            repo ID + owner ID + `refs/heads/main`, SA `github-deployer` with AR writer, run.developer,
-           actAs hablemos-api). Apply.
-     - [ ] Migration job (Cloud Run Job; decide: `migrate` image vs a `migrate` mode in our binary).
+           actAs hablemos-api).
+     - [ ] **← resume here:** Migration job: decided on a `migrate` mode in our binary (no new
+           dependency). Code + tests + Cloud Run Job `migrate` in `run.tf` written; deploy by hand
+           (commit, build/push, set tag, apply) and run `gcloud run jobs execute migrate --wait` once.
      - [ ] `.github/workflows/deploy.yml`; CI owns the image tag (`ignore_changes` on image in `run.tf`).
    - [ ] Email provider (Resend preferred, or Postmark; Mike needs an account): DKIM/SPF DNS records,
          send real login links. Until then prod sign-in fails on purpose.
