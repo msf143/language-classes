@@ -9,7 +9,7 @@ locals {
   # Which image to run: a tag pushed to Artifact Registry (the git commit it was
   # built from). To deploy a new version for now: build + push a new tag, change
   # this, apply. GitHub Actions takes this job over later.
-  image_tag = "257f07a"
+  image_tag = "c644394"
 
   # The site's public address; the app uses it to build login links. (The
   # service also answers at https://hablemos-api-529979780991.us-east1.run.app.)
