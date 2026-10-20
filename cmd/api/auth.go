@@ -315,10 +315,64 @@ func accountFrom(r *http.Request) (*account, bool) {
 	return a, ok
 }
 
-// getMe handles GET /me (wrapped in requireSignIn).
-func getMe(w http.ResponseWriter, r *http.Request) {
-	a, _ := accountFrom(r)
-	writeJSON(w, http.StatusOK, map[string]any{"account": a})
+// learnerDTO is one of an account's learner profiles (who can attend a class).
+type learnerDTO struct {
+	ID          string `json:"id"`
+	DisplayName string `json:"display_name"`
+	IsMinor     bool   `json:"is_minor"`
+}
+
+// getMe handles GET /me (wrapped in requireSignIn): the signed-in account,
+// its credit balance, and its active learners (what the Book dialog needs).
+func getMe(pool *pgxpool.Pool) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		a, _ := accountFrom(r)
+		ctx := r.Context()
+
+		// Balance is derived from the ledger, never stored (see account_balance).
+		var balance int
+		err := pool.QueryRow(ctx, `
+			SELECT COALESCE(SUM(amount_cents), 0) FROM credit_ledger
+			WHERE account_id = $1 AND currency = 'USD'`, a.ID).Scan(&balance)
+		if err != nil {
+			logFrom(r).Error("me: balance query failed", "err", err)
+			writeError(w, r, http.StatusInternalServerError, "could not load your account")
+			return
+		}
+
+		rows, err := pool.Query(ctx, `
+			SELECT id::text, display_name, is_minor FROM learner
+			WHERE account_id = $1 AND status = 'active'
+			ORDER BY created_at`, a.ID)
+		if err != nil {
+			logFrom(r).Error("me: learners query failed", "err", err)
+			writeError(w, r, http.StatusInternalServerError, "could not load your account")
+			return
+		}
+		defer rows.Close()
+		learners := []learnerDTO{} // [] rather than null in the JSON when there are none
+		for rows.Next() {
+			var l learnerDTO
+			if err := rows.Scan(&l.ID, &l.DisplayName, &l.IsMinor); err != nil {
+				logFrom(r).Error("me: learners scan failed", "err", err)
+				writeError(w, r, http.StatusInternalServerError, "could not load your account")
+				return
+			}
+			learners = append(learners, l)
+		}
+		if err := rows.Err(); err != nil {
+			logFrom(r).Error("me: learners query failed", "err", err)
+			writeError(w, r, http.StatusInternalServerError, "could not load your account")
+			return
+		}
+
+		writeJSON(w, http.StatusOK, map[string]any{
+			"account":       a,
+			"balance_cents": balance,
+			"currency":      "USD",
+			"learners":      learners,
+		})
+	}
 }
 
 // logout handles POST /auth/logout. It revokes this browser's web_session

@@ -128,7 +128,7 @@ func TestListSessionsPrivacy(t *testing.T) {
 			email string
 			want  bool
 		}{{teacherEmail, true}, {payerEmail, false}} {
-			rec := call(requireSignIn(pool, getMe), "GET", "/me", signIn(t, pool, tt.email))
+			rec := call(requireSignIn(pool, getMe(pool)), "GET", "/me", signIn(t, pool, tt.email))
 			var body struct{ Account account }
 			if err := json.NewDecoder(rec.Body).Decode(&body); err != nil {
 				t.Fatal(err)

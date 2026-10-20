@@ -28,6 +28,8 @@ Two kinds of classes:
 - I'll have to explain the infrastructure to others in detail: say what each command does, what
   output to expect, and record procedures and diagrams in `docs/deploy.md`. Mark placeholders
   clearly; prefer commands that paste safely as-is.
+- **Pace for my understanding, not for speed**: build in small pieces and stop after each so I can
+  read it and ask questions; give a short reading guide (where to start, what each part does).
 - Make small, reviewable changes. Run and verify things (build, curl, tests) before
   saying they work. Suggest a commit message after each working step.
 

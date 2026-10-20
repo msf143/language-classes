@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -276,7 +277,7 @@ func call(h http.HandlerFunc, method, path string, cookie *http.Cookie) *httptes
 func TestSignedIn(t *testing.T) {
 	pool := testPool(t)
 	ctx := context.Background()
-	me := requireSignIn(pool, getMe)
+	me := requireSignIn(pool, getMe(pool))
 
 	t.Run("signed out: 401 without a cookie or with an unknown one", func(t *testing.T) {
 		for _, c := range []*http.Cookie{nil, {Name: sessionCookie, Value: newSecret()}} {
@@ -358,4 +359,35 @@ func TestSignedIn(t *testing.T) {
 			t.Errorf("status %d, want 401", rec.Code)
 		}
 	})
+}
+
+// GET /me also returns the credit balance and the active learners (for the Book dialog).
+func TestGetMeBalanceAndLearners(t *testing.T) {
+	pool := testPool(t)
+	s := newStudent(t, pool, 2500, false, true) // $25, an adult learner and a child
+	if _, err := pool.Exec(context.Background(), `
+		INSERT INTO learner (id, account_id, display_name, native_language, status)
+		VALUES ($1, $2, 'Archived', 'en', 'archived')`, newUUIDv7(), s.accountID); err != nil {
+		t.Fatal(err)
+	}
+
+	rec := call(requireSignIn(pool, getMe(pool)), "GET", "/me", s.cookie)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status %d, body %s", rec.Code, rec.Body)
+	}
+	var me struct {
+		BalanceCents int          `json:"balance_cents"`
+		Currency     string       `json:"currency"`
+		Learners     []learnerDTO `json:"learners"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &me); err != nil {
+		t.Fatal(err)
+	}
+	if me.BalanceCents != 2500 || me.Currency != "USD" {
+		t.Errorf("balance %d %s, want 2500 USD", me.BalanceCents, me.Currency)
+	}
+	if len(me.Learners) != 2 || me.Learners[0].ID != s.learners[0] || me.Learners[0].IsMinor ||
+		me.Learners[1].ID != s.learners[1] || !me.Learners[1].IsMinor {
+		t.Errorf("learners = %+v, want the adult then the child (not the archived one)", me.Learners)
+	}
 }
