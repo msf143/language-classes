@@ -85,10 +85,12 @@ resource "google_project_iam_member" "deployer_run" {
   member  = google_service_account.deployer.member
 }
 
-# A Cloud Run revision runs as hablemos-api; deploying one means "acting as"
-# that account. Granted on that one account only, not project-wide.
+# A Cloud Run revision runs as its environment's account (hablemos-api for
+# prod); deploying one means "acting as" that account. Granted on those
+# accounts only, not project-wide.
 resource "google_service_account_iam_member" "deployer_acts_as_api" {
-  service_account_id = google_service_account.api.name
+  for_each           = local.envs # on each environment's account, nothing else
+  service_account_id = google_service_account.api[each.key].name
   role               = "roles/iam.serviceAccountUser"
   member             = google_service_account.deployer.member
 }

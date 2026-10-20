@@ -294,6 +294,10 @@ For what's already built, read the code and `git log`. Next, in order:
          subjects. Terraform: `for_each` over an environments map, `moved` blocks so prod resources are
          renamed, not recreated (check the plan). Pipeline: main → staging automatically → GitHub
          environment approval → the same image to prod.
+         Parts: (1) [ ] Terraform restructure: per-environment resources use `for_each = local.envs`
+         (`infra/envs.tf`, prod entry = today's names), `infra/moved.tf` renames 12 resources in state;
+         plan must be 0/0/0 with only "has moved". (2) [ ] add the `staging` entry + `dev.hablemos.live`.
+         (3) [ ] app: banner, `[TEST]` subjects, test-credit button, staging seed. (4) [ ] pipeline approval.
    - [ ] 3d. Cancel a booking: refund rules (>24h full, within 24h 50%) as new ledger entries. Also
          "my bookings": show "You're booked" on catalog cards (today you only learn it by trying)
          and list upcoming bookings with a Cancel button.

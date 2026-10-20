@@ -58,8 +58,9 @@ resource "google_artifact_registry_repository" "app" {
 # own account, the app gets only the permissions granted to it below (and in
 # later files): least privilege.
 resource "google_service_account" "api" {
-  account_id   = "hablemos-api"
-  display_name = "hablemos.live API (Cloud Run)"
+  for_each     = local.envs # one per environment (envs.tf)
+  account_id   = each.value.service_account
+  display_name = each.value.display_name
 }
 
 output "image_repo" {

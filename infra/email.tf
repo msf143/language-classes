@@ -53,11 +53,12 @@ resource "google_secret_manager_secret" "resend_api_key" {
   depends_on = [google_project_service.api]
 }
 
-# The app may read this one secret.
+# Each environment's app may read this one secret (all environments share the key).
 resource "google_secret_manager_secret_iam_member" "api_resend_api_key" {
+  for_each  = local.envs
   secret_id = google_secret_manager_secret.resend_api_key.id
   role      = "roles/secretmanager.secretAccessor"
-  member    = google_service_account.api.member
+  member    = google_service_account.api[each.key].member
 }
 
 resource "cloudflare_dns_record" "dmarc" {

@@ -46,45 +46,47 @@ resource "google_sql_database_instance" "main" {
   depends_on = [google_project_service.api]
 }
 
+# ---------- per environment: database, user, password, secret ----------
+#
+# Each environment (envs.tf) gets its own database and user on the shared
+# instance, like two libraries with different owners on one system. Each user
+# owns only its own database.
+
 resource "google_sql_database" "app" {
-  name     = "app"
+  for_each = local.envs
+  name     = each.value.db_name
   instance = google_sql_database_instance.main.name
 }
 
-# ---------- the password ----------
-#
 # "ephemeral" means Terraform generates this value while it runs and never
 # writes it to the state file. It can only be passed to "write-only" arguments
 # (the *_wo ones below), which send it to Google and also aren't stored.
 #
 # A new random value is generated on every run, but write-only arguments are
-# only sent when their *_wo_version changes. So the password is set once, and
-# rotating it means bumping this number (both resources use it) and applying.
-locals {
-  db_password_version = 1
-}
-
+# only sent when their *_wo_version changes. So each password is set once, and
+# rotating one means bumping that environment's db_password_version in envs.tf.
 ephemeral "random_password" "db" {
-  length  = 32
-  special = false # letters and digits only: nothing to escape in the DSN
+  for_each = local.envs
+  length   = 32
+  special  = false # letters and digits only: nothing to escape in the DSN
 }
 
 resource "google_sql_user" "app" {
-  name                = "app"
+  for_each            = local.envs
+  name                = each.value.db_user
   instance            = google_sql_database_instance.main.name
-  password_wo         = ephemeral.random_password.db.result
-  password_wo_version = local.db_password_version
+  password_wo         = ephemeral.random_password.db[each.key].result
+  password_wo_version = each.value.db_password_version
 }
 
-# ---------- the secret ----------
-#
 # The whole connection string is the secret, so Cloud Run can hand it to the
 # app as DATABASE_URL and main.go doesn't change. It's the keyword=value form
 # of a Postgres connection string (pgx reads both forms). sslmode=disable is
 # fine here: the socket only goes to the connector inside the container, and
 # the connector encrypts everything it sends on to the database.
 resource "google_secret_manager_secret" "database_url" {
-  secret_id = "database-url"
+  for_each  = local.envs
+  secret_id = each.value.secret_id
   replication {
     auto {}
   }
@@ -92,31 +94,34 @@ resource "google_secret_manager_secret" "database_url" {
 }
 
 resource "google_secret_manager_secret_version" "database_url" {
-  secret                 = google_secret_manager_secret.database_url.id
-  secret_data_wo_version = local.db_password_version
+  for_each               = local.envs
+  secret                 = google_secret_manager_secret.database_url[each.key].id
+  secret_data_wo_version = each.value.db_password_version
   secret_data_wo = join(" ", [
     "host=/cloudsql/${google_sql_database_instance.main.connection_name}",
-    "dbname=${google_sql_database.app.name}",
-    "user=${google_sql_user.app.name}",
-    "password=${ephemeral.random_password.db.result}",
+    "dbname=${google_sql_database.app[each.key].name}",
+    "user=${google_sql_user.app[each.key].name}",
+    "password=${ephemeral.random_password.db[each.key].result}",
     "sslmode=disable",
   ])
 }
 
-# ---------- what the app's service account may do ----------
+# ---------- what each environment's service account may do ----------
 
 # Connect through the Cloud SQL connector.
 resource "google_project_iam_member" "api_sql_client" {
-  project = local.project
-  role    = "roles/cloudsql.client"
-  member  = google_service_account.api.member
+  for_each = local.envs
+  project  = local.project
+  role     = "roles/cloudsql.client"
+  member   = google_service_account.api[each.key].member
 }
 
-# Read this one secret (not every secret in the project).
+# Read its own environment's secret (not every secret in the project).
 resource "google_secret_manager_secret_iam_member" "api_database_url" {
-  secret_id = google_secret_manager_secret.database_url.id
+  for_each  = local.envs
+  secret_id = google_secret_manager_secret.database_url[each.key].id
   role      = "roles/secretmanager.secretAccessor"
-  member    = google_service_account.api.member
+  member    = google_service_account.api[each.key].member
 }
 
 output "db_connection_name" {

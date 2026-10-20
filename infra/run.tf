@@ -12,14 +12,11 @@ locals {
   # the two never undo each other. Changing this line does nothing once created.
   image_tag = "d8c4617"
   image     = "${local.region}-docker.pkg.dev/${local.project}/${google_artifact_registry_repository.app.repository_id}/api:${local.image_tag}"
-
-  # The site's public address; the app uses it to build login links. (The
-  # service also answers at https://hablemos-api-529979780991.us-east1.run.app.)
-  base_url = "https://${local.domain}"
 }
 
 resource "google_cloud_run_v2_service" "api" {
-  name     = "hablemos-api"
+  for_each = local.envs # one per environment (envs.tf)
+  name     = each.value.service_name
   location = local.region
   ingress  = "INGRESS_TRAFFIC_ALL" # reachable from the internet
 
@@ -28,8 +25,8 @@ resource "google_cloud_run_v2_service" "api" {
   deletion_protection = false
 
   template {
-    # Run as our own identity, with only the permissions granted in database.tf.
-    service_account = google_service_account.api.email
+    # Run as this environment's identity, with only the permissions granted in database.tf.
+    service_account = google_service_account.api[each.key].email
 
     scaling {
       min_instance_count = 0 # scale to zero when idle (cold start on the next request)
@@ -64,14 +61,14 @@ resource "google_cloud_run_v2_service" "api" {
         name = "DATABASE_URL"
         value_source {
           secret_key_ref {
-            secret  = google_secret_manager_secret.database_url.secret_id
-            version = google_secret_manager_secret_version.database_url.version
+            secret  = google_secret_manager_secret.database_url[each.key].secret_id
+            version = google_secret_manager_secret_version.database_url[each.key].version
           }
         }
       }
       env {
-        name  = "APP_BASE_URL"
-        value = local.base_url
+        name  = "APP_BASE_URL" # the site's public address, used in login links
+        value = each.value.base_url
       }
       # Lets the app email login links through Resend (cmd/api/email.go). The
       # value is added by hand (docs/deploy.md); "latest" picks up a rotated key
@@ -85,7 +82,15 @@ resource "google_cloud_run_v2_service" "api" {
           }
         }
       }
-      # No APP_ENV here: that's dev only (links go to the log instead of email).
+      # APP_ENV only where the environment sets one (staging); production has
+      # none. A "dynamic" block writes the env block zero or one times.
+      dynamic "env" {
+        for_each = each.value.app_env == "" ? [] : [each.value.app_env]
+        content {
+          name  = "APP_ENV"
+          value = env.value
+        }
+      }
 
       volume_mounts {
         name       = "cloudsql"
@@ -116,7 +121,8 @@ resource "google_cloud_run_v2_service" "api" {
 #   gcloud run jobs execute migrate --region us-east1 --wait
 # Deploys run it first, so new code never meets an old schema.
 resource "google_cloud_run_v2_job" "migrate" {
-  name                = "migrate"
+  for_each            = local.envs
+  name                = each.value.job_name
   location            = local.region
   deletion_protection = false # holds no data
 
@@ -124,8 +130,8 @@ resource "google_cloud_run_v2_job" "migrate" {
     task_count = 1 # one copy; the advisory lock would serialize extras anyway
 
     template {
-      service_account = google_service_account.api.email # same permissions as the app
-      max_retries     = 0                                # a failed migration needs a human, not a retry
+      service_account = google_service_account.api[each.key].email # same permissions as the app
+      max_retries     = 0                                          # a failed migration needs a human, not a retry
       timeout         = "600s"
 
       volumes {
@@ -150,8 +156,8 @@ resource "google_cloud_run_v2_job" "migrate" {
           name = "DATABASE_URL"
           value_source {
             secret_key_ref {
-              secret  = google_secret_manager_secret.database_url.secret_id
-              version = google_secret_manager_secret_version.database_url.version
+              secret  = google_secret_manager_secret.database_url[each.key].secret_id
+              version = google_secret_manager_secret_version.database_url[each.key].version
             }
           }
         }
@@ -179,13 +185,14 @@ resource "google_cloud_run_v2_job" "migrate" {
 # Let anyone on the internet call the service (it's a public website). Without
 # this, Cloud Run answers 403 to every request that isn't signed with a Google identity.
 resource "google_cloud_run_v2_service_iam_member" "public" {
-  name     = google_cloud_run_v2_service.api.name
+  for_each = local.envs
+  name     = google_cloud_run_v2_service.api[each.key].name
   location = local.region
   role     = "roles/run.invoker"
   member   = "allUsers"
 }
 
 output "service_url" {
-  description = "The app's Cloud Run address"
-  value       = google_cloud_run_v2_service.api.uri
+  description = "The production app's Cloud Run address"
+  value       = google_cloud_run_v2_service.api["prod"].uri
 }

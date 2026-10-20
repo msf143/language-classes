@@ -58,7 +58,7 @@ resource "google_cloud_run_domain_mapping" "apex" {
     namespace = local.project
   }
   spec {
-    route_name = google_cloud_run_v2_service.api.name
+    route_name = google_cloud_run_v2_service.api["prod"].name
   }
 
   depends_on = [google_site_verification_web_resource.domain]
@@ -109,7 +109,7 @@ resource "google_cloud_run_domain_mapping" "www" {
     namespace = local.project
   }
   spec {
-    route_name = google_cloud_run_v2_service.api.name
+    route_name = google_cloud_run_v2_service.api["prod"].name
   }
 
   depends_on = [google_site_verification_web_resource.domain]
