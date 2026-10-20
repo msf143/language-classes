@@ -213,6 +213,41 @@ avoids needing Cloudflare's proxy or a Google load balancer just for a redirect.
 `gcloud beta run domain-mappings describe --domain hablemos.live --region us-east1`
 (the `CertificateProvisioned` condition turns `True` when HTTPS is ready).
 
+## Email: sending login links (Resend)
+
+Login links are sent through [Resend](https://resend.com) (account owner: Mike). For Gmail, Outlook
+and others to accept mail "from" `hablemos.live`, `infra/email.tf` publishes the records Resend
+asks for (Resend dashboard: Domains > hablemos.live > Records):
+
+| Record | Type | Purpose |
+|---|---|---|
+| `resend._domainkey` | TXT | **DKIM** public key. Resend signs each message with the private half; receivers verify it, so forged or altered mail fails. |
+| `send`, `rsend` | CNAME → `*.forge.rmta.net` | Delegates the sending subdomains to Resend, which publishes **SPF** and bounce handling there and can change them without our DNS changing. |
+| `_dmarc` | TXT | **DMARC** policy for failed checks. `p=none` (report only) for now; tighten to `quarantine` once mail flows cleanly. |
+
+All values are public. Never use Resend's "Auto configure" button: it would create records
+outside Terraform. The domain is verified in Resend (Verify button) after the records exist.
+
+### The API key
+
+The app authenticates to Resend with an API key kept in Secret Manager as `resend-api-key`.
+Terraform creates the (empty) secret and lets `hablemos-api` read it; the value is added by hand,
+so it never appears in a file, git, or Terraform state.
+
+In Resend: **API Keys > Create API Key**, permission **Sending access**, domain **hablemos.live**
+(a key that can only send, only from our domain). Copy it, then:
+
+```bash
+read -rsp "Paste the Resend API key, then press Enter: " RESEND_KEY; echo
+printf '%s' "$RESEND_KEY" | gcloud secrets versions add resend-api-key --data-file=-
+unset RESEND_KEY
+```
+
+`read -s` doesn't echo what you paste and keeps it out of the shell history; `printf '%s'` adds no
+trailing newline; `--data-file=-` reads the value from the pipe. **To rotate:** create a new key in
+Resend, run the same three lines (a new secret version), redeploy (Cloud Run reads secrets when an
+instance starts), then delete the old key in Resend.
+
 ## GitHub Actions: deploying without a stored key
 
 `infra/github.tf` sets up **Workload Identity Federation**: Google trusts identity tokens that

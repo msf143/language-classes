@@ -249,8 +249,10 @@ For what's already built, read the code and `git log`. Next, in order:
      - [x] `.github/workflows/deploy.yml` (test on push/PR with Postgres service; main only:
            build/push `api:<short sha>`, run `migrate` job, update service, curl /health). CI owns the
            image (`ignore_changes` in `run.tf`). First run green 2026-10-20 (`1f668ae`, revision 00004).
-   - [ ] **← resume here:** Email provider: Resend (Mike created the account 2026-10-20): DKIM/SPF DNS records,
-         send real login links. Until then prod sign-in fails on purpose.
+   - [ ] **← resume here:** Email provider: Resend (Mike created the account 2026-10-20). Step 1: DNS records
+         in `infra/email.tf` (DKIM, send/rsend CNAMEs, DMARC p=none), then Verify in Resend. Step 2: API key in
+         Secret Manager. Step 3: Go sender via net/http.
+         Until then prod sign-in fails on purpose.
 3. **Booking:** `POST /bookings` in one transaction (check seats, debit credits, insert booking +
    attendees + outbox event), with idempotency keys. First handler + transaction tests go here.
 4. **Teacher side:** publish availability blocks; API computes bookable private slots.
