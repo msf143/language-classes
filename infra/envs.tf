@@ -19,5 +19,20 @@ locals {
       base_url            = "https://hablemos.live" # used in login links
       app_env             = ""                      # APP_ENV; "" = production (not set)
     }
+
+    # https://dev.hablemos.live: a full copy for testing with fake money.
+    # Its own database and identity; it can't read production's data or secret.
+    staging = {
+      service_name        = "hablemos-staging"
+      job_name            = "migrate-staging"
+      service_account     = "hablemos-staging"
+      display_name        = "hablemos.live STAGING (Cloud Run)"
+      db_name             = "staging"
+      db_user             = "staging"
+      db_password_version = 1
+      secret_id           = "database-url-staging"
+      base_url            = "https://dev.hablemos.live"
+      app_env             = "staging" # turns on the test banner, test credit, [TEST] emails
+    }
   }
 }

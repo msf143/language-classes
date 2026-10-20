@@ -153,6 +153,30 @@ gcloud run services update hablemos-api --image $IMAGE --region us-east1 --quiet
 curl -s https://hablemos.live/health; echo   # expect {"status":"ok"}
 ```
 
+## Staging: https://dev.hablemos.live
+
+A second, complete copy of the app for testing with fake money, so friends can try new features
+before real students see them. It costs almost nothing extra: it shares the Cloud SQL instance and
+Cloud Run scales it to zero when idle.
+
+| | Production | Staging |
+|---|---|---|
+| Address | `https://hablemos.live` | `https://dev.hablemos.live` |
+| Cloud Run service / migration job | `hablemos-api` / `migrate` | `hablemos-staging` / `migrate-staging` |
+| Database / user on `hablemos-pg` | `app` / `app` | `staging` / `staging` |
+| Secret with its DATABASE_URL | `database-url` | `database-url-staging` |
+| Runs as (service account) | `hablemos-api` | `hablemos-staging` |
+| `APP_ENV` | not set | `staging` |
+
+In Terraform, each per-environment resource has `for_each = local.envs` (`infra/envs.tf`): one
+definition, one copy per entry in that map. Adding an environment means adding an entry (and its
+domain in `infra/domain.tf`). `infra/moved.tf` records the one-time rename of the production resources
+to their `["prod"]` addresses, so that change moved state only and touched nothing in the cloud.
+
+Isolation: each environment's service account can read only its own `database-url*` secret, so the
+staging app never has production's password. In the database, tables belong to the user that ran
+the migrations (`app` in production), and other users can't read them.
+
 ## Every piece
 
 | Piece | What it is | Closest IBM i idea | Defined in |

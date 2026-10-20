@@ -131,3 +131,31 @@ output "domain_mapping_records" {
   description = "DNS records the domain mapping asks for (should match the A/AAAA records above)"
   value       = google_cloud_run_domain_mapping.apex.status[0].resource_records
 }
+
+# ---------- 5. dev.hablemos.live -> the staging service ----------
+
+# Same pattern as www: a domain mapping (so Google accepts the name and issues
+# a certificate) and a CNAME to Google's front end. Subdomains of a verified
+# domain need no verification of their own.
+resource "google_cloud_run_domain_mapping" "dev" {
+  name     = "dev.${local.domain}"
+  location = local.region
+  metadata {
+    namespace = local.project
+  }
+  spec {
+    route_name = google_cloud_run_v2_service.api["staging"].name
+  }
+
+  depends_on = [google_site_verification_web_resource.domain]
+}
+
+resource "cloudflare_dns_record" "dev" {
+  zone_id = local.zone_id
+  name    = "dev.${local.domain}"
+  type    = "CNAME"
+  content = "ghs.googlehosted.com"
+  ttl     = 1
+  proxied = false
+  comment = "Staging: Cloud Run domain mapping (Terraform)"
+}
