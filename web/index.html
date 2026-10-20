@@ -93,6 +93,30 @@
     </div>
   </dialog>
 
+  <!-- Book dialog. app.js fills in the class, builds one checkbox per learner when
+       it opens, and updates the price and balance lines as boxes are ticked. -->
+  <dialog id="book-dialog" class="dialog" aria-labelledby="book-title">
+    <form id="book-form" novalidate>
+      <h2 id="book-title"></h2>
+      <p id="book-when" class="muted"></p>
+
+      <fieldset class="attendees">
+        <legend data-i18n="whoAttends"></legend>
+        <div id="book-learners"></div>
+        <p id="book-audience-note" class="muted small"></p>
+      </fieldset>
+
+      <p id="book-price" class="book-price"></p>
+      <p id="book-balance" class="muted"></p>
+      <p id="book-error" class="form-error" aria-live="polite"></p>
+
+      <div class="dialog-actions">
+        <button type="button" class="btn-secondary" data-action="close-book" data-i18n="cancel"></button>
+        <button type="submit" class="btn-primary" id="book-submit"></button>
+      </div>
+    </form>
+  </dialog>
+
   <div id="toast" class="toast" role="status" hidden></div>
 </body>
 </html>

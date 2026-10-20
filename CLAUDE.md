@@ -280,20 +280,23 @@ For what's already built, read the code and `git log`. Next, in order:
          fail with the `FOR UPDATE`s removed) + seed additions (group prices, Ana's $50, seed attendees).
          Seats taken = `SUM(party_size)` of confirmed bookings. Errors via `writeErrorCode`; codes also
          `session_not_found`, `unknown_learner`, `idempotency_key_reused` (422).
-   - [ ] **← resume here:** 3b. "Book" button in the catalog: pick learners, confirm price, show balance.
+   - [x] 3b. "Book" button in the catalog: pick learners, confirm price, show balance.
          Pieces: (1) [x] `GET /me` returns `balance_cents` + `learners`; (2) [x] `GET /sessions` returns
          `prices` per party size (tests now cancel their sessions via `cancelWhenDone`); (2b) [x] every
          account holder has a learner: created at first sign-in, migration 000004 backfills (skips
-         teachers); (3) [ ] the Book `<dialog>` (pick learners, live price, balance before/after; signed
-         out → sign-in first); (4) [ ] POST with an Idempotency-Key, translated error codes, refresh.
-   - [ ] 3c. **Staging environment** `https://dev.hablemos.live`, so friends can test with fake money.
+         teachers); (3) [x] the Book `<dialog>` (pick learners, live price, balance before/after; signed
+         out → sign-in first); (4) [x] POST with an Idempotency-Key (new per open / tick change, reused on retry), translated
+         error codes, reload balance + seats. Verified in headless Chrome (2026-10-20).
+   - [ ] **← resume here:** 3c. **Staging environment** `https://dev.hablemos.live`, so friends can test with fake money.
          Second Cloud Run service `hablemos-staging` and a second database `staging` (own user) on the same
          Cloud SQL instance (~$0 extra); own service account and `database-url-staging` secret; seed data
          allowed; staging-only "add $50 test credit" button and a "Test site" banner; `[TEST]` in email
          subjects. Terraform: `for_each` over an environments map, `moved` blocks so prod resources are
          renamed, not recreated (check the plan). Pipeline: main → staging automatically → GitHub
          environment approval → the same image to prod.
-   - [ ] 3d. Cancel a booking: refund rules (>24h full, within 24h 50%) as new ledger entries.
+   - [ ] 3d. Cancel a booking: refund rules (>24h full, within 24h 50%) as new ledger entries. Also
+         "my bookings": show "You're booked" on catalog cards (today you only learn it by trying)
+         and list upcoming bookings with a Cancel button.
 4. **Teacher side:** publish availability blocks; API computes bookable private slots.
 5. **Worker:** process `outbox_event` (claim rows with `FOR UPDATE SKIP LOCKED`), send emails and
    reminders, run the 24h group-minimum check, purge expired login tokens and web sessions.

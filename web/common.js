@@ -38,13 +38,14 @@ function renderStaticText() {
   }
 }
 
-// api(method, path, body?) calls our server and never throws. It resolves to
-// { ok, status, data, requestId }; status is 0 if the network failed.
+// api(method, path, body?, headers?) calls our server and never throws. It
+// resolves to { ok, status, data, requestId }; status is 0 if the network failed.
 // Each call sends its own X-Request-ID, so a browser error and the server's
-// log line share an ID ("Reference" in error messages).
-async function api(method, path, body) {
+// log line share an ID ("Reference" in error messages). headers adds more,
+// e.g. { "Idempotency-Key": "..." }.
+async function api(method, path, body, headers = {}) {
   const requestId = crypto.randomUUID().replaceAll("-", "").slice(0, 16);
-  const options = { method, headers: { "X-Request-ID": requestId } };
+  const options = { method, headers: { ...headers, "X-Request-ID": requestId } };
   if (body !== undefined) {
     options.headers["Content-Type"] = "application/json";
     options.body = JSON.stringify(body);

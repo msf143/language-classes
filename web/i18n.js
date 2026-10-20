@@ -26,6 +26,28 @@ const STRINGS = {
     retry: "Try again",
     bookingSoon: "Booking is coming soon!",
 
+    // Book dialog
+    whoAttends: "Who's attending?",
+    child: "child",
+    adultsOnlyNote: "This class is for adults only.",
+    kidsOnlyNote: "This class is for children only.",
+    chooseAttendees: "Choose who's attending.",
+    priceLine: (n, each, total) => `${n} × ${each} = ${total}`,
+    noPriceForParty: "This class isn't available for that many people.",
+    notEnoughSeats: (n) => (n === 1 ? "Only 1 seat left." : `Only ${n} seats left.`),
+    balanceAfter: (now, after) => `Your credit: ${now} → ${after} after booking.`,
+    balanceShort: (now) => `Your credit: ${now}. That's not enough for this booking.`,
+    bookFor: (total) => `Book for ${total}`,
+    booking: "Booking…",
+    booked: (title) => `Booked: ${title}. See you in class!`,
+    // Why a booking was refused (by the error code the server sends)
+    errInsufficientCredit: "You don't have enough credit for this booking.",
+    errSessionFull: "Sorry, there aren't enough seats left in this class.",
+    errSessionNotOpen: "Sorry, this class is no longer open for booking.",
+    errAlreadyBooked: "Someone you picked already has a seat in this class.",
+    errAudience: "Someone you picked can't attend this class (age group).",
+    errSignedOut: "Your sign-in has expired. Please sign in again.",
+
     // Sign-in (header + dialog)
     signIn: "Sign in",
     signOut: "Sign out",
@@ -77,6 +99,27 @@ const STRINGS = {
     reference: "Referencia",
     retry: "Intentar de nuevo",
     bookingSoon: "¡Las reservas llegan pronto!",
+
+    // Diálogo de reserva
+    whoAttends: "¿Quién asistirá?",
+    child: "menor",
+    adultsOnlyNote: "Esta clase es solo para adultos.",
+    kidsOnlyNote: "Esta clase es solo para niños.",
+    chooseAttendees: "Elige quién asistirá.",
+    priceLine: (n, each, total) => `${n} × ${each} = ${total}`,
+    noPriceForParty: "Esta clase no está disponible para tantas personas.",
+    notEnoughSeats: (n) => (n === 1 ? "Solo queda 1 cupo." : `Solo quedan ${n} cupos.`),
+    balanceAfter: (now, after) => `Tu crédito: ${now} → ${after} después de reservar.`,
+    balanceShort: (now) => `Tu crédito: ${now}. No alcanza para esta reserva.`,
+    bookFor: (total) => `Reservar por ${total}`,
+    booking: "Reservando…",
+    booked: (title) => `Reservado: ${title}. ¡Nos vemos en clase!`,
+    errInsufficientCredit: "No tienes suficiente crédito para esta reserva.",
+    errSessionFull: "Lo sentimos, no quedan suficientes cupos en esta clase.",
+    errSessionNotOpen: "Lo sentimos, esta clase ya no está abierta para reservas.",
+    errAlreadyBooked: "Alguien que elegiste ya tiene un cupo en esta clase.",
+    errAudience: "Alguien que elegiste no puede asistir a esta clase (grupo de edad).",
+    errSignedOut: "Tu sesión expiró. Por favor, inicia sesión de nuevo.",
 
     // Sign-in (header + dialog)
     signIn: "Iniciar sesión",

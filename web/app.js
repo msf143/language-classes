@@ -10,6 +10,15 @@ const state = {
   error: null,                     // { requestId } when status is "error"
 
   me: undefined,                   // undefined = not checked yet, null = signed out, else the account
+                                   // plus balanceCents and learners (from GET /me)
+  book: {
+    open: false,                   // is the Book dialog showing?
+    sessionId: null,               // which class
+    learnerIds: [],                // who's ticked (copied from the checkboxes on every change)
+    key: "",                       // Idempotency-Key for this attempt: new when opened or ticks change
+    status: "idle",                // "idle" | "sending"
+    error: null,                   // { key, requestId? } when the last attempt failed
+  },
   signin: {
     open: false,                   // is the sign-in dialog showing?
     status: "idle",                // "idle" | "sending" | "sent" | "error"
@@ -26,6 +35,8 @@ const toastEl = document.querySelector("#toast");
 const accountEl = document.querySelector("#account-area");
 const dialogEl = document.querySelector("#signin-dialog");
 const signinFormEl = document.querySelector("#signin-form");
+const bookDialogEl = document.querySelector("#book-dialog");
+const bookFormEl = document.querySelector("#book-form");
 
 // The visitor's time zone, e.g. "America/New_York". The API sends UTC; we convert here.
 const visitorTimeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
@@ -59,7 +70,7 @@ async function loadSessions() {
 async function loadMe() {
   const res = await api("GET", "/me");
   if (res.ok) {
-    state.me = res.data.account;
+    state.me = { ...res.data.account, balanceCents: res.data.balance_cents, learners: res.data.learners };
   } else {
     if (res.status !== 401) console.error("loadMe failed", res);   // 401 just means signed out
     state.me = null;
@@ -105,6 +116,7 @@ function render() {
   tzNoteEl.textContent = t("timesShown", visitorTimeZone);
   renderAccount();
   renderSignin();
+  renderBook();
   renderFilters();
   renderStatus();
   renderList();
@@ -189,14 +201,7 @@ function renderList() {
 // Build one class card. Only textContent is used for data, never innerHTML,
 // so nothing from the server can inject HTML into the page.
 function sessionCard(s) {
-  const start = new Date(s.starts_at);
-  const dateText = new Intl.DateTimeFormat(state.uiLang, {
-    weekday: "long", month: "long", day: "numeric",
-  }).format(start).replace(/^./, (c) => c.toUpperCase());   // "sábado…" → "Sábado…"
-  const timeText = new Intl.DateTimeFormat(state.uiLang, {
-    hour: "numeric", minute: "2-digit",
-  }).format(start);
-
+  const { dateText, timeText } = formatWhen(s);
   const title = s.title;
   const languageTag = s.target_language === "es" ? t("learnSpanish") : t("learnEnglish");
   const audienceText = { adults: t("adults"), kids: t("kids"), all: t("allAges") }[s.audience];
@@ -232,12 +237,177 @@ function sessionCard(s) {
   );
 }
 
+// A session's date and start time in the visitor's language and time zone.
+function formatWhen(s) {
+  const start = new Date(s.starts_at);
+  const dateText = new Intl.DateTimeFormat(state.uiLang, {
+    weekday: "long", month: "long", day: "numeric",
+  }).format(start).replace(/^./, (c) => c.toUpperCase());   // "sábado…" → "Sábado…"
+  const timeText = new Intl.DateTimeFormat(state.uiLang, {
+    hour: "numeric", minute: "2-digit",
+  }).format(start);
+  return { dateText, timeText };
+}
+
+// money(1500) → "$15.00" (English) or "15,00 US$" (Spanish). The API sends whole
+// cents; dividing by 100 here is for display only, never for arithmetic.
+function money(cents, currency = "USD") {
+  return new Intl.NumberFormat(state.uiLang, { style: "currency", currency }).format(cents / 100);
+}
+
 let toastTimer;
 function showToast(message) {
   toastEl.textContent = message;
   toastEl.hidden = false;
   clearTimeout(toastTimer);
   toastTimer = setTimeout(() => { toastEl.hidden = true; }, 4000);
+}
+
+// ---------- book dialog ----------
+
+// Can this learner attend this session? Same rule the server checks.
+function canAttend(session, learner) {
+  if (session.audience === "adults") return !learner.is_minor;
+  if (session.audience === "kids") return learner.is_minor;
+  return true;   // "all": anyone
+}
+
+// What booking n people into session s costs, or which message says why it can't
+// be booked. The server decides for real; this is so the dialog can show it first.
+function quote(s, n) {
+  if (n === 0) return { problem: "chooseAttendees" };
+  if (s.seats_left !== null && n > s.seats_left) return { problem: "notEnoughSeats" };
+  const price = s.prices.find((p) => p.party_size === n);
+  if (!price) return { problem: "noPriceForParty" };
+  const each = price.price_per_person_cents;
+  return { each, total: each * n, currency: price.currency };
+}
+
+// Open the dialog for a session. The checkboxes are built once, here, not on
+// every render: rebuilding them would lose keyboard focus while someone ticks.
+function openBook(sessionId) {
+  const session = state.sessions.find((s) => s.id === sessionId);
+  if (!session) return;
+  const eligible = state.me.learners.filter((l) => canAttend(session, l));
+  const preselect = eligible.length === 1 ? eligible[0].id : null;   // only one person? tick them
+
+  document.querySelector("#book-learners").replaceChildren(...state.me.learners.map((l) => {
+    const ok = canAttend(session, l);
+    return h("label", { class: ok ? "attendee" : "attendee is-disabled" },
+      h("input", {
+        type: "checkbox", name: "learner", value: l.id,
+        disabled: ok ? null : "", checked: l.id === preselect ? "" : null,
+      }),
+      l.is_minor ? `${l.display_name} (${t("child")})` : l.display_name,
+    );
+  }));
+
+  state.book = {
+    open: true, sessionId, learnerIds: preselect ? [preselect] : [],
+    key: crypto.randomUUID(), status: "idle", error: null,
+  };
+  render();
+}
+
+// Which message to show for an error code from POST /bookings.
+const bookingErrorKeys = {
+  insufficient_credit: "errInsufficientCredit",
+  session_full: "errSessionFull",
+  session_not_open: "errSessionNotOpen",
+  session_not_found: "errSessionNotOpen",
+  already_booked: "errAlreadyBooked",
+  audience_mismatch: "errAudience",
+  no_price: "noPriceForParty",
+};
+
+// Send the booking. Pressing Book again after a failure resends the same
+// Idempotency-Key, so if the first request did get through, the server answers
+// with that booking instead of booking (and charging) a second time.
+async function submitBooking() {
+  const b = state.book;
+  b.status = "sending";
+  b.error = null;
+  render();
+
+  const res = await api("POST", "/bookings",
+    { session_id: b.sessionId, learner_ids: b.learnerIds },
+    { "Idempotency-Key": b.key });
+  b.status = "idle";
+
+  if (res.ok) {   // 201 booked now, or 200 = this attempt had already gone through
+    const title = state.sessions.find((s) => s.id === b.sessionId)?.title ?? "";
+    b.open = false;
+    render();
+    showToast(t("booked", title));
+    loadMe();         // new balance
+    loadSessions();   // new seat counts
+    return;
+  }
+  if (res.status === 401) {   // signed out meanwhile (expired, or signed out in another tab)
+    b.open = false;
+    state.me = null;
+    openSignin();
+    state.signin.error = { key: "errSignedOut" };
+    state.signin.status = "error";
+    render();
+    return;
+  }
+  const key = bookingErrorKeys[res.data.code];
+  b.error = key ? { key } : { key: "somethingWrong", requestId: res.requestId };
+  render();
+  // The class or the balance may have changed since the page loaded (someone
+  // took the last seat, say): reload both so the dialog shows the real numbers.
+  if (key) { loadMe(); loadSessions(); }
+}
+
+// Fill in the dialog from state: which class, why some people are greyed out,
+// the price for who's ticked, and the balance before and after.
+function renderBook() {
+  const b = state.book;
+  if (b.open && !bookDialogEl.open) bookDialogEl.showModal();
+  if (!b.open && bookDialogEl.open) bookDialogEl.close();
+  if (!b.open) return;
+
+  const s = state.sessions.find((x) => x.id === b.sessionId);
+  if (!s) {   // the class vanished from the list on a reload (started or cancelled)
+    b.open = false;
+    bookDialogEl.close();
+    return;
+  }
+  const { dateText, timeText } = formatWhen(s);
+
+  const err = b.error;
+  document.querySelector("#book-error").textContent =
+    err ? t(err.key) + (err.requestId ? ` ${t("reference")}: ${err.requestId}` : "") : "";
+  document.querySelector("#book-title").textContent = s.title;
+  document.querySelector("#book-when").textContent =
+    `${dateText} · ${timeText} · ${t("minutes", s.duration_minutes)}`;
+
+  const someoneExcluded = state.me.learners.some((l) => !canAttend(s, l));
+  document.querySelector("#book-audience-note").textContent =
+    !someoneExcluded ? "" : s.audience === "adults" ? t("adultsOnlyNote") : t("kidsOnlyNote");
+
+  const q = quote(s, b.learnerIds.length);
+  const priceEl = document.querySelector("#book-price");
+  const balanceEl = document.querySelector("#book-balance");
+  const submit = document.querySelector("#book-submit");
+  const balance = state.me.balanceCents;
+
+  if (q.problem) {
+    priceEl.textContent = t(q.problem, s.seats_left);
+    balanceEl.textContent = "";
+    submit.textContent = t("book");
+    submit.disabled = true;
+    return;
+  }
+  const short = q.total > balance;
+  priceEl.textContent = t("priceLine", b.learnerIds.length, money(q.each, q.currency), money(q.total, q.currency));
+  balanceEl.textContent = short
+    ? t("balanceShort", money(balance))
+    : t("balanceAfter", money(balance), money(balance - q.total));
+  balanceEl.classList.toggle("is-short", short);
+  submit.textContent = b.status === "sending" ? t("booking") : t("bookFor", money(q.total, q.currency));
+  submit.disabled = short || b.status === "sending";   // no double submits while one is on its way
 }
 
 function openSignin() {
@@ -264,7 +434,13 @@ document.addEventListener("click", (e) => {
 
   const action = e.target.closest("[data-action]")?.dataset.action;
   if (action === "retry") loadSessions();
-  if (action === "book") showToast(t("bookingSoon"));   // real booking comes in step 3
+  if (action === "book") {
+    // Signed out: sign in first. Still checking (undefined): ignore the click.
+    const sessionId = e.target.closest("[data-session-id]").dataset.sessionId;
+    if (state.me === null) openSignin();
+    else if (state.me) openBook(sessionId);
+  }
+  if (action === "close-book") { state.book.open = false; render(); }
   if (action === "open-signin") openSignin();
   if (action === "close-signin") { state.signin.open = false; render(); }
   if (action === "logout") logout();
@@ -274,6 +450,11 @@ document.addEventListener("click", (e) => {
 // preventDefault stops the browser's own submit (a full page load); we send
 // the data with fetch instead. FormData reads the form's current input values.
 document.addEventListener("submit", (e) => {
+  if (e.target === bookFormEl) {
+    e.preventDefault();
+    if (state.book.status !== "sending") submitBooking();
+    return;
+  }
   if (e.target !== signinFormEl) return;
   e.preventDefault();
   const email = String(new FormData(signinFormEl).get("email")).trim();
@@ -286,9 +467,21 @@ document.addEventListener("submit", (e) => {
   requestLink(email);
 });
 
+// Ticking or unticking a box in the Book dialog: copy who's ticked into state
+// (FormData reads the checked boxes named "learner"), then re-render the price.
+// "change" bubbles, so one document listener catches it.
+document.addEventListener("change", (e) => {
+  if (e.target.form !== bookFormEl) return;
+  state.book.learnerIds = new FormData(bookFormEl).getAll("learner");
+  state.book.key = crypto.randomUUID();   // different people = a different booking attempt
+  state.book.error = null;
+  render();
+});
+
 // Esc closes a <dialog> on its own; keep state in step when that happens.
-// ("close" doesn't bubble, so this listener sits on the dialog itself.)
+// ("close" doesn't bubble, so these listeners sit on the dialogs themselves.)
 dialogEl.addEventListener("close", () => { state.signin.open = false; });
+bookDialogEl.addEventListener("close", () => { state.book.open = false; });
 
 // signin.html links here as /#signin ("Request a new link"): open the dialog,
 // then drop the #signin so a reload doesn't reopen it.

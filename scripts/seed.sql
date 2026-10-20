@@ -22,6 +22,11 @@ INSERT INTO learner (id, account_id, display_name, native_language) VALUES
   ('01900000-0000-7000-8000-0000000000c2', '01900000-0000-7000-8000-000000000003', 'Luis', 'es')
 ON CONFLICT (id) DO NOTHING;
 
+-- Ana's daughter: a child learner, so audience rules (adults / kids / all) show up in dev.
+INSERT INTO learner (id, account_id, display_name, native_language, is_minor) VALUES
+  ('01900000-0000-7000-8000-0000000000c3', '01900000-0000-7000-8000-000000000002', 'Sofía', 'en', true)
+ON CONFLICT (id) DO NOTHING;
+
 -- Sessions. occupied = start .. end + 5-minute buffer.
 -- Keep every session's hour distinct: on a re-run, rows move one at a time and the
 -- no-double-booking constraint checks each move, so a shared hour on different days
