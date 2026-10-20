@@ -20,6 +20,11 @@ terraform {
       source  = "hashicorp/google"
       version = "~> 7.0"
     }
+    # DNS records for hablemos.live (see domain.tf).
+    cloudflare = {
+      source  = "cloudflare/cloudflare"
+      version = "~> 5.0"
+    }
     # Generates the database password (see database.tf).
     random = {
       source  = "hashicorp/random"
@@ -32,4 +37,15 @@ terraform {
 provider "google" {
   project = local.project
   region  = local.region
+
+  # Charge API usage to our project. With a personal login, some APIs (Site
+  # Verification) otherwise get charged to the project gcloud itself belongs
+  # to, which hasn't turned them on: "requires a quota project". The identity
+  # running Terraform needs serviceusage.services.use here (owners have it).
+  user_project_override = true
+  billing_project       = local.project
 }
+
+# Credentials come from the CLOUDFLARE_API_TOKEN environment variable (a
+# Codespaces secret). The token may only edit DNS in the hablemos.live zone.
+provider "cloudflare" {}

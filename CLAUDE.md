@@ -196,8 +196,10 @@ For what's already built, read the code and `git log`. Next, in order:
      `CLOUDFLARE_API_TOKEN`, so it's an env var in the Codespace. Never print or commit it.
    - Terraform state bucket `gs://hablemos-live-tfstate` (us-east1, versioned).
    - **Resuming after a break or rebuild** (credentials expire or live in the home dir). Mike runs:
-     `gcloud auth login --no-launch-browser`, `gcloud auth application-default login --no-launch-browser`,
-     `gcloud config set project hablemos-live`. Check: `gcloud auth list`, and
+     `gcloud auth login --no-launch-browser`, then the application-default login **with the
+     site-verification scope** (Terraform's `domain.tf` needs it):
+     `gcloud auth application-default login --no-launch-browser --scopes=openid,https://www.googleapis.com/auth/userinfo.email,https://www.googleapis.com/auth/cloud-platform,https://www.googleapis.com/auth/sqlservice.login,https://www.googleapis.com/auth/siteverification`,
+     then `gcloud config set project hablemos-live`. Check: `gcloud auth list`, and
      `cd infra && terraform plan` should say "no differences" (Terraform and the proxy use the
      application-default login; `docker push` uses the first). Claude's auto mode may not read
      prod (secret, prod DB), so Mike runs `scripts/prod-db.sh` himself.

@@ -14,6 +14,7 @@ resource "google_project_service" "api" {
     "run.googleapis.com",              # Cloud Run
     "sqladmin.googleapis.com",         # Cloud SQL
     "secretmanager.googleapis.com",    # DB password
+    "siteverification.googleapis.com", # prove we own hablemos.live
   ])
   service = each.key
 

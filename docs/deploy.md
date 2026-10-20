@@ -130,6 +130,48 @@ revision keeps serving until the new one is ready. Each apply creates a new Clou
 | IAM grants | `cloudsql.client` and `secretAccessor` for the service account | Object authorities granted to that profile | `infra/database.tf` |
 | Cloud Run service | Runs the container on demand behind an HTTPS URL | A subsystem that starts jobs when work arrives, ends them when idle | `infra/run.tf` |
 
+## Signing in (after a rebuild or when credentials expire)
+
+```bash
+gcloud auth login --no-launch-browser
+gcloud auth application-default login --no-launch-browser --scopes=openid,https://www.googleapis.com/auth/userinfo.email,https://www.googleapis.com/auth/cloud-platform,https://www.googleapis.com/auth/sqlservice.login,https://www.googleapis.com/auth/siteverification
+gcloud config set project hablemos-live
+```
+
+There are two logins because two kinds of program use them. The first is for the `gcloud`
+command itself (and `docker push`). The second, "application-default credentials", is a file
+other programs pick up: Terraform and the Cloud SQL Auth Proxy. Each prints a link; open it,
+approve, and paste the code back.
+
+The `--scopes` list is the default set plus `siteverification`. Proving domain ownership is a
+separate Google API from Cloud management, and `infra/domain.tf` uses it. Check with
+`cd infra && terraform plan`: it should say "no differences".
+
+## The domain: hablemos.live
+
+`infra/domain.tf` connects three parties:
+
+```mermaid
+sequenceDiagram
+    participant TF as Terraform
+    participant SV as Google Site Verification
+    participant CF as Cloudflare DNS
+    participant CR as Cloud Run
+
+    TF->>SV: give me a verification token for hablemos.live
+    TF->>CF: create TXT record with the token
+    TF->>SV: verify now (Google looks up the TXT record)
+    SV-->>TF: verified: you are an owner
+    TF->>CR: map hablemos.live to service hablemos-api
+    TF->>CF: create A + AAAA records pointing at Google's front end
+    Note over CR: Google issues the HTTPS certificate in the background (15 min to a few hours)
+```
+
+DNS records are **DNS only** (grey cloud): browsers look the name up at Cloudflare, then connect
+straight to Google. Check progress with
+`gcloud beta run domain-mappings describe --domain hablemos.live --region us-east1`
+(the `CertificateProvisioned` condition turns `True` when HTTPS is ready).
+
 ## Running migrations on prod
 
 For now migrations are run by hand from the Codespace with
