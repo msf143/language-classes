@@ -236,8 +236,7 @@ For what's already built, read the code and `git log`. Next, in order:
      - [x] Prod migrations with `scripts/prod-db.sh migrate up` (prod at version 3, 2026-10-19).
      - [x] `infra/run.tf`: Cloud Run service `hablemos-api` (image tag in `local.image_tag`, secret as
            `DATABASE_URL`, min 0 / max 2 instances, public invoker). `/health` → ok.
-     - Deploy a new version by hand until GitHub Actions: commit, build + push `api:$TAG`, set
-       `local.image_tag`, `terraform apply`; run `scripts/prod-db.sh migrate up` first if there are new migrations.
+     - Deploying: push to `main` (GitHub Actions). Rollback and a by-hand fallback: `docs/deploy.md`.
    - [x] Terraform part 2 (done 2026-10-20; https://hablemos.live live, certificates issued; `www`
          308-redirects via `redirectWWW` in Go; `APP_BASE_URL=https://hablemos.live`; running `c644394`): Cloudflare provider (DNS records) + Cloud Run domain mapping → https://hablemos.live.
    - [ ] GitHub Actions (repo `msf143/language-classes`, ID 1422089795) with Workload Identity Federation:
@@ -245,10 +244,12 @@ For what's already built, read the code and `git log`. Next, in order:
      - [x] `infra/github.tf` applied (pool `github`, provider `github-actions` limited to
            repo ID + owner ID + `refs/heads/main`, SA `github-deployer` with AR writer, run.developer,
            actAs hablemos-api).
-     - [ ] **← resume here:** Migration job: decided on a `migrate` mode in our binary (no new
-           dependency). Code + tests + Cloud Run Job `migrate` in `run.tf` written; deploy by hand
-           (commit, build/push, set tag, apply) and run `gcloud run jobs execute migrate --wait` once.
-     - [ ] `.github/workflows/deploy.yml`; CI owns the image tag (`ignore_changes` on image in `run.tf`).
+     - [x] Migration job: `api migrate` mode in our binary (no new dependency) + Cloud Run Job `migrate`.
+           Deployed `d8c4617`; first execution applied 0, version 3.
+     - [ ] **← resume here:** `.github/workflows/deploy.yml` written (test on push/PR with Postgres service;
+           main only: build/push `api:<short sha>`, run `migrate` job, update service, curl /health).
+           CI owns the image (`ignore_changes` in `run.tf`). Push it and watch the first run; then
+           `terraform plan` should still say "no differences".
    - [ ] Email provider (Resend preferred, or Postmark; Mike needs an account): DKIM/SPF DNS records,
          send real login links. Until then prod sign-in fails on purpose.
 3. **Booking:** `POST /bookings` in one transaction (check seats, debit credits, insert booking +

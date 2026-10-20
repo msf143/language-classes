@@ -1,0 +1,98 @@
+# Test every push and pull request; deploy pushes to main to https://hablemos.live.
+#
+#   test:   go vet + go test against a real Postgres (a throwaway container)
+#   deploy: only for main, only if test passed:
+#           build image -> push -> run migration job -> deploy service -> check /health
+#
+# Google sign-in uses Workload Identity Federation (infra/github.tf): no key is
+# stored in GitHub. Google only trusts runs of this repository on main.
+#
+# Third-party actions are pinned to a full commit SHA (the comment says which
+# release), so a moved or hijacked tag can't change what runs here.
+
+name: test and deploy
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch: # a "Run workflow" button on the Actions tab
+
+# Workflows get no permissions unless granted. Jobs below ask for what they need.
+permissions:
+  contents: read
+
+env:
+  REGION: us-east1
+  IMAGE_REPO: us-east1-docker.pkg.dev/hablemos-live/app/api
+
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    services:
+      # A real Postgres 16 for the tests, like the Codespace's db container.
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: app
+          POSTGRES_PASSWORD: app
+          POSTGRES_DB: app
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U app"
+          --health-interval 2s --health-timeout 5s --health-retries 15
+    env:
+      DATABASE_URL: postgres://app:app@localhost:5432/app?sslmode=disable
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+      - name: Apply migrations (with our own runner, as prod does)
+        run: go run ./cmd/api migrate
+      - run: go vet ./...
+      - run: go test ./...
+
+  deploy:
+    needs: test
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      id-token: write # lets the job ask GitHub for its signed identity token
+    # One deploy at a time; a newer push waits rather than cancelling one mid-way.
+    concurrency:
+      group: deploy-prod
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Sign in to Google (Workload Identity Federation)
+        uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3.0.0
+        with:
+          workload_identity_provider: projects/529979780991/locations/global/workloadIdentityPools/github/providers/github-actions
+          service_account: github-deployer@hablemos-live.iam.gserviceaccount.com
+
+      - name: Image name (tag = short commit hash, as when deploying by hand)
+        run: echo "IMAGE=$IMAGE_REPO:${GITHUB_SHA::7}" >> "$GITHUB_ENV"
+
+      - name: Build and push
+        run: |
+          gcloud auth configure-docker us-east1-docker.pkg.dev --quiet
+          docker build -t "$IMAGE" .
+          docker push "$IMAGE"
+
+      # Migrations first, so the new code never runs against an old schema.
+      # If this fails, the deploy stops and the current version keeps serving.
+      - name: Migrate the database
+        run: |
+          gcloud run jobs update migrate --image "$IMAGE" --region "$REGION" --quiet
+          gcloud run jobs execute migrate --region "$REGION" --wait
+
+      - name: Deploy the service
+        run: gcloud run services update hablemos-api --image "$IMAGE" --region "$REGION" --quiet
+
+      - name: Check the live site
+        run: |
+          curl -fsS --retry 5 --retry-delay 3 --retry-all-errors https://hablemos.live/health
+          echo

@@ -6,9 +6,10 @@
 # TLS in front; the Go server still speaks plain HTTP on $PORT.
 
 locals {
-  # Which image to run: a tag pushed to Artifact Registry (the git commit it was
-  # built from). To deploy a new version for now: build + push a new tag, change
-  # this, apply. GitHub Actions takes this job over later.
+  # The image the service and job were first created with. After that, GitHub
+  # Actions owns which image runs (.github/workflows/deploy.yml): it deploys every
+  # push to main, and Terraform ignores image changes (lifecycle blocks below), so
+  # the two never undo each other. Changing this line does nothing once created.
   image_tag = "d8c4617"
   image     = "${local.region}-docker.pkg.dev/${local.project}/${google_artifact_registry_repository.app.repository_id}/api:${local.image_tag}"
 
@@ -89,6 +90,12 @@ resource "google_cloud_run_v2_service" "api" {
     google_secret_manager_secret_iam_member.api_database_url,
     google_project_iam_member.api_sql_client,
   ]
+
+  # GitHub Actions deploys new images with gcloud, which also stamps which
+  # client made the change. Terraform still owns everything else here.
+  lifecycle {
+    ignore_changes = [template[0].containers[0].image, client, client_version]
+  }
 }
 
 # The migration job: the same image, started with the argument "migrate", so it
@@ -150,6 +157,11 @@ resource "google_cloud_run_v2_job" "migrate" {
     google_secret_manager_secret_iam_member.api_database_url,
     google_project_iam_member.api_sql_client,
   ]
+
+  # Same as the service: GitHub Actions sets the image on each deploy.
+  lifecycle {
+    ignore_changes = [template[0].template[0].containers[0].image, client, client_version]
+  }
 }
 
 # Let anyone on the internet call the service (it's a public website). Without

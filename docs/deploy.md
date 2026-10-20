@@ -83,25 +83,6 @@ service-projectnumber.region, used for `APP_BASE_URL` in `infra/run.tf`) and
 `https://hablemos-api-bfox5zpazq-ue.a.run.app` (the older hashed form, which `terraform output
 service_url` reports). Both reach the same service.
 
-## Deploying a new version (by hand, until GitHub Actions)
-
-```bash
-cd /workspaces/language-classes
-git status                                   # commit first: the tag is the commit
-TAG=$(git rev-parse --short HEAD)
-IMAGE=us-east1-docker.pkg.dev/hablemos-live/app/api:$TAG
-docker build -t $IMAGE . && docker push $IMAGE
-scripts/prod-db.sh migrate up                # only if there are new migrations
-# edit infra/run.tf: local.image_tag = "<the TAG printed above>"
-cd infra && terraform apply
-curl -s "$(terraform output -raw service_url)/health"; echo   # expect {"status":"ok"}
-```
-
-Migrations go first, so the new code never runs against an old schema. Keep migrations
-backward-compatible (add columns/tables; drop only in a later release), because the old
-revision keeps serving until the new one is ready. Each apply creates a new Cloud Run
-**revision**; the previous one stays available for rollback (set the old tag and apply again).
-
 ### Following one request
 
 1. The browser sends `GET /sessions` over HTTPS. Google terminates TLS, so the Go server
@@ -116,6 +97,61 @@ revision keeps serving until the new one is ready. Each apply creates a new Clou
    passes the Postgres protocol through. That's why the database needs no allowed networks.
 5. The query runs, JSON goes back, and the request log line (with its request ID) lands in
    Cloud Logging.
+
+## Deploying a new version
+
+**Push to `main`.** [`.github/workflows/deploy.yml`](../.github/workflows/deploy.yml) does the rest:
+
+```mermaid
+flowchart LR
+    push["git push<br/>(main)"] --> test["test<br/>go vet, go test<br/>+ throwaway Postgres"]
+    pr["pull request"] --> test
+    test -- "main only,<br/>tests passed" --> build["build + push<br/>api:&lt;short sha&gt;"]
+    build --> mig["Cloud Run job<br/>migrate"]
+    mig -- "succeeded" --> svc["Cloud Run service<br/>new revision"]
+    svc --> check["curl<br/>hablemos.live/health"]
+```
+
+Any failing step stops the run, and the version already live keeps serving. Watch runs on the
+repository's **Actions** tab, or with `gh run watch`.
+
+- **Order matters:** migrations run before the new code is deployed. Keep migrations
+  backward-compatible (add columns/tables; drop only in a later release), because the old
+  revision keeps serving until the new one is ready.
+- **Pull requests** run the tests only; they never get Google credentials.
+- **One deploy at a time:** a second push waits for the first to finish (`concurrency`).
+- **Who owns the image:** the workflow. Terraform ignores image changes on the service and the job
+  (`lifecycle { ignore_changes }` in `infra/run.tf`), so `terraform apply` never rolls back a deploy.
+  Terraform still owns everything else (env vars, scaling, secrets).
+- **Which commit is live:** the image tag is the commit's short hash:
+  `gcloud run services describe hablemos-api --region us-east1 --format='value(spec.template.spec.containers[0].image)'`
+
+### Rolling back
+
+Every deploy is a new **revision**, and old revisions stay around. To send traffic back to the
+previous one at once (no build):
+
+```bash
+gcloud run revisions list --service hablemos-api --region us-east1 --limit 5
+gcloud run services update-traffic hablemos-api --region us-east1 --to-revisions <REVISION_NAME>=100
+```
+
+`<REVISION_NAME>` is a placeholder: copy a name from the list, e.g. `hablemos-api-00003-vzp`.
+That pins traffic to that revision; the next deploy from `main` sends traffic to its own new
+revision again. Usually the better fix is `git revert` + push, which goes through tests.
+
+### By hand (if GitHub Actions is down)
+
+```bash
+cd /workspaces/language-classes
+git status                                   # commit first: the tag is the commit
+IMAGE=us-east1-docker.pkg.dev/hablemos-live/app/api:$(git rev-parse --short HEAD)
+docker build -t $IMAGE . && docker push $IMAGE
+gcloud run jobs update migrate --image $IMAGE --region us-east1 --quiet
+gcloud run jobs execute migrate --region us-east1 --wait
+gcloud run services update hablemos-api --image $IMAGE --region us-east1 --quiet
+curl -s https://hablemos.live/health; echo   # expect {"status":"ok"}
+```
 
 ## Every piece
 
