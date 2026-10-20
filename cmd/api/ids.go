@@ -31,3 +31,25 @@ func newUUIDv7() string {
 
 	return fmt.Sprintf("%x-%x-%x-%x-%x", b[0:4], b[4:6], b[6:8], b[8:10], b[10:16])
 }
+
+// isUUID reports whether s looks like a UUID (8-4-4-4-12 hex digits). Handlers
+// check IDs from requests with it, so a typo gets a clear 400 instead of a
+// Postgres "invalid input syntax for type uuid" error.
+func isUUID(s string) bool {
+	if len(s) != 36 {
+		return false
+	}
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		switch {
+		case i == 8 || i == 13 || i == 18 || i == 23:
+			if c != '-' {
+				return false
+			}
+		case '0' <= c && c <= '9', 'a' <= c && c <= 'f', 'A' <= c && c <= 'F':
+		default:
+			return false
+		}
+	}
+	return true
+}

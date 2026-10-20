@@ -59,4 +59,29 @@ INSERT INTO booking (id, session_id, payer_account_id, party_size,
    '01900000-0000-7000-8000-000000000003', 2, 1200, 2400, 'seed-2')
 ON CONFLICT (id) DO NOTHING;
 
+-- Who attends those bookings. Luis's private party of 2: Luis, plus a friend invited but not joined yet.
+INSERT INTO booking_attendee (id, booking_id, learner_id, invite_token, status) VALUES
+  ('01900000-0000-7000-8000-0000000000e1', '01900000-0000-7000-8000-0000000000d1',
+   '01900000-0000-7000-8000-0000000000c1', NULL, 'joined'),
+  ('01900000-0000-7000-8000-0000000000e2', '01900000-0000-7000-8000-0000000000d2',
+   '01900000-0000-7000-8000-0000000000c2', NULL, 'joined'),
+  ('01900000-0000-7000-8000-0000000000e3', '01900000-0000-7000-8000-0000000000d2',
+   NULL, 'seed-invite-token-1', 'invited')
+ON CONFLICT (id) DO NOTHING;
+
+-- Group prices per person: $8 / $12 / $15 for 30 / 45 / 60 minutes, the same for every
+-- party size (no family discount). IDs 01900000-...-000000000NMS: N=1, M=minutes, S=size.
+INSERT INTO price_tier (id, teacher_id, kind, duration_minutes, party_size, price_per_person_cents)
+SELECT format('01900000-0000-7000-8000-%s', lpad((100000 + d.minutes * 10 + size)::text, 12, '0'))::uuid,
+       '01900000-0000-7000-8000-0000000000a1', 'group', d.minutes, size, d.cents
+FROM (VALUES (30, 800), (45, 1200), (60, 1500)) AS d(minutes, cents)
+CROSS JOIN generate_series(1, 4) AS size
+ON CONFLICT (id) DO NOTHING;
+
+-- Ana starts with $50 of credit. An 'adjustment', since 'purchase' requires a real payment row.
+INSERT INTO credit_ledger (id, account_id, entry_type, amount_cents, note) VALUES
+  ('01900000-0000-7000-8000-0000000000f1', '01900000-0000-7000-8000-000000000002',
+   'adjustment', 5000, 'dev seed: starting credit')
+ON CONFLICT (id) DO NOTHING;
+
 COMMIT;

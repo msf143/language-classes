@@ -55,6 +55,7 @@ cmd/api/            main.go    server wiring, middleware, shared helpers (writeJ
                     email.go   resendSender (login links by email through Resend)
                     migrate.go `api migrate` (embedded migrations, one transaction each)
                     sessions.go GET /sessions
+                    bookings.go POST /bookings (one transaction, row locks, idempotency key)
                     one file per resource as the API grows (bookings.go, ...); *_test.go beside it
 migrations/         000NNN_description.up.sql / .down.sql  (numbered, append-only)
 scripts/seed.sql    dev seed data (idempotent; times relative to now()); never on prod
@@ -257,8 +258,37 @@ For what's already built, read the code and `git log`. Next, in order:
          hablemos.live); `resendSender` (`cmd/api/email.go`, plain-text bilingual email from
          login@hablemos.live). Real sign-in on https://hablemos.live works (2026-10-20, `ccd5222`).
          Later: tighten DMARC to `quarantine` once mail has flowed cleanly for a while.
-3. **← resume here: Booking:** `POST /bookings` in one transaction (check seats, debit credits, insert booking +
+3. **Booking:** `POST /bookings` in one transaction (check seats, debit credits, insert booking +
    attendees + outbox event), with idempotency keys. First handler + transaction tests go here.
+   Design (agreed 2026-10-20): group sessions first; private bookings wait for step 4.
+   - Request: `POST /bookings {"session_id", "learner_ids"}` + `Idempotency-Key` header; sign-in required.
+   - One transaction, READ COMMITTED + row locks, always in this order: lock payer `account` row
+     `FOR UPDATE` (serializes spending) → idempotency lookup (same key → return the existing booking, 200;
+     same key, different body → 422) → lock `session` `FOR UPDATE` (serializes seats) → checks (group,
+     scheduled/confirmed, not started; learners mine, active, fit audience, not already booked; seats derived)
+     → price tier valid now for teacher × kind × duration × **exact party size** (none → `no_price`) →
+     balance = ledger sum ≥ total → insert booking, attendees, ledger `spend` (−total), outbox `booking_created`.
+   - Errors carry a machine-readable `code` (`session_full`, `session_not_open`, `already_booked`,
+     `audience_mismatch`, `insufficient_credit`, `no_price`) so the UI translates them via `i18n.js`.
+   - Booking closes at the session's start time.
+   - Dev seed: group price tiers ($8 / $12 / $15 per person for 30 / 45 / 60 min, every party size) and a
+     $50 `adjustment` credit for Ana.
+   Steps:
+   - [x] 3a. `POST /bookings` (`cmd/api/bookings.go`) + DB tests incl. three race tests (verified they
+         fail with the `FOR UPDATE`s removed) + seed additions (group prices, Ana's $50, seed attendees).
+         Seats taken = `SUM(party_size)` of confirmed bookings. Errors via `writeErrorCode`; codes also
+         `session_not_found`, `unknown_learner`, `idempotency_key_reused` (422).
+   - [ ] **← resume here:** 3b. "Book" button in the catalog: pick learners, confirm price, show balance.
+         The front-end needs to know the price and the balance before booking (e.g. price on
+         `GET /sessions`, balance and learners on `GET /me`).
+   - [ ] 3c. **Staging environment** `https://dev.hablemos.live`, so friends can test with fake money.
+         Second Cloud Run service `hablemos-staging` and a second database `staging` (own user) on the same
+         Cloud SQL instance (~$0 extra); own service account and `database-url-staging` secret; seed data
+         allowed; staging-only "add $50 test credit" button and a "Test site" banner; `[TEST]` in email
+         subjects. Terraform: `for_each` over an environments map, `moved` blocks so prod resources are
+         renamed, not recreated (check the plan). Pipeline: main → staging automatically → GitHub
+         environment approval → the same image to prod.
+   - [ ] 3d. Cancel a booking: refund rules (>24h full, within 24h 50%) as new ledger entries.
 4. **Teacher side:** publish availability blocks; API computes bookable private slots.
 5. **Worker:** process `outbox_event` (claim rows with `FOR UPDATE SKIP LOCKED`), send emails and
    reminders, run the 24h group-minimum check, purge expired login tokens and web sessions.

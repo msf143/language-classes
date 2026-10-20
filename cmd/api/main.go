@@ -63,6 +63,7 @@ func main() {
 	})
 
 	mux.HandleFunc("GET /sessions", signedIn(pool, listSessions(pool)))
+	mux.HandleFunc("POST /bookings", requireSignIn(pool, createBooking(pool)))
 
 	// How login links reach people. Dev always logs them, so a dev setup can
 	// never email a real address by accident.
@@ -208,6 +209,13 @@ func writeJSON(w http.ResponseWriter, status int, v any) {
 func writeError(w http.ResponseWriter, r *http.Request, status int, msg string) {
 	id, _ := r.Context().Value(requestIDKey).(string)
 	writeJSON(w, status, map[string]string{"error": msg, "request_id": id})
+}
+
+// writeErrorCode is writeError plus a machine-readable code (e.g. "session_full"),
+// so the front-end can show its own translated message instead of msg.
+func writeErrorCode(w http.ResponseWriter, r *http.Request, status int, code, msg string) {
+	id, _ := r.Context().Value(requestIDKey).(string)
+	writeJSON(w, status, map[string]string{"error": msg, "code": code, "request_id": id})
 }
 
 func oneOf(v string, allowed ...string) bool {
