@@ -76,6 +76,7 @@ func main() {
 	mux.HandleFunc("GET /sessions", signedIn(pool, listSessions(pool)))
 	mux.HandleFunc("POST /bookings", requireSignIn(pool, createBooking(pool)))
 	mux.HandleFunc("GET /bookings", requireSignIn(pool, listMyBookings(pool)))
+	mux.HandleFunc("GET /private-slots", listPrivateSlots(pool)) // public, like the catalog
 	mux.HandleFunc("POST /bookings/{id}/cancel", requireSignIn(pool, cancelBooking(pool)))
 
 	// The teacher's side (teacher.go).

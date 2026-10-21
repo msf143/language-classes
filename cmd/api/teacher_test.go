@@ -25,6 +25,7 @@ func newSignedInTeacher(t *testing.T, pool *pgxpool.Pool) (*http.Cookie, string)
 	if _, err := pool.Exec(ctx, `INSERT INTO teacher (id, account_id) VALUES ($1, $2)`, teacherID, accountID); err != nil {
 		t.Fatal(err)
 	}
+	retireWhenDone(t, pool, teacherID)
 	return signIn(t, pool, email), teacherID
 }
 

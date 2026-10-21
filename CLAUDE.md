@@ -140,7 +140,9 @@ then find the link in the log.
   in constraints and transactions, and only the real database exercises those. Get a pool with
   `testPool(t)` (in `ids_test.go`), which skips the test when `DATABASE_URL` isn't set.
 - Tests create their own rows with fresh `newUUIDv7()` IDs and don't depend on seed data, so
-  they can run repeatedly against the dev database.
+  they can run repeatedly against the dev database. They tidy up by **status**, never by deleting:
+  `cancelWhenDone` (sessions) and `retireWhenDone` (teachers → inactive), so test data never shows up in
+  the dev catalog or the private slots.
 - Handler tests use `net/http/httptest` (call the handler directly; no running server needed).
 - **Race tests must be shown to fail without the lock they test** (remove the `FOR UPDATE`, run, restore).
   When the risky window is short, don't rely on goroutines happening to overlap: hold the row locked from
@@ -339,8 +341,11 @@ For what's already built, read the code and `git log`. Next, in order:
    Steps: [x] 4a teacher API (`cmd/api/teacher.go`: `requireTeacher` → 403 `not_teacher`; POST/GET
    `/teacher/availability` (repeat_weeks ≤ 12 via AddDate in the teacher's zone, one transaction, overlap →
    409 `block_overlap` from the EXCLUDE constraint); POST `/teacher/availability/{id}/withdraw`, idempotent); 4b `GET /private-slots`: [x] 4b-1 pure `bookableStarts` (`cmd/api/slots.go`: half-open spans, merge touching
-   blocks, 15-min grid, notBefore; 13 table tests, checked to fail on two injected bugs); [ ] 4b-2 endpoint + seed
-   (private prices, dev availability, sessions' `occupied = [start, end)`, test helper `newSession` likewise);
+   blocks, 15-min grid, notBefore; 13 table tests, checked to fail on two injected bugs); [x] 4b-2 `GET /private-slots?duration=60`
+   (public; per teacher who offers that length and has a private price; blocks + non-cancelled sessions + DB
+   now() + 1h notice → bookableStarts; window default 14 days, max 8 weeks) + seed (private prices $25/$20/$17/$15
+   for 60 min etc., weekday blocks 9–12 and 18–21 Bogotá for 14 days with date-based IDs, sessions'
+   `occupied = [start, end)`);
    [ ] 4c private booking in `POST /bookings`; [ ] 4d teacher page; [ ] 4e student "book a private class" page.
 5. **Worker:** process `outbox_event` (claim rows with `FOR UPDATE SKIP LOCKED`), send emails and
    reminders, run the 24h group-minimum check, purge expired login tokens and web sessions.

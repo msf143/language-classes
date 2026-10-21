@@ -24,6 +24,7 @@ func newTeacher(t *testing.T, pool *pgxpool.Pool) string {
 	if _, err := pool.Exec(ctx, `INSERT INTO teacher (id, account_id) VALUES ($1, $2)`, teacherID, accountID); err != nil {
 		t.Fatal(err)
 	}
+	retireWhenDone(t, pool, teacherID)
 	for _, p := range []struct{ minutes, cents int }{{30, 800}, {45, 1200}, {60, 1500}} {
 		for size := 1; size <= 4; size++ {
 			_, err := pool.Exec(ctx, `
@@ -69,7 +70,7 @@ func newSession(t *testing.T, pool *pgxpool.Pool, teacherID string, o sessionOpt
 		INSERT INTO session (id, teacher_id, kind, target_language, audience, title,
 		                     starts_at, ends_at, occupied, min_seats, max_seats)
 		SELECT $1, $2, $3, 'es', $4, 'Test session', s, s + $6 * interval '1 minute',
-		       tstzrange(s, s + ($6 + 5) * interval '1 minute'), $7, $8
+		       tstzrange(s, s + $6 * interval '1 minute'), $7, $8 -- occupied = the class itself (break is inside)
 		FROM (SELECT date_trunc('minute', now()) + $5 * interval '2 hours' AS s) AS t`,
 		id, teacherID, o.kind, o.audience, o.slot, o.minutes, minSeats, o.maxSeats)
 	if err != nil {
@@ -77,6 +78,17 @@ func newSession(t *testing.T, pool *pgxpool.Pool, teacherID string, o sessionOpt
 	}
 	cancelWhenDone(t, pool, id)
 	return id
+}
+
+// retireWhenDone marks a test's teacher inactive when the test ends, so test
+// teachers (and their availability) don't show up in the dev database's
+// private-class slots. A status change, not a delete, like everything else.
+func retireWhenDone(t *testing.T, pool *pgxpool.Pool, teacherID string) {
+	t.Cleanup(func() {
+		if _, err := pool.Exec(context.Background(), `UPDATE teacher SET status = 'inactive' WHERE id = $1`, teacherID); err != nil {
+			t.Errorf("retiring test teacher: %v", err)
+		}
+	})
 }
 
 // cancelWhenDone cancels a test's session when the test ends, so test sessions

@@ -27,7 +27,8 @@ INSERT INTO learner (id, account_id, display_name, native_language, is_minor) VA
   ('01900000-0000-7000-8000-0000000000c3', '01900000-0000-7000-8000-000000000002', 'Sofía', 'en', true)
 ON CONFLICT (id) DO NOTHING;
 
--- Sessions. occupied = start .. end + 5-minute buffer.
+-- Sessions. occupied = start .. end: the teacher's break is inside the class (it may end up
+-- to 5 minutes early), so classes can sit back to back.
 -- Keep every session's hour distinct: on a re-run, rows move one at a time and the
 -- no-double-booking constraint checks each move, so a shared hour on different days
 -- could collide with another row's old slot.
@@ -35,7 +36,7 @@ INSERT INTO session (id, teacher_id, kind, target_language, audience, title,
                      starts_at, ends_at, occupied, min_seats, max_seats, status, cancel_reason)
 SELECT v.id::uuid, '01900000-0000-7000-8000-0000000000a1', v.kind, v.lang, v.audience, v.title,
        t.starts, t.starts + v.mins * interval '1 minute',
-       tstzrange(t.starts, t.starts + (v.mins + 5) * interval '1 minute'),
+       tstzrange(t.starts, t.starts + v.mins * interval '1 minute'),
        v.min_seats, v.max_seats, v.status, v.reason
 FROM (VALUES
   -- id                                      kind       lang  audience  title                                   day hour mins min max   status       reason
@@ -81,6 +82,37 @@ SELECT format('01900000-0000-7000-8000-%s', lpad((100000 + d.minutes * 10 + size
        '01900000-0000-7000-8000-0000000000a1', 'group', d.minutes, size, d.cents
 FROM (VALUES (30, 800), (45, 1200), (60, 1500)) AS d(minutes, cents)
 CROSS JOIN generate_series(1, 4) AS size
+ON CONFLICT (id) DO NOTHING;
+
+-- Private prices per person, dropping as the party grows (IDs ...-000000000NMS: N=2, M=minutes, S=size).
+INSERT INTO price_tier (id, teacher_id, kind, duration_minutes, party_size, price_per_person_cents)
+SELECT format('01900000-0000-7000-8000-%s', lpad((200000 + p.minutes * 10 + p.size)::text, 12, '0'))::uuid,
+       '01900000-0000-7000-8000-0000000000a1', 'private', p.minutes, p.size, p.cents
+FROM (VALUES
+  (30, 1, 1500), (30, 2, 1200), (30, 3, 1000), (30, 4,  900),
+  (45, 1, 2000), (45, 2, 1600), (45, 3, 1400), (45, 4, 1200),
+  (60, 1, 2500), (60, 2, 2000), (60, 3, 1700), (60, 4, 1500)
+) AS p(minutes, size, cents)
+ON CONFLICT (id) DO NOTHING;
+
+-- The teacher's availability for private classes: the next 14 days, weekdays,
+-- 9:00-12:00 and 18:00-21:00 Bogotá time. Each block's ID comes from its own date
+-- (...-00YYYYMMDDP, P = 1 morning / 2 evening), so a rerun adds the new days and
+-- leaves earlier ones alone (moving rows forward could make them collide). Days
+-- where the teacher already has an overlapping open block are skipped.
+INSERT INTO availability_block (id, teacher_id, period)
+SELECT format('01900000-0000-7000-8000-%s', lpad(to_char(d, 'YYYYMMDD') || b.part, 12, '0'))::uuid,
+       '01900000-0000-7000-8000-0000000000a1',
+       tstzrange((d + b.opens) AT TIME ZONE 'America/Bogota', (d + b.closes) AT TIME ZONE 'America/Bogota')
+FROM generate_series((now() AT TIME ZONE 'America/Bogota')::date + 1,
+                     (now() AT TIME ZONE 'America/Bogota')::date + 14, interval '1 day') AS g(day)
+CROSS JOIN LATERAL (SELECT g.day::date AS d) AS dd
+CROSS JOIN (VALUES ('1', time '09:00', time '12:00'), ('2', time '18:00', time '21:00')) AS b(part, opens, closes)
+WHERE extract(isodow FROM d) BETWEEN 1 AND 5
+  AND NOT EXISTS (
+    SELECT 1 FROM availability_block x
+    WHERE x.teacher_id = '01900000-0000-7000-8000-0000000000a1' AND x.status = 'open'
+      AND x.period && tstzrange((d + b.opens) AT TIME ZONE 'America/Bogota', (d + b.closes) AT TIME ZONE 'America/Bogota'))
 ON CONFLICT (id) DO NOTHING;
 
 -- Ana starts with $50 of credit. An 'adjustment', since 'purchase' requires a real payment row.

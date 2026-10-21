@@ -1,6 +1,9 @@
 package main
 
 import (
+	"context"
+	"encoding/json"
+	"net/http"
 	"slices"
 	"testing"
 	"time"
@@ -84,4 +87,94 @@ func TestBookableStarts(t *testing.T) {
 			}
 		})
 	}
+}
+
+// GET /private-slots reads blocks, booked sessions and prices from the
+// database and returns what bookableStarts computes.
+func TestListPrivateSlots(t *testing.T) {
+	pool := testPool(t)
+	ctx := context.Background()
+	teacher := newTeacher(t, pool) // offers 30/45/60/90 (the default); has group prices only
+	for size, cents := range []int{2500, 2000, 1700, 1500} {
+		if _, err := pool.Exec(ctx, `
+			INSERT INTO price_tier (id, teacher_id, kind, duration_minutes, party_size, price_per_person_cents)
+			VALUES ($1, $2, 'private', 60, $3, $4)`, newUUIDv7(), teacher, size+1, cents); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// Three days from now: a block 19:00-22:00 UTC, and a class already booked 20:00-21:00.
+	day := time.Now().UTC().Truncate(24*time.Hour).AddDate(0, 0, 3)
+	at := func(h int) time.Time { return day.Add(time.Duration(h) * time.Hour) }
+	if _, err := pool.Exec(ctx, `INSERT INTO availability_block (id, teacher_id, period) VALUES ($1, $2, tstzrange($3, $4))`,
+		newUUIDv7(), teacher, at(19), at(22)); err != nil {
+		t.Fatal(err)
+	}
+	booked := newUUIDv7()
+	if _, err := pool.Exec(ctx, `
+		INSERT INTO session (id, teacher_id, kind, target_language, starts_at, ends_at, occupied)
+		VALUES ($1, $2, 'private', 'es', $3, $4, tstzrange($3, $4))`, booked, teacher, at(20), at(21)); err != nil {
+		t.Fatal(err)
+	}
+	cancelWhenDone(t, pool, booked)
+
+	get := func(query string) (int, []teacherSlotsDTO) {
+		rec := call(listPrivateSlots(pool), "GET", "/private-slots?"+query, nil)
+		var got []teacherSlotsDTO
+		_ = json.Unmarshal(rec.Body.Bytes(), &got)
+		return rec.Code, got
+	}
+	window := "&from=" + day.Format(time.RFC3339) + "&to=" + day.AddDate(0, 0, 1).Format(time.RFC3339)
+	mine := func(all []teacherSlotsDTO) *teacherSlotsDTO {
+		for i := range all {
+			if all[i].TeacherID == teacher {
+				return &all[i]
+			}
+		}
+		return nil
+	}
+
+	t.Run("60 minutes: 19:00 and 21:00, around the booked class", func(t *testing.T) {
+		code, all := get("duration=60" + window)
+		me := mine(all)
+		if code != http.StatusOK || me == nil {
+			t.Fatalf("status %d, teacher listed: %v", code, me != nil)
+		}
+		var got []string
+		for _, s := range me.Slots {
+			got = append(got, s.StartsAt.Format("15:04")+"-"+s.EndsAt.Format("15:04"))
+		}
+		if !slices.Equal(got, []string{"19:00-20:00", "21:00-22:00"}) {
+			t.Errorf("slots %v, want [19:00-20:00 21:00-22:00]", got)
+		}
+		if len(me.Prices) != 4 || me.Prices[0].PricePerPersonCents != 2500 || me.Prices[3].PricePerPersonCents != 1500 {
+			t.Errorf("prices %+v, want 2500/2000/1700/1500", me.Prices)
+		}
+	})
+
+	t.Run("a length he offers but has no private price for: not listed", func(t *testing.T) {
+		if _, all := get("duration=90" + window); mine(all) != nil {
+			t.Error("teacher listed for 90 minutes without a 90-minute private price")
+		}
+	})
+
+	t.Run("a length he doesn't offer: not listed, even with a price for it", func(t *testing.T) {
+		// A 20-minute price exists, so "not in offered_durations" is the only reason left.
+		if _, err := pool.Exec(ctx, `
+			INSERT INTO price_tier (id, teacher_id, kind, duration_minutes, party_size, price_per_person_cents)
+			VALUES ($1, $2, 'private', 20, 1, 1000)`, newUUIDv7(), teacher); err != nil {
+			t.Fatal(err)
+		}
+		if _, all := get("duration=20" + window); mine(all) != nil {
+			t.Error("teacher listed for 20 minutes, which isn't in offered_durations")
+		}
+	})
+
+	t.Run("bad requests", func(t *testing.T) {
+		for _, q := range []string{"", "duration=abc", "duration=5", "duration=60&from=yesterday",
+			"duration=60&from=2026-11-01T00:00:00Z&to=2027-03-01T00:00:00Z"} {
+			if code, _ := get(q); code != http.StatusBadRequest {
+				t.Errorf("?%s: status %d, want 400", q, code)
+			}
+		}
+	})
 }

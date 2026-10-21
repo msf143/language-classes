@@ -54,6 +54,7 @@ func TestListSessionsPrivacy(t *testing.T) {
 	teacherAcct, teacherEmail := newAccount(t, pool)
 	teacherID := newUUIDv7()
 	exec(`INSERT INTO teacher (id, account_id) VALUES ($1, $2)`, teacherID, teacherAcct)
+	retireWhenDone(t, pool, teacherID)
 
 	groupID, privateID := newUUIDv7(), newUUIDv7()
 	exec(`INSERT INTO session (id, teacher_id, kind, target_language, title, starts_at, ends_at, occupied, min_seats)
