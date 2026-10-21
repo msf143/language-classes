@@ -65,6 +65,17 @@ const STRINGS = {
     errTooLate: "This class has already started, so the booking can't be cancelled.",
     errNotCancellable: "This booking can no longer be cancelled.",
 
+    // Private classes (browsing free times)
+    privateTitle: "Private classes",
+    privateIntro: "Just you, or you and up to 3 friends or family. Pick a time that suits you.",
+    lengthLabel: "Length",
+    pricePerPerson: (amounts) => `Per person: ${amounts}`,
+    pricePeople: (n, amount) => (n === 1 ? `1 person ${amount}` : `${n} people ${amount} each`),
+    breakNote: "Classes may end up to 5 minutes early, so the teacher can take a short break between classes. It keeps every class fresh.",
+    loadingTimes: "Loading available times…",
+    noTimes: "No times available for this length in the next two weeks.",
+    withTeacher: (name) => `with ${name}`,
+
     // Teacher page (teacher.html) and the way there
     teacherLink: "Teacher page",
     becomeTestTeacher: "Become the test teacher",
@@ -192,6 +203,16 @@ const STRINGS = {
     cancelled: (amount) => `Reserva cancelada. Se devolvieron ${amount} a tu crédito.`,
     errTooLate: "Esta clase ya empezó, así que la reserva no se puede cancelar.",
     errNotCancellable: "Esta reserva ya no se puede cancelar.",
+
+    privateTitle: "Clases privadas",
+    privateIntro: "Solo tú, o tú y hasta 3 amigos o familiares. Elige el horario que te convenga.",
+    lengthLabel: "Duración",
+    pricePerPerson: (amounts) => `Por persona: ${amounts}`,
+    pricePeople: (n, amount) => (n === 1 ? `1 persona ${amount}` : `${n} personas ${amount} c/u`),
+    breakNote: "Las clases pueden terminar hasta 5 minutos antes, para que el profesor tome un breve descanso entre clases. Así cada clase empieza con energía.",
+    loadingTimes: "Cargando horarios disponibles…",
+    noTimes: "No hay horarios disponibles para esta duración en las próximas dos semanas.",
+    withTeacher: (name) => `con ${name}`,
 
     teacherLink: "Página del profesor",
     becomeTestTeacher: "Ser el profesor de prueba",

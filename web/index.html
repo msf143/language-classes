@@ -82,6 +82,33 @@
       <!-- Class cards are built in app.js -->
       <ul id="session-list" class="session-list"></ul>
     </section>
+    <!-- Private classes: free times computed by GET /private-slots (built in app.js). -->
+    <section class="private">
+      <div class="catalog-head">
+        <h2 data-i18n="privateTitle"></h2>
+        <p class="tz-note" data-i18n="privateIntro"></p>
+      </div>
+      <div class="filters">
+        <div class="filter">
+          <span class="filter-label" data-i18n="filterLanguage"></span>
+          <div class="segmented" data-private="language">
+            <button type="button" data-value="es" data-i18n="learnSpanish"></button>
+            <button type="button" data-value="en" data-i18n="learnEnglish"></button>
+          </div>
+        </div>
+        <div class="filter">
+          <span class="filter-label" data-i18n="lengthLabel"></span>
+          <div class="segmented" data-private="minutes">
+            <button type="button" data-value="30">30 min</button>
+            <button type="button" data-value="45">45 min</button>
+            <button type="button" data-value="60">60 min</button>
+          </div>
+        </div>
+      </div>
+      <p class="muted small" data-i18n="breakNote"></p>
+      <div id="private-status" class="status" aria-live="polite" hidden></div>
+      <ul id="private-days" class="block-list"></ul>
+    </section>
   </main>
 
   <!-- Sign-in dialog. <dialog> + showModal() gives a real modal for free:

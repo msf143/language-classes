@@ -9,6 +9,14 @@ const state = {
   sessions: [],
   error: null,                     // { requestId } when status is "error"
 
+  private: {                       // the "Private classes" section (GET /private-slots)
+    language: "es",                // which language to learn: "es" or "en"
+    minutes: 60,                   // class length: 30, 45 or 60
+    status: "loading",             // "loading" | "ready" | "error"
+    teachers: [],                  // [{ teacher_id, teacher_name, prices, slots }]
+    error: null,                   // { requestId } when status is "error"
+  },
+
   testSite: false,                 // staging or dev (from GET /env): show the banner + test credit
   addingCredit: false,             // a test-credit request is on its way
 
@@ -87,6 +95,23 @@ async function loadMe() {
   } else {
     if (res.status !== 401) console.error("loadMe failed", res);   // 401 just means signed out
     state.me = null;
+  }
+  render();
+}
+
+// Free private-class times for the chosen length (the next 14 days). Public,
+// like the catalog: anyone can browse; booking needs a sign-in.
+async function loadPrivateSlots() {
+  state.private.status = "loading";
+  render();
+  const res = await api("GET", `/private-slots?duration=${state.private.minutes}`);
+  if (res.ok) {
+    state.private.teachers = res.data;
+    state.private.status = "ready";
+  } else {
+    console.error("loadPrivateSlots failed", res);
+    state.private.status = "error";
+    state.private.error = { requestId: res.requestId };
   }
   render();
 }
@@ -187,6 +212,60 @@ function render() {
   renderStatus();
   renderMyBookings();
   renderList();
+  renderPrivate();
+}
+
+// "Private classes": per teacher, a price line, then one row per day with a
+// button per free start time, all in the visitor's time zone (like the catalog).
+function renderPrivate() {
+  const p = state.private;
+  for (const group of document.querySelectorAll("[data-private]")) {
+    const active = String(p[group.dataset.private]);
+    for (const btn of group.querySelectorAll("button")) {
+      btn.setAttribute("aria-pressed", btn.dataset.value === active);
+    }
+  }
+
+  const statusEl = document.querySelector("#private-status");
+  const teachers = p.teachers.filter((tr) => tr.slots.length > 0);
+  statusEl.hidden = p.status === "ready" && teachers.length > 0;
+  statusEl.className = p.status === "error" ? "status is-error" : "status";
+  statusEl.textContent =
+    p.status === "loading" ? t("loadingTimes") :
+    p.status === "error" ? `${t("loadError")} ${t("reference")}: ${p.error.requestId}` :
+    t("noTimes");
+
+  const rows = [];
+  if (p.status === "ready") {
+    for (const tr of teachers) {
+      const prices = tr.prices.map((pr) => t("pricePeople", pr.party_size, money(pr.price_per_person_cents, pr.currency)));
+      rows.push(h("li", { class: "private-teacher" },
+        h("span", { class: "teacher-name" }, t("withTeacher", tr.teacher_name)),
+        h("span", { class: "private-prices" }, t("pricePerPerson", prices.join(" · "))),
+      ));
+      for (const slots of slotsByDay(tr.slots)) {
+        rows.push(h("li", { class: "day-row" },
+          h("span", { class: "day-name" }, formatWhen(slots[0]).dateText),
+          ...slots.map((s) => h("button", {
+            type: "button", class: "slot-chip", "data-action": "pick-slot",
+            "data-teacher-id": tr.teacher_id, "data-starts-at": s.starts_at,
+          }, formatWhen(s).timeText)),
+        ));
+      }
+    }
+  }
+  document.querySelector("#private-days").replaceChildren(...rows);
+}
+
+// Group slots by the visitor's local calendar day, keeping time order.
+function slotsByDay(slots) {
+  const days = new Map();
+  for (const s of slots) {
+    const key = new Date(s.starts_at).toDateString(); // local day, e.g. "Tue Oct 27 2026"
+    if (!days.has(key)) days.set(key, []);
+    days.get(key).push(s);
+  }
+  return [...days.values()];
 }
 
 // The bookings to show: none unless someone is signed in, however state.me got
@@ -626,6 +705,17 @@ document.addEventListener("click", (e) => {
     return;
   }
 
+  const privateBtn = e.target.closest("[data-private] button");
+  if (privateBtn) {
+    const key = privateBtn.closest("[data-private]").dataset.private;
+    const value = key === "minutes" ? Number(privateBtn.dataset.value) : privateBtn.dataset.value;
+    if (state.private[key] === value) return;
+    state.private[key] = value;
+    // A new length means new times; the language doesn't change which times are free.
+    if (key === "minutes") loadPrivateSlots(); else render();
+    return;
+  }
+
   const action = e.target.closest("[data-action]")?.dataset.action;
   if (action === "retry") loadSessions();
   if (action === "book") {
@@ -699,3 +789,4 @@ if (location.hash === "#signin") {
 loadEnv();
 loadMe();
 loadSessions();
+loadPrivateSlots();

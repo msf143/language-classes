@@ -223,3 +223,14 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 }
 .minor-note { flex: 1 1 100%; color: var(--es); font-size: 0.85rem; font-weight: 600; }
 a.link { color: var(--accent); font-weight: 600; text-decoration: none; }
+
+/* ---------- private classes ---------- */
+.private { margin-top: 48px; }
+.private-prices { font-weight: 600; margin: 4px 0; }
+.slot-chip {
+  font: inherit; font-size: 0.95rem; padding: 6px 12px; border-radius: 999px; cursor: pointer;
+  border: 1px solid var(--border); background: var(--surface); color: var(--text);
+}
+.slot-chip:hover { border-color: var(--accent); color: var(--accent); }
+.teacher-name { color: var(--muted); font-size: 0.85rem; }
+.private-teacher { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 16px; padding-top: 8px; }
