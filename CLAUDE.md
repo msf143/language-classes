@@ -58,6 +58,7 @@ cmd/api/            main.go    server wiring, middleware, shared helpers (writeJ
                     migrate.go `api migrate` (embedded migrations, one transaction each)
                     sessions.go GET /sessions
                     bookings.go POST /bookings (one transaction, row locks, idempotency key)
+                    bookings_private.go private classes in POST /bookings (creates the session)
                     bookings_cancel.go POST /bookings/{id}/cancel (refund rule: refundFor), GET /bookings
                     teacher.go requireTeacher, /teacher/availability (publish, list, withdraw)
                     slots.go   bookableStarts: blocks minus busy sessions → slot start times (pure)
@@ -346,7 +347,12 @@ For what's already built, read the code and `git log`. Next, in order:
    now() + 1h notice → bookableStarts; window default 14 days, max 8 weeks) + seed (private prices $25/$20/$17/$15
    for 60 min etc., weekday blocks 9–12 and 18–21 Bogotá for 14 days with date-based IDs, sessions'
    `occupied = [start, end)`);
-   [ ] 4c private booking in `POST /bookings`; [ ] 4d teacher page; [ ] 4e student "book a private class" page.
+   [x] 4c private booking: `POST /bookings` with `{"private": {teacher_id, starts_at, duration_minutes,
+   target_language}, learner_ids}` (`cmd/api/bookings_private.go`): offered length, ≥ 1h notice, inside open
+   blocks (`range_agg` merges touching ones, same rule as `mergeTouching`) → creates the session (audience from
+   the learners' ages) → exclusion constraint settles races (`23P01` → 409 `slot_taken`, nothing charged). Group
+   and private share `lockPayerAndFindKey`, `checkLearners`, `priceFor`, `chargeAndWrite` (the only code that
+   spends credit). New codes: `slot_unavailable`, `slot_taken`; [ ] 4d teacher page; [ ] 4e student "book a private class" page.
 5. **Worker:** process `outbox_event` (claim rows with `FOR UPDATE SKIP LOCKED`), send emails and
    reminders, run the 24h group-minimum check, purge expired login tokens and web sessions.
    Same Go binary, `worker` mode, separate Cloud Run service.

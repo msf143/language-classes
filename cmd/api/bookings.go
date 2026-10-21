@@ -13,10 +13,13 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-// bookingRequest is the body of POST /bookings.
+// bookingRequest is the body of POST /bookings: either a group session
+// ("session_id") or a private class at a time from GET /private-slots
+// ("private"), never both.
 type bookingRequest struct {
-	SessionID  string   `json:"session_id"`
-	LearnerIDs []string `json:"learner_ids"` // who attends: the payer's own learner profiles
+	SessionID  string          `json:"session_id"`
+	Private    *privateRequest `json:"private"`
+	LearnerIDs []string        `json:"learner_ids"` // who attends: the payer's own learner profiles
 }
 
 // bookingDTO is what the API returns for a booking.
@@ -48,8 +51,9 @@ func notBookable(code, msg string) error {
 	return &bookingError{http.StatusConflict, code, msg}
 }
 
-// createBooking handles POST /bookings: book seats in a group session for some
-// of the signed-in person's learners, paid from their credit balance.
+// createBooking handles POST /bookings: book seats in a group session, or a
+// private class, for some of the signed-in person's learners, paid from their
+// credit balance.
 //
 // Send an Idempotency-Key header (any unique string per "Book" click). Sending
 // the same request again with the same key returns the same booking (200)
@@ -66,7 +70,7 @@ func createBooking(pool *pgxpool.Pool) http.HandlerFunc {
 		var req bookingRequest
 		r.Body = http.MaxBytesReader(w, r.Body, 4<<10)
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			writeError(w, r, http.StatusBadRequest, `body must be JSON like {"session_id": "...", "learner_ids": ["..."]}`)
+			writeError(w, r, http.StatusBadRequest, `body must be JSON like {"session_id": "...", "learner_ids": ["..."]} or {"private": {...}, "learner_ids": ["..."]}`)
 			return
 		}
 		if msg := req.normalize(); msg != "" {
@@ -74,7 +78,11 @@ func createBooking(pool *pgxpool.Pool) http.HandlerFunc {
 			return
 		}
 
-		b, created, err := bookGroupSession(r.Context(), pool, me.ID, key, req)
+		book := bookGroupSession
+		if req.Private != nil {
+			book = bookPrivateSession
+		}
+		b, created, err := book(r.Context(), pool, me.ID, key, req)
 		var be *bookingError
 		switch {
 		case errors.As(err, &be):
@@ -95,10 +103,18 @@ func createBooking(pool *pgxpool.Pool) http.HandlerFunc {
 // (lower case, sorted), so a replay can be compared with the original. It
 // returns a message for the client, or "" if the request is fine.
 func (req *bookingRequest) normalize() string {
-	if !isUUID(req.SessionID) {
+	switch {
+	case req.Private != nil && req.SessionID != "":
+		return "send either session_id (a group class) or private (a private class), not both"
+	case req.Private != nil:
+		if msg := req.Private.check(); msg != "" {
+			return msg
+		}
+	case !isUUID(req.SessionID):
 		return "session_id must be a session ID"
+	default:
+		req.SessionID = strings.ToLower(req.SessionID)
 	}
-	req.SessionID = strings.ToLower(req.SessionID)
 	if len(req.LearnerIDs) < 1 || len(req.LearnerIDs) > 4 {
 		return "learner_ids must list 1 to 4 learners"
 	}
@@ -127,28 +143,17 @@ func (req *bookingRequest) normalize() string {
 //     last seat.
 func bookGroupSession(ctx context.Context, pool *pgxpool.Pool, payerID, key string, req bookingRequest) (b bookingDTO, created bool, err error) {
 	err = pgx.BeginFunc(ctx, pool, func(tx pgx.Tx) error {
-		// 1. Lock the payer.
-		if _, err := tx.Exec(ctx, `SELECT 1 FROM account WHERE id = $1 FOR UPDATE`, payerID); err != nil {
+		// 1-2. Lock the payer; seen this key before? Then answer as before.
+		existing, err := lockPayerAndFindKey(ctx, tx, payerID, key)
+		if err != nil {
 			return err
 		}
-
-		// 2. Seen this key before? Then answer as before; don't book again.
-		var existingID string
-		err := tx.QueryRow(ctx, `SELECT id FROM booking WHERE payer_account_id = $1 AND idempotency_key = $2`,
-			payerID, key).Scan(&existingID)
-		if err == nil {
-			b, err = loadBooking(ctx, tx, existingID, payerID)
-			if err != nil {
-				return err
+		if existing != nil {
+			if existing.SessionID != req.SessionID || !slices.Equal(existing.LearnerIDs, req.LearnerIDs) {
+				return errKeyReused
 			}
-			if b.SessionID != req.SessionID || !slices.Equal(b.LearnerIDs, req.LearnerIDs) {
-				return &bookingError{http.StatusUnprocessableEntity, "idempotency_key_reused",
-					"this Idempotency-Key was already used for a different booking"}
-			}
+			b = *existing
 			return nil
-		}
-		if !errors.Is(err, pgx.ErrNoRows) {
-			return err
 		}
 
 		// 3. Lock the session and check it can be booked.
@@ -176,35 +181,14 @@ func bookGroupSession(ctx context.Context, pool *pgxpool.Pool, payerID, key stri
 		}
 
 		// 4. The learners: the payer's own, active, and allowed in this session.
-		rows, err := tx.Query(ctx, `
-			SELECT is_minor FROM learner
-			WHERE id = ANY($1::uuid[]) AND account_id = $2 AND status = 'active'`,
-			req.LearnerIDs, payerID)
+		minors, err := checkLearners(ctx, tx, payerID, req.LearnerIDs)
 		if err != nil {
 			return err
-		}
-		defer rows.Close() // already closed after the loop; this covers the early returns
-		minors, found := 0, 0
-		for rows.Next() {
-			var isMinor bool
-			if err := rows.Scan(&isMinor); err != nil {
-				return err
-			}
-			found++
-			if isMinor {
-				minors++
-			}
-		}
-		if err := rows.Err(); err != nil {
-			return err
-		}
-		if found != len(req.LearnerIDs) {
-			return &bookingError{http.StatusBadRequest, "unknown_learner", "learner_ids must be your own active learners"}
 		}
 		switch {
 		case s.audience == "adults" && minors > 0:
 			return notBookable("audience_mismatch", "this session is for adults only")
-		case s.audience == "kids" && minors < found:
+		case s.audience == "kids" && minors < len(req.LearnerIDs):
 			return notBookable("audience_mismatch", "this session is for children only")
 		}
 
@@ -237,81 +221,150 @@ func bookGroupSession(ctx context.Context, pool *pgxpool.Pool, payerID, key stri
 
 		// 6. The price in force right now, snapshotted onto the booking.
 		minutes := int(s.ends.Sub(s.starts).Minutes())
-		var pricePerPerson int
-		var currency string
-		err = tx.QueryRow(ctx, `
-			SELECT price_per_person_cents, currency FROM price_tier
-			WHERE teacher_id = $1 AND kind = 'group' AND duration_minutes = $2
-			  AND party_size = $3 AND valid @> now()`,
-			s.teacherID, minutes, partySize).Scan(&pricePerPerson, &currency)
-		if errors.Is(err, pgx.ErrNoRows) {
-			return notBookable("no_price", "this session has no price set for that many people")
-		}
+		pricePerPerson, currency, err := priceFor(ctx, tx, s.teacherID, "group", minutes, partySize)
 		if err != nil {
 			return err
 		}
-		total := pricePerPerson * partySize
 
-		// 7. Enough credit? The account lock from step 1 makes this read safe.
-		var balance int
-		err = tx.QueryRow(ctx, `
-			SELECT COALESCE(SUM(amount_cents), 0) FROM credit_ledger
-			WHERE account_id = $1 AND currency = $2`, payerID, currency).Scan(&balance)
-		if err != nil {
-			return err
-		}
-		if balance < total {
-			return notBookable("insufficient_credit", "not enough credit for this booking")
-		}
-
-		// 8. Write it all: booking, attendees, the ledger debit, and the outbox
-		//    event a worker will later turn into a confirmation email.
+		// 7-8. Enough credit? Then write it all.
 		b = bookingDTO{
-			ID: newUUIDv7(), SessionID: req.SessionID, LearnerIDs: req.LearnerIDs,
-			PartySize: partySize, PricePerPersonCents: pricePerPerson, TotalCents: total,
-			Currency: currency, Status: "confirmed", BalanceCents: balance - total,
+			SessionID: req.SessionID, LearnerIDs: req.LearnerIDs, PartySize: partySize,
+			PricePerPersonCents: pricePerPerson, TotalCents: pricePerPerson * partySize, Currency: currency,
 		}
-		err = tx.QueryRow(ctx, `
-			INSERT INTO booking (id, session_id, payer_account_id, party_size,
-			                     price_per_person_cents, total_cents, currency, idempotency_key)
-			VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING created_at`,
-			b.ID, b.SessionID, payerID, partySize, pricePerPerson, total, currency, key).Scan(&b.CreatedAt)
-		if err != nil {
-			return err
-		}
-		for _, learnerID := range req.LearnerIDs {
-			_, err = tx.Exec(ctx, `
-				INSERT INTO booking_attendee (id, booking_id, learner_id, status) VALUES ($1, $2, $3, 'joined')`,
-				newUUIDv7(), b.ID, learnerID)
-			if err != nil {
-				return err
-			}
-		}
-		_, err = tx.Exec(ctx, `
-			INSERT INTO credit_ledger (id, account_id, entry_type, amount_cents, currency, booking_id)
-			VALUES ($1, $2, 'spend', $3, $4, $5)`,
-			newUUIDv7(), payerID, -total, currency, b.ID)
-		if err != nil {
-			return err
-		}
-		payload, err := json.Marshal(map[string]any{
-			"booking_id": b.ID, "session_id": b.SessionID, "payer_account_id": payerID,
-			"learner_ids": b.LearnerIDs, "total_cents": total, "currency": currency,
-		})
-		if err != nil {
-			return err
-		}
-		_, err = tx.Exec(ctx, `
-			INSERT INTO outbox_event (id, aggregate_type, aggregate_id, event_type, payload)
-			VALUES ($1, 'booking', $2, 'booking_created', $3)`,
-			newUUIDv7(), b.ID, payload)
-		if err != nil {
+		if err := chargeAndWrite(ctx, tx, payerID, key, &b); err != nil {
 			return err
 		}
 		created = true
 		return nil
 	})
 	return b, created, err
+}
+
+// ---------- steps shared by group and private bookings ----------
+
+var errKeyReused = &bookingError{http.StatusUnprocessableEntity, "idempotency_key_reused",
+	"this Idempotency-Key was already used for a different booking"}
+
+// lockPayerAndFindKey locks the payer's account row (serializing this person's
+// spending, so two tabs can't spend the same credit) and returns the booking
+// already made with this Idempotency-Key, if there is one (nil if not). The
+// lock is what makes the lookup safe: two identical requests can't both miss.
+func lockPayerAndFindKey(ctx context.Context, tx pgx.Tx, payerID, key string) (*bookingDTO, error) {
+	if _, err := tx.Exec(ctx, `SELECT 1 FROM account WHERE id = $1 FOR UPDATE`, payerID); err != nil {
+		return nil, err
+	}
+	var existingID string
+	err := tx.QueryRow(ctx, `SELECT id FROM booking WHERE payer_account_id = $1 AND idempotency_key = $2`,
+		payerID, key).Scan(&existingID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	b, err := loadBooking(ctx, tx, existingID, payerID)
+	return &b, err
+}
+
+// checkLearners makes sure every learner is the payer's own and active, and
+// returns how many of them are minors (for audience rules).
+func checkLearners(ctx context.Context, tx pgx.Tx, payerID string, learnerIDs []string) (minors int, err error) {
+	rows, err := tx.Query(ctx, `
+		SELECT is_minor FROM learner
+		WHERE id = ANY($1::uuid[]) AND account_id = $2 AND status = 'active'`,
+		learnerIDs, payerID)
+	if err != nil {
+		return 0, err
+	}
+	defer rows.Close() // already closed after the loop; this covers the early returns
+	found := 0
+	for rows.Next() {
+		var isMinor bool
+		if err := rows.Scan(&isMinor); err != nil {
+			return 0, err
+		}
+		found++
+		if isMinor {
+			minors++
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return 0, err
+	}
+	if found != len(learnerIDs) {
+		return 0, &bookingError{http.StatusBadRequest, "unknown_learner", "learner_ids must be your own active learners"}
+	}
+	return minors, nil
+}
+
+// priceFor is the price per person in force right now for this teacher, kind
+// ("group" or "private"), length and party size.
+func priceFor(ctx context.Context, tx pgx.Tx, teacherID, kind string, minutes, partySize int) (cents int, currency string, err error) {
+	err = tx.QueryRow(ctx, `
+		SELECT price_per_person_cents, currency FROM price_tier
+		WHERE teacher_id = $1 AND kind = $2 AND duration_minutes = $3
+		  AND party_size = $4 AND valid @> now()`,
+		teacherID, kind, minutes, partySize).Scan(&cents, &currency)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return 0, "", notBookable("no_price", "this class has no price set for that many people")
+	}
+	return cents, currency, err
+}
+
+// chargeAndWrite checks the payer can afford b.TotalCents (the account lock
+// from lockPayerAndFindKey makes the balance read safe), then writes it all:
+// the booking, its attendees, the ledger debit, and the outbox event a worker
+// will later turn into a confirmation email. b must have SessionID,
+// LearnerIDs, PartySize, the prices and Currency set; it gets its ID,
+// CreatedAt, Status and BalanceCents here.
+func chargeAndWrite(ctx context.Context, tx pgx.Tx, payerID, key string, b *bookingDTO) error {
+	var balance int
+	err := tx.QueryRow(ctx, `
+		SELECT COALESCE(SUM(amount_cents), 0) FROM credit_ledger
+		WHERE account_id = $1 AND currency = $2`, payerID, b.Currency).Scan(&balance)
+	if err != nil {
+		return err
+	}
+	if balance < b.TotalCents {
+		return notBookable("insufficient_credit", "not enough credit for this booking")
+	}
+
+	b.ID, b.Status, b.BalanceCents = newUUIDv7(), "confirmed", balance-b.TotalCents
+	err = tx.QueryRow(ctx, `
+		INSERT INTO booking (id, session_id, payer_account_id, party_size,
+		                     price_per_person_cents, total_cents, currency, idempotency_key)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING created_at`,
+		b.ID, b.SessionID, payerID, b.PartySize, b.PricePerPersonCents, b.TotalCents, b.Currency, key).Scan(&b.CreatedAt)
+	if err != nil {
+		return err
+	}
+	for _, learnerID := range b.LearnerIDs {
+		_, err = tx.Exec(ctx, `
+			INSERT INTO booking_attendee (id, booking_id, learner_id, status) VALUES ($1, $2, $3, 'joined')`,
+			newUUIDv7(), b.ID, learnerID)
+		if err != nil {
+			return err
+		}
+	}
+	_, err = tx.Exec(ctx, `
+		INSERT INTO credit_ledger (id, account_id, entry_type, amount_cents, currency, booking_id)
+		VALUES ($1, $2, 'spend', $3, $4, $5)`,
+		newUUIDv7(), payerID, -b.TotalCents, b.Currency, b.ID)
+	if err != nil {
+		return err
+	}
+	payload, err := json.Marshal(map[string]any{
+		"booking_id": b.ID, "session_id": b.SessionID, "payer_account_id": payerID,
+		"learner_ids": b.LearnerIDs, "total_cents": b.TotalCents, "currency": b.Currency,
+	})
+	if err != nil {
+		return err
+	}
+	_, err = tx.Exec(ctx, `
+		INSERT INTO outbox_event (id, aggregate_type, aggregate_id, event_type, payload)
+		VALUES ($1, 'booking', $2, 'booking_created', $3)`,
+		newUUIDv7(), b.ID, payload)
+	return err
 }
 
 // loadBooking reads a booking (and the payer's current balance), for a replay
