@@ -112,6 +112,18 @@ async function loadEnv() {
   render();
 }
 
+// Test sites only: take over the seed teacher profile, then the header shows
+// the "Teacher page" link (loadMe brings back is_teacher = true).
+async function becomeTestTeacher() {
+  const res = await api("POST", "/test-teacher");
+  if (!res.ok) {
+    showToast(`${t("somethingWrong")} ${t("reference")}: ${res.requestId}`);
+    return;
+  }
+  showToast(t("testTeacherDone"));
+  loadMe();
+}
+
 // Test sites only: +$50 of fake credit (the server refuses beyond $500).
 async function addTestCredit() {
   state.addingCredit = true;
@@ -214,6 +226,10 @@ function renderBanner() {
   btn.hidden = !signedIn;
   btn.textContent = t("addTestCredit", money(5000));
   btn.disabled = state.addingCredit;
+  // "Become the test teacher": for signed-in testers who aren't a teacher yet.
+  const teacherBtn = document.querySelector("#test-teacher-btn");
+  teacherBtn.hidden = !signedIn || state.me.is_teacher;
+  teacherBtn.textContent = t("becomeTestTeacher");
 }
 
 // Header: nothing until we know, then "Sign in" or name + "Sign out".
@@ -225,7 +241,7 @@ function renderAccount() {
     return;
   }
   accountEl.append(h("span", { class: "account-name", title: state.me.email }, state.me.display_name));
-  if (state.me.is_teacher) accountEl.append(h("span", { class: "tag" }, t("teacherBadge")));
+  if (state.me.is_teacher) accountEl.append(h("a", { class: "link", href: "teacher.html" }, t("teacherLink")));
   accountEl.append(h("button", { type: "button", class: "btn-secondary btn-small", "data-action": "logout" }, t("signOut")));
 }
 
@@ -627,6 +643,7 @@ document.addEventListener("click", (e) => {
   if (action === "close-signin") { state.signin.open = false; render(); }
   if (action === "logout") logout();
   if (action === "test-credit" && !state.addingCredit) addTestCredit();
+  if (action === "test-teacher") becomeTestTeacher();
 });
 
 // "submit" bubbles like "click", so one document listener handles every form.

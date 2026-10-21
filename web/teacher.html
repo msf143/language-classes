@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Hablemos · Teacher</title>
+  <link rel="stylesheet" href="styles.css">
+  <script src="i18n.js" defer></script>
+  <script src="common.js" defer></script>
+  <script src="teacher.js" defer></script>
+</head>
+<body>
+  <header class="site-header">
+    <div class="wrap header-row">
+      <a class="brand" href="/">Hablemos</a>
+      <div class="header-actions">
+        <a class="link" href="/" data-i18n="backToClasses"></a>
+        <div class="lang-switch" role="group" aria-label="Interface language">
+          <button type="button" data-ui-lang="en">EN</button>
+          <button type="button" data-ui-lang="es">ES</button>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <main class="wrap">
+    <h1 data-i18n="teacherTitle"></h1>
+    <p class="tz-note" id="tz-note"></p>
+
+    <!-- Loading / not signed in / not a teacher / error -->
+    <div id="status" class="status" aria-live="polite" hidden></div>
+
+    <div id="dashboard" hidden>
+      <section class="teacher-section">
+        <h2 data-i18n="myAvailability"></h2>
+        <p class="muted" data-i18n="availabilityHint"></p>
+        <ul id="block-list" class="block-list"></ul>
+
+        <!-- Times are typed in the teacher's own time zone; the server converts them. -->
+        <form id="add-block" class="add-block" novalidate>
+          <h3 data-i18n="addTimes"></h3>
+          <div class="add-block-fields">
+            <label class="field"><span data-i18n="dateLabel"></span>
+              <input type="date" name="date" id="add-date" required></label>
+            <label class="field"><span data-i18n="fromLabel"></span>
+              <input type="time" name="from" step="900" required></label>
+            <label class="field"><span data-i18n="toLabel"></span>
+              <input type="time" name="to" step="900" required></label>
+            <label class="field"><span data-i18n="repeatLabel"></span>
+              <select name="repeat_weeks" id="add-repeat"></select></label>
+          </div>
+          <p id="add-error" class="form-error" aria-live="polite"></p>
+          <button type="submit" class="btn-primary" id="add-submit"></button>
+        </form>
+      </section>
+
+      <section class="teacher-section">
+        <h2 data-i18n="myClasses"></h2>
+        <ul id="class-list" class="block-list"></ul>
+      </section>
+    </div>
+  </main>
+
+  <div id="toast" class="toast" role="status" hidden></div>
+</body>
+</html>

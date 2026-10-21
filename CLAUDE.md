@@ -66,8 +66,9 @@ cmd/api/            main.go    server wiring, middleware, shared helpers (writeJ
 migrations/         000NNN_description.up.sql / .down.sql  (numbered, append-only)
 scripts/seed.sql    dev seed data (idempotent; times relative to now()); never on prod
 scripts/prod-db.sh  migrate/psql against the prod database through the Cloud SQL Auth Proxy
-web/                index.html + app.js (catalog, sign-in dialog), signin.html + signin.js (emailed link
-                    lands here), common.js (shared t/h/api helpers), i18n.js (all UI strings), styles.css
+web/                index.html + app.js (catalog, booking/cancel dialogs, my bookings), signin.html + signin.js
+                    (emailed link lands here), teacher.html + teacher.js (teacher dashboard), common.js (shared
+                    t/h/api helpers), i18n.js (all UI strings), styles.css
 ```
 
 ## Commands
@@ -354,7 +355,9 @@ For what's already built, read the code and `git log`. Next, in order:
    and private share `lockPayerAndFindKey`, `checkLearners`, `priceFor`, `chargeAndWrite` (the only code that
    spends credit). New codes: `slot_unavailable`, `slot_taken`; 4d teacher page: [x] 4d-1 server (publish also accepts {date, from, to} read in the teacher's
    account zone via `time.ParseInLocation`; `GET /teacher/sessions` with attendees + minors; test sites only:
-   `POST /test-teacher` links the seed teacher profile to the signed-in account); [ ] 4d-2 the page; [ ] 4e student "book a private class" page.
+   `POST /test-teacher` links the seed teacher profile to the signed-in account); [x] 4d-2 the page (`web/teacher.html` + `teacher.js`: availability by day
+   in the account's zone via Intl `timeZone`, add form → {date, from, to, repeat_weeks}, withdraw chips, classes
+   with attendees and the minor note; header "Teacher page" link; banner "Become the test teacher" on test sites); [ ] 4e student "book a private class" page.
 5. **Worker:** process `outbox_event` (claim rows with `FOR UPDATE SKIP LOCKED`), send emails and
    reminders, run the 24h group-minimum check, purge expired login tokens and web sessions.
    Same Go binary, `worker` mode, separate Cloud Run service.
