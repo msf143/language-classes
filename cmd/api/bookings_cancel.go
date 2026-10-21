@@ -159,3 +159,85 @@ func cancelBookingTx(ctx context.Context, pool *pgxpool.Pool, payerID, bookingID
 	})
 	return b, err
 }
+
+// myBookingDTO is one entry in GET /bookings: a booking with what the
+// "My bookings" list shows about its class and who's attending.
+type myBookingDTO struct {
+	ID                     string        `json:"id"`
+	PartySize              int           `json:"party_size"`
+	TotalCents             int           `json:"total_cents"`
+	Currency               string        `json:"currency"`
+	CreatedAt              time.Time     `json:"created_at"`
+	RefundIfCancelledCents int           `json:"refund_if_cancelled_cents"` // if cancelled right now
+	Session                mySessionDTO  `json:"session"`
+	Attendees              []attendeeDTO `json:"attendees"`
+}
+
+type mySessionDTO struct {
+	ID              string    `json:"id"`
+	Kind            string    `json:"kind"`
+	Title           *string   `json:"title"`
+	TargetLanguage  string    `json:"target_language"`
+	Audience        string    `json:"audience"`
+	StartsAt        time.Time `json:"starts_at"`
+	DurationMinutes int       `json:"duration_minutes"`
+}
+
+type attendeeDTO struct {
+	LearnerID   string `json:"learner_id"`
+	DisplayName string `json:"display_name"`
+}
+
+// listMyBookings handles GET /bookings (wrapped in requireSignIn): the signed-in
+// person's upcoming bookings, soonest first. Only bookings they paid for that
+// are still confirmed, for classes that haven't started and weren't cancelled.
+func listMyBookings(pool *pgxpool.Pool) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		me, _ := accountFrom(r)
+		rows, err := pool.Query(r.Context(), `
+			SELECT b.id::text, b.party_size, b.total_cents, b.currency, b.created_at,
+			       s.id::text, s.kind, s.title, s.target_language, s.audience, s.starts_at, s.ends_at,
+			       -- who's attending, as a JSON array; pgx decodes it into []attendeeDTO
+			       (SELECT COALESCE(json_agg(json_build_object(
+			                   'learner_id', l.id, 'display_name', l.display_name)
+			                   ORDER BY l.display_name), '[]')
+			        FROM booking_attendee a JOIN learner l ON l.id = a.learner_id
+			        WHERE a.booking_id = b.id AND a.status <> 'removed'),
+			       now()
+			FROM booking b JOIN session s ON s.id = b.session_id
+			WHERE b.payer_account_id = $1 AND b.status = 'confirmed'
+			  AND s.status IN ('scheduled', 'confirmed') AND s.starts_at > now()
+			ORDER BY s.starts_at
+			LIMIT 100`, me.ID)
+		if err != nil {
+			logFrom(r).Error("list my bookings: query failed", "err", err)
+			writeError(w, r, http.StatusInternalServerError, "could not load your bookings")
+			return
+		}
+		defer rows.Close()
+
+		bookings := []myBookingDTO{} // [] rather than null when there are none
+		for rows.Next() {
+			var b myBookingDTO
+			var endsAt, now time.Time
+			if err := rows.Scan(&b.ID, &b.PartySize, &b.TotalCents, &b.Currency, &b.CreatedAt,
+				&b.Session.ID, &b.Session.Kind, &b.Session.Title, &b.Session.TargetLanguage,
+				&b.Session.Audience, &b.Session.StartsAt, &endsAt, &b.Attendees, &now); err != nil {
+				logFrom(r).Error("list my bookings: scan failed", "err", err)
+				writeError(w, r, http.StatusInternalServerError, "could not load your bookings")
+				return
+			}
+			b.Session.StartsAt = b.Session.StartsAt.UTC()
+			b.Session.DurationMinutes = int(endsAt.Sub(b.Session.StartsAt).Minutes())
+			// The same rule POST /bookings/{id}/cancel applies, with the database's clock.
+			b.RefundIfCancelledCents = refundFor(b.TotalCents, b.Session.StartsAt.Sub(now))
+			bookings = append(bookings, b)
+		}
+		if err := rows.Err(); err != nil {
+			logFrom(r).Error("list my bookings: row iteration failed", "err", err)
+			writeError(w, r, http.StatusInternalServerError, "could not load your bookings")
+			return
+		}
+		writeJSON(w, http.StatusOK, bookings)
+	}
+}

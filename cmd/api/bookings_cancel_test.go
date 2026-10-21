@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -268,5 +269,57 @@ func waitForLockWaiters(t *testing.T, pool *pgxpool.Pool, n int) {
 			t.Fatalf("only %d of %d requests reached the lock in time", waiting, n)
 		}
 		time.Sleep(20 * time.Millisecond)
+	}
+}
+
+// GET /bookings lists my upcoming confirmed bookings, soonest first, each with
+// the refund I'd get if I cancelled now. Cancelled ones and other people's don't appear.
+func TestListMyBookings(t *testing.T) {
+	pool := testPool(t)
+	teacher := newTeacher(t, pool)
+	me := newStudent(t, pool, 10000, false, true) // an adult and a child
+	other := newStudent(t, pool, 5000, false)
+
+	far := newSession(t, pool, teacher, sessionOpts{audience: "all", minutes: 45, slot: 40}) // in 80h
+	near := newSession(t, pool, teacher, sessionOpts{slot: 6})                               // in 12h
+	gone := newSession(t, pool, teacher, sessionOpts{slot: 41})
+
+	farBooking := bookOK(t, pool, me, far) // both learners: 2 x 1200
+	if rec := book(pool, me.cookie, newUUIDv7(), near, me.learners[0]); rec.Code != http.StatusCreated {
+		t.Fatalf("booking near: %d %s", rec.Code, rec.Body)
+	}
+	cancelled := bookOK(t, pool, student{accountID: me.accountID, cookie: me.cookie, learners: me.learners[:1]}, gone)
+	if rec := cancel(pool, me.cookie, cancelled.ID); rec.Code != http.StatusOK {
+		t.Fatalf("cancel: %d %s", rec.Code, rec.Body)
+	}
+	bookOK(t, pool, other, far) // someone else's booking in the same class
+
+	rec := call(requireSignIn(pool, listMyBookings(pool)), "GET", "/bookings", me.cookie)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status %d, body %s", rec.Code, rec.Body)
+	}
+	var got []myBookingDTO
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 2 {
+		t.Fatalf("%d bookings listed, want 2 (near, far): %+v", len(got), got)
+	}
+	if got[0].Session.ID != near || got[1].Session.ID != far {
+		t.Errorf("order: %s, %s; want near then far", got[0].Session.ID, got[1].Session.ID)
+	}
+	if got[0].TotalCents != 1500 || got[0].RefundIfCancelledCents != 750 {
+		t.Errorf("near (12h away): total %d, refund %d; want 1500 and 750", got[0].TotalCents, got[0].RefundIfCancelledCents)
+	}
+	f := got[1]
+	if f.ID != farBooking.ID || f.TotalCents != 2400 || f.RefundIfCancelledCents != 2400 || f.PartySize != 2 || len(f.Attendees) != 2 {
+		t.Errorf("far (80h away) = %+v; want total 2400, full refund, 2 attendees", f)
+	}
+	if f.Session.DurationMinutes != 45 || f.Session.Audience != "all" {
+		t.Errorf("far session = %+v; want 45 min, audience all", f.Session)
+	}
+
+	if rec := call(requireSignIn(pool, listMyBookings(pool)), "GET", "/bookings", nil); rec.Code != http.StatusUnauthorized {
+		t.Errorf("signed out: status %d, want 401", rec.Code)
 	}
 }

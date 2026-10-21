@@ -311,7 +311,8 @@ For what's already built, read the code and `git log`. Next, in order:
          `cancelled_at` + `refund_cents`, ledger `refund` (+refund), outbox `booking_cancelled`; a private
          session is cancelled too (`cancel_reason = 'booking_cancelled'`). No session lock (a freed seat can't
          oversell). Rule numbers are Go constants (the policies page will read them). Pieces: (1) [x] cancel
-         endpoint (`cmd/api/bookings_cancel.go`, `refundFor`) + tests incl. a gated race test; (2) [ ] `GET /bookings` (mine, upcoming, `refund_if_cancelled_cents`);
+         endpoint (`cmd/api/bookings_cancel.go`, `refundFor`) + tests incl. a gated race test; (2) [x] `GET /bookings` (mine as payer, confirmed, upcoming; with session, attendees,
+         `refund_if_cancelled_cents` from `refundFor`);
          (3) [ ] page: "My bookings", cancel confirmation, "You're booked" on cards.
 4. **Teacher side:** publish availability blocks; API computes bookable private slots.
 5. **Worker:** process `outbox_event` (claim rows with `FOR UPDATE SKIP LOCKED`), send emails and
