@@ -175,8 +175,12 @@ then find the link in the log.
   gets back **50% of each dropped person's share** (same as a within-24h cancel), at the
   locked per-person price. The booking is not repriced.
 - **Availability:** teacher publishes blocks (e.g. Tue 9:00–12:00) and the lengths he offers
-  (`teacher.offered_durations`). Bookable slots are computed on a 15-minute grid: block minus
-  existing sessions minus buffers. Default buffer 5 minutes (`teacher.buffer_minutes`).
+  (`teacher.offered_durations`: 30, 45, 60). Bookable slots are computed on a 15-minute grid:
+  block minus existing sessions. **The teacher's break is inside the class** (the "50-minute hour",
+  decided 2026-10-21): a class may end up to `teacher.buffer_minutes` (5) early, so classes sit back
+  to back (7–8 PM and 8–9 PM). A session's `occupied` = `[starts_at, ends_at)`, no extra gap.
+  Shown to students wherever they book (and on the policies page): "Classes may end up to 5 minutes
+  early, so the teacher can take a short break between classes."
 - **Pricing** varies by kind × duration × party size only (`price_tier`, versioned by validity window).
 - **Children:** a parent's account holds learner profiles; kids never log in. Kids' group
   sessions use `audience = 'kids'`. Policy: a parent nearby for minors on video.
@@ -318,6 +322,20 @@ For what's already built, read the code and `git log`. Next, in order:
          dialog (refund from the server's preview; toast uses the refund in the response), refresh.
          Done 2026-10-21, checked in headless Chrome.
 4. **← resume here: Teacher side:** publish availability blocks; API computes bookable private slots.
+   Design (agreed 2026-10-21):
+   - Blocks are concrete date ranges (`availability_block.period`), with an optional "repeat weekly for N
+     weeks" that creates N ordinary blocks in one transaction. No recurring rules (add later if needed).
+     Withdraw = status `withdrawn` (never delete, never edit times); withdrawing doesn't cancel booked classes.
+   - The server speaks UTC only; the teacher's page converts from/to his time zone (`America/Bogota`).
+   - Slots are derived on request, never stored: a pure Go function (blocks, busy ranges, duration, not-before,
+     15-minute grid) → start times; table-tested without a database. Public, like the catalog.
+   - Limits: 1-hour minimum notice; only lengths in `offered_durations` that have a private price; window
+     up to 8 weeks ahead.
+   - Races: the exclusion constraint on `session.occupied` decides; `23P01` → 409 "that time was just taken".
+   - Dev seed: availability for the dev teacher (next 2 weeks, Bogotá mornings/evenings) and private prices
+     per person by party size (e.g. 60 min: $25 / $20 / $17 / $15 for 1–4 people).
+   Steps: [ ] 4a teacher API (publish / list / withdraw blocks, `requireTeacher`); [ ] 4b `GET /private-slots`;
+   [ ] 4c private booking in `POST /bookings`; [ ] 4d teacher page; [ ] 4e student "book a private class" page.
 5. **Worker:** process `outbox_event` (claim rows with `FOR UPDATE SKIP LOCKED`), send emails and
    reminders, run the 24h group-minimum check, purge expired login tokens and web sessions.
    Same Go binary, `worker` mode, separate Cloud Run service.
