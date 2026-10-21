@@ -120,6 +120,13 @@ the run, and the version already live keeps serving.
 **Review deployments** > tick `production` > **Approve and deploy**. Reject (or just leave it) to keep
 production as it is. If a newer push arrives while one waits, the newer run takes its place.
 
+That last part shows up on the older run as a cancelled `deploy-prod` with the message *"Canceling
+since a higher priority waiting request for deploy-prod exists"*. It is not a failure: GitHub keeps at
+most one waiting job per concurrency group, so only the newest change is ever offered to production
+(it contains all the earlier ones), and an old approval can never deploy older code over newer.
+Production stays on the last version someone approved until the next approval. To see what's live:
+`gcloud run services describe hablemos-api --region us-east1 --format='value(spec.template.spec.containers[0].image)'`.
+
 The approval rule lives in GitHub, not in the workflow file: repository **Settings > Environments >
 production > Required reviewers**. `staging` has no rule. `production` also only accepts deployments
 from the `main` branch.
