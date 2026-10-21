@@ -81,3 +81,34 @@ func runSeed(ctx context.Context, pool *pgxpool.Pool, appEnv, seedSQL string) er
 	_, err := pool.Exec(ctx, seedSQL)
 	return err
 }
+
+// seedTeacherID is the dev/staging teacher created by scripts/seed.sql.
+const seedTeacherID = "01900000-0000-7000-8000-0000000000a1"
+
+// becomeTestTeacher handles POST /test-teacher (test sites only; wrapped in
+// requireSignIn): it links the seed teacher profile (with its prices, classes
+// and availability) to the signed-in account, so a tester can try the teacher's
+// page with their own login. The seed teacher's email is teacher@example.com,
+// which nobody receives. One test teacher: whoever pressed last is it.
+func becomeTestTeacher(pool *pgxpool.Pool) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		me, _ := accountFrom(r)
+		tag, err := pool.Exec(r.Context(), `
+			UPDATE teacher SET account_id = $2, status = 'active'
+			WHERE id = $1
+			  AND NOT EXISTS (SELECT 1 FROM teacher WHERE account_id = $2 AND id <> $1)`,
+			seedTeacherID, me.ID)
+		if err != nil {
+			logFrom(r).Error("become test teacher failed", "err", err)
+			writeError(w, r, http.StatusInternalServerError, "could not make you the test teacher")
+			return
+		}
+		if tag.RowsAffected() == 0 {
+			// No seed teacher here, or this account is already a different teacher.
+			writeErrorCode(w, r, http.StatusConflict, "not_possible", "you can't become the test teacher with this account")
+			return
+		}
+		logFrom(r).Info("test teacher taken over", "account_id", me.ID)
+		writeJSON(w, http.StatusOK, map[string]any{"teacher_id": seedTeacherID})
+	}
+}

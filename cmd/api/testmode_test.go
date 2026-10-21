@@ -82,3 +82,35 @@ func TestRunSeed(t *testing.T) {
 		t.Errorf("seed teacher rows: %d, want 1", n)
 	}
 }
+
+// On test sites, any signed-in tester can take over the seed teacher profile.
+func TestBecomeTestTeacher(t *testing.T) {
+	pool := testPool(t)
+	ctx := context.Background()
+	if err := runSeed(ctx, pool, "dev", scripts.Seed); err != nil { // the seed teacher must exist
+		t.Fatal(err)
+	}
+	var originalAccount string
+	if err := pool.QueryRow(ctx, `SELECT account_id::text FROM teacher WHERE id = $1`, seedTeacherID).Scan(&originalAccount); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { // hand the profile back, so dev keeps working as teacher@example.com
+		if _, err := pool.Exec(context.Background(), `UPDATE teacher SET account_id = $2 WHERE id = $1`, seedTeacherID, originalAccount); err != nil {
+			t.Errorf("restoring the seed teacher: %v", err)
+		}
+	})
+
+	tester := newStudent(t, pool, 0, false)
+	if rec := call(requireSignIn(pool, becomeTestTeacher(pool)), "POST", "/test-teacher", tester.cookie); rec.Code != http.StatusOK {
+		t.Fatalf("status %d, body %s", rec.Code, rec.Body)
+	}
+	if rec := call(requireTeacher(pool, listAvailability(pool)), "GET", "/teacher/availability", tester.cookie); rec.Code != http.StatusOK {
+		t.Errorf("the tester should now pass requireTeacher, got %d", rec.Code)
+	}
+
+	// Someone who is already a (different) teacher can't also take this one.
+	otherTeacher, _ := newSignedInTeacher(t, pool)
+	if rec := call(requireSignIn(pool, becomeTestTeacher(pool)), "POST", "/test-teacher", otherTeacher); rec.Code != http.StatusConflict {
+		t.Errorf("another teacher: status %d, want 409", rec.Code)
+	}
+}

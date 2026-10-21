@@ -182,3 +182,82 @@ func TestRequireTeacher(t *testing.T) {
 		t.Errorf("withdrawing another teacher's block: %d, want 404", rec.Code)
 	}
 }
+
+// The teacher's page sends his own wall-clock time; the server reads it in
+// his account's time zone (Bogotá, UTC-5): 19:00 there is 00:00 UTC next day.
+func TestPublishInLocalTime(t *testing.T) {
+	pool := testPool(t)
+	cookie, _ := newSignedInTeacher(t, pool)
+	date := time.Now().AddDate(0, 0, 10).Format("2006-01-02")
+	h := publishAvailability(pool)
+
+	rec := send(pool, h, "POST", "/teacher/availability", `{"date": "`+date+`", "from": "19:00", "to": "21:00", "repeat_weeks": 2}`, "", cookie)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("status %d, body %s", rec.Code, rec.Body)
+	}
+	blocks := decodeBlocks(t, rec)
+	d, _ := time.Parse("2006-01-02", date)
+	wantStart := d.Add(24 * time.Hour) // 19:00 Bogotá = midnight UTC, the next calendar day
+	if len(blocks) != 2 || !blocks[0].StartsAt.Equal(wantStart) || !blocks[0].EndsAt.Equal(wantStart.Add(2*time.Hour)) ||
+		!blocks[1].StartsAt.Equal(wantStart.AddDate(0, 0, 7)) {
+		t.Errorf("blocks %+v; want %v-%v UTC and the same a week later", blocks, wantStart, wantStart.Add(2*time.Hour))
+	}
+
+	for _, body := range []string{
+		`{"date": "next tuesday", "from": "19:00", "to": "21:00"}`,
+		`{"date": "` + date + `", "from": "7pm", "to": "21:00"}`,
+		`{"date": "` + date + `", "from": "21:00", "to": "19:00"}`, // ends before it starts
+	} {
+		if rec := send(pool, h, "POST", "/teacher/availability", body, "", cookie); rec.Code != http.StatusBadRequest {
+			t.Errorf("%s: status %d, want 400", body, rec.Code)
+		}
+	}
+}
+
+// GET /teacher/sessions: his upcoming, non-cancelled classes, with who's coming.
+func TestTeacherSessions(t *testing.T) {
+	pool := testPool(t)
+	ctx := context.Background()
+	cookie, teacher := newSignedInTeacher(t, pool)
+	group := newSession(t, pool, teacher, sessionOpts{audience: "all", maxSeats: seats(6), slot: 20})
+	cancelled := newSession(t, pool, teacher, sessionOpts{slot: 21})
+	if _, err := pool.Exec(ctx, `UPDATE session SET status = 'cancelled', cancel_reason = 'teacher_cancelled' WHERE id = $1`, cancelled); err != nil {
+		t.Fatal(err)
+	}
+	newSession(t, pool, newTeacher(t, pool), sessionOpts{slot: 22}) // someone else's class
+
+	// A parent books the group class for herself and her child (written directly:
+	// this teacher has no group prices).
+	parent := newStudent(t, pool, 0, false, true)
+	bookingID := newUUIDv7()
+	if _, err := pool.Exec(ctx, `
+		INSERT INTO booking (id, session_id, payer_account_id, party_size, price_per_person_cents, total_cents, idempotency_key)
+		VALUES ($1, $2, $3, 2, 1000, 2000, 'k')`, bookingID, group, parent.accountID); err != nil {
+		t.Fatal(err)
+	}
+	for _, l := range parent.learners {
+		if _, err := pool.Exec(ctx, `INSERT INTO booking_attendee (id, booking_id, learner_id) VALUES ($1, $2, $3)`,
+			newUUIDv7(), bookingID, l); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	rec := send(pool, listTeacherSessions(pool), "GET", "/teacher/sessions", "", "", cookie)
+	var got []teacherSessionDTO
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil || rec.Code != http.StatusOK {
+		t.Fatalf("status %d, body %s", rec.Code, rec.Body)
+	}
+	if len(got) != 1 || got[0].ID != group {
+		t.Fatalf("listed %+v; want only the group class (not the cancelled one, not another teacher's)", got)
+	}
+	g := got[0]
+	minors := 0
+	for _, a := range g.Attendees {
+		if a.IsMinor {
+			minors++
+		}
+	}
+	if g.SeatsTaken != 2 || len(g.Attendees) != 2 || minors != 1 || g.MaxSeats == nil || *g.MaxSeats != 6 {
+		t.Errorf("group class %+v; want 2 of 6 seats taken, 2 attendees, 1 of them a minor", g)
+	}
+}

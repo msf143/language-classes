@@ -83,6 +83,7 @@ func main() {
 	mux.HandleFunc("POST /teacher/availability", requireTeacher(pool, publishAvailability(pool)))
 	mux.HandleFunc("GET /teacher/availability", requireTeacher(pool, listAvailability(pool)))
 	mux.HandleFunc("POST /teacher/availability/{id}/withdraw", requireTeacher(pool, withdrawAvailability(pool)))
+	mux.HandleFunc("GET /teacher/sessions", requireTeacher(pool, listTeacherSessions(pool)))
 
 	// Which environment this is (the page shows a banner on test sites), and
 	// fake credit, which only exists on test sites: on production this route
@@ -90,6 +91,7 @@ func main() {
 	mux.HandleFunc("GET /env", getEnv(appEnv))
 	if isTestSite(appEnv) {
 		mux.HandleFunc("POST /test-credit", requireSignIn(pool, addTestCredit(pool)))
+		mux.HandleFunc("POST /test-teacher", requireSignIn(pool, becomeTestTeacher(pool)))
 	}
 
 	// How login links reach people. Dev always logs them, so a dev setup can

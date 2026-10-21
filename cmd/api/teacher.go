@@ -61,10 +61,32 @@ type blockDTO struct {
 	Status   string    `json:"status"` // "open" or "withdrawn"
 }
 
+// publishRequest is the body of POST /teacher/availability. Give the times
+// either as UTC instants (starts_at, ends_at) or, as the teacher's page does,
+// as his own wall-clock time: date + from + to, read in his account's time zone.
 type publishRequest struct {
 	StartsAt    time.Time `json:"starts_at"` // RFC 3339, e.g. "2026-10-27T14:00:00Z"
 	EndsAt      time.Time `json:"ends_at"`
+	Date        string    `json:"date"`         // "2026-10-27", in the teacher's time zone
+	From        string    `json:"from"`         // "19:00"
+	To          string    `json:"to"`           // "21:00" (same day)
 	RepeatWeeks int       `json:"repeat_weeks"` // how many weeks in a row (0 or 1 = just this one)
+}
+
+// fromLocal turns date + from + to into StartsAt and EndsAt, reading them as
+// wall-clock times in loc (Go knows each zone's offset and daylight-saving
+// rules). It returns a message for the client, or "". Without a date it does nothing.
+func (p *publishRequest) fromLocal(loc *time.Location) string {
+	if p.Date == "" {
+		return ""
+	}
+	var err1, err2 error
+	p.StartsAt, err1 = time.ParseInLocation("2006-01-02 15:04", p.Date+" "+p.From, loc)
+	p.EndsAt, err2 = time.ParseInLocation("2006-01-02 15:04", p.Date+" "+p.To, loc)
+	if err1 != nil || err2 != nil {
+		return `date, from and to look like {"date": "2026-10-27", "from": "19:00", "to": "21:00"}`
+	}
+	return ""
 }
 
 // check validates a publish request and returns a message for the client, or "".
@@ -104,17 +126,21 @@ func publishAvailability(pool *pgxpool.Pool) http.HandlerFunc {
 			writeError(w, r, http.StatusBadRequest, `body must be JSON like {"starts_at": "2026-10-27T14:00:00Z", "ends_at": "2026-10-27T17:00:00Z", "repeat_weeks": 1}`)
 			return
 		}
-		if msg := req.check(time.Now()); msg != "" {
-			writeError(w, r, http.StatusBadRequest, msg)
-			return
-		}
-
-		// "Same time next week" means the same wall-clock time where the teacher
-		// lives. AddDate in his zone keeps 9:00 at 9:00 across a daylight-saving
+		// The teacher's own time zone: for reading date/from/to, and because
+		// "same time next week" means the same wall-clock time where he lives.
+		// AddDate in his zone keeps 9:00 at 9:00 across a daylight-saving
 		// change (Bogotá has none, but a future teacher's zone might).
 		loc, err := time.LoadLocation(me.Timezone)
 		if err != nil {
 			loc = time.UTC
+		}
+		if msg := req.fromLocal(loc); msg != "" {
+			writeError(w, r, http.StatusBadRequest, msg)
+			return
+		}
+		if msg := req.check(time.Now()); msg != "" {
+			writeError(w, r, http.StatusBadRequest, msg)
+			return
 		}
 		start, end := req.StartsAt.In(loc), req.EndsAt.In(loc)
 
@@ -223,5 +249,75 @@ func withdrawAvailability(pool *pgxpool.Pool) http.HandlerFunc {
 		}
 		b.StartsAt, b.EndsAt = b.StartsAt.UTC(), b.EndsAt.UTC()
 		writeJSON(w, http.StatusOK, b)
+	}
+}
+
+// teacherSessionDTO is one of the teacher's upcoming classes, with who's coming.
+type teacherSessionDTO struct {
+	ID             string               `json:"id"`
+	Kind           string               `json:"kind"` // "group" or "private"
+	Title          *string              `json:"title"`
+	TargetLanguage string               `json:"target_language"`
+	Audience       string               `json:"audience"`
+	StartsAt       time.Time            `json:"starts_at"`
+	EndsAt         time.Time            `json:"ends_at"`
+	Status         string               `json:"status"`
+	MaxSeats       *int                 `json:"max_seats"`
+	SeatsTaken     int                  `json:"seats_taken"`
+	Attendees      []teacherAttendeeDTO `json:"attendees"`
+}
+
+type teacherAttendeeDTO struct {
+	DisplayName string `json:"display_name"`
+	IsMinor     bool   `json:"is_minor"` // the policy: a parent nearby for minors on video
+}
+
+// listTeacherSessions handles GET /teacher/sessions (wrapped in requireTeacher):
+// his classes that haven't ended and weren't cancelled, for the next 8 weeks,
+// soonest first, each with the learners booked into it.
+func listTeacherSessions(pool *pgxpool.Pool) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		rows, err := pool.Query(r.Context(), `
+			SELECT s.id::text, s.kind, s.title, s.target_language, s.audience, s.starts_at, s.ends_at,
+			       s.status, s.max_seats,
+			       COALESCE((SELECT SUM(b.party_size) FROM booking b
+			                 WHERE b.session_id = s.id AND b.status = 'confirmed'), 0)::int,
+			       -- who's coming: joined learners of confirmed bookings, as JSON
+			       (SELECT COALESCE(json_agg(json_build_object(
+			                   'display_name', l.display_name, 'is_minor', l.is_minor)
+			                   ORDER BY l.display_name), '[]')
+			        FROM booking b
+			        JOIN booking_attendee a ON a.booking_id = b.id AND a.status = 'joined'
+			        JOIN learner l ON l.id = a.learner_id
+			        WHERE b.session_id = s.id AND b.status = 'confirmed')
+			FROM session s
+			WHERE s.teacher_id = $1 AND s.status <> 'cancelled'
+			  AND s.ends_at > now() AND s.starts_at < now() + interval '8 weeks'
+			ORDER BY s.starts_at
+			LIMIT 300`, teacherFrom(r))
+		if err != nil {
+			logFrom(r).Error("teacher sessions: query failed", "err", err)
+			writeError(w, r, http.StatusInternalServerError, "could not load your classes")
+			return
+		}
+		defer rows.Close()
+		sessions := []teacherSessionDTO{}
+		for rows.Next() {
+			var s teacherSessionDTO
+			if err := rows.Scan(&s.ID, &s.Kind, &s.Title, &s.TargetLanguage, &s.Audience, &s.StartsAt, &s.EndsAt,
+				&s.Status, &s.MaxSeats, &s.SeatsTaken, &s.Attendees); err != nil {
+				logFrom(r).Error("teacher sessions: scan failed", "err", err)
+				writeError(w, r, http.StatusInternalServerError, "could not load your classes")
+				return
+			}
+			s.StartsAt, s.EndsAt = s.StartsAt.UTC(), s.EndsAt.UTC()
+			sessions = append(sessions, s)
+		}
+		if err := rows.Err(); err != nil {
+			logFrom(r).Error("teacher sessions: row iteration failed", "err", err)
+			writeError(w, r, http.StatusInternalServerError, "could not load your classes")
+			return
+		}
+		writeJSON(w, http.StatusOK, sessions)
 	}
 }
