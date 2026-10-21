@@ -58,7 +58,8 @@ cmd/api/            main.go    server wiring, middleware, shared helpers (writeJ
                     migrate.go `api migrate` (embedded migrations, one transaction each)
                     sessions.go GET /sessions
                     bookings.go POST /bookings (one transaction, row locks, idempotency key)
-                    bookings_cancel.go POST /bookings/{id}/cancel (refund rule: refundFor)
+                    bookings_cancel.go POST /bookings/{id}/cancel (refund rule: refundFor), GET /bookings
+                    teacher.go requireTeacher, /teacher/availability (publish, list, withdraw)
                     one file per resource as the API grows (bookings.go, ...); *_test.go beside it
 migrations/         000NNN_description.up.sql / .down.sql  (numbered, append-only)
 scripts/seed.sql    dev seed data (idempotent; times relative to now()); never on prod
@@ -334,7 +335,9 @@ For what's already built, read the code and `git log`. Next, in order:
    - Races: the exclusion constraint on `session.occupied` decides; `23P01` → 409 "that time was just taken".
    - Dev seed: availability for the dev teacher (next 2 weeks, Bogotá mornings/evenings) and private prices
      per person by party size (e.g. 60 min: $25 / $20 / $17 / $15 for 1–4 people).
-   Steps: [ ] 4a teacher API (publish / list / withdraw blocks, `requireTeacher`); [ ] 4b `GET /private-slots`;
+   Steps: [x] 4a teacher API (`cmd/api/teacher.go`: `requireTeacher` → 403 `not_teacher`; POST/GET
+   `/teacher/availability` (repeat_weeks ≤ 12 via AddDate in the teacher's zone, one transaction, overlap →
+   409 `block_overlap` from the EXCLUDE constraint); POST `/teacher/availability/{id}/withdraw`, idempotent); [ ] 4b `GET /private-slots`;
    [ ] 4c private booking in `POST /bookings`; [ ] 4d teacher page; [ ] 4e student "book a private class" page.
 5. **Worker:** process `outbox_event` (claim rows with `FOR UPDATE SKIP LOCKED`), send emails and
    reminders, run the 24h group-minimum check, purge expired login tokens and web sessions.
