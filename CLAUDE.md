@@ -58,6 +58,7 @@ cmd/api/            main.go    server wiring, middleware, shared helpers (writeJ
                     migrate.go `api migrate` (embedded migrations, one transaction each)
                     sessions.go GET /sessions
                     bookings.go POST /bookings (one transaction, row locks, idempotency key)
+                    bookings_cancel.go POST /bookings/{id}/cancel (refund rule: refundFor)
                     one file per resource as the API grows (bookings.go, ...); *_test.go beside it
 migrations/         000NNN_description.up.sql / .down.sql  (numbered, append-only)
 scripts/seed.sql    dev seed data (idempotent; times relative to now()); never on prod
@@ -139,6 +140,10 @@ then find the link in the log.
 - Tests create their own rows with fresh `newUUIDv7()` IDs and don't depend on seed data, so
   they can run repeatedly against the dev database.
 - Handler tests use `net/http/httptest` (call the handler directly; no running server needed).
+- **Race tests must be shown to fail without the lock they test** (remove the `FOR UPDATE`, run, restore).
+  When the risky window is short, don't rely on goroutines happening to overlap: hold the row locked from
+  the test (a "gate" transaction), wait until all requests are blocked (`pg_stat_activity`), then release
+  (see `TestCancelBookingRace`).
 
 **Front-end**
 - Pattern: one `state` object → `render()` functions derive the DOM from it → one delegated
@@ -298,6 +303,16 @@ For what's already built, read the code and `git log`. Next, in order:
    - [ ] **← resume here:** 3d. Cancel a booking: refund rules (>24h full, within 24h 50%) as new ledger entries. Also
          "my bookings": show "You're booked" on catalog cards (today you only learn it by trying)
          and list upcoming bookings with a Cancel button.
+         Design (agreed 2026-10-21): `POST /bookings/{id}/cancel`, payer only (others' bookings → 404); no
+         idempotency key (status makes it idempotent: cancelling twice returns the booking, no second refund).
+         Transaction: lock payer `account` (same first lock as booking) → lock the booking → already cancelled
+         → return it; not confirmed / class started → 409 → refund = 100% if start − now() > 24h (exactly 24h
+         = 50%), else 50% **rounded up** to the student's favour ((total·50 + 99) / 100) → booking cancelled +
+         `cancelled_at` + `refund_cents`, ledger `refund` (+refund), outbox `booking_cancelled`; a private
+         session is cancelled too (`cancel_reason = 'booking_cancelled'`). No session lock (a freed seat can't
+         oversell). Rule numbers are Go constants (the policies page will read them). Pieces: (1) [x] cancel
+         endpoint (`cmd/api/bookings_cancel.go`, `refundFor`) + tests incl. a gated race test; (2) [ ] `GET /bookings` (mine, upcoming, `refund_if_cancelled_cents`);
+         (3) [ ] page: "My bookings", cancel confirmation, "You're booked" on cards.
 4. **Teacher side:** publish availability blocks; API computes bookable private slots.
 5. **Worker:** process `outbox_event` (claim rows with `FOR UPDATE SKIP LOCKED`), send emails and
    reminders, run the 24h group-minimum check, purge expired login tokens and web sessions.

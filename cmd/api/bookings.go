@@ -21,16 +21,18 @@ type bookingRequest struct {
 
 // bookingDTO is what the API returns for a booking.
 type bookingDTO struct {
-	ID                  string    `json:"id"`
-	SessionID           string    `json:"session_id"`
-	LearnerIDs          []string  `json:"learner_ids"`
-	PartySize           int       `json:"party_size"`
-	PricePerPersonCents int       `json:"price_per_person_cents"`
-	TotalCents          int       `json:"total_cents"`
-	Currency            string    `json:"currency"`
-	Status              string    `json:"status"`
-	CreatedAt           time.Time `json:"created_at"`
-	BalanceCents        int       `json:"balance_cents"` // the payer's credit after this booking
+	ID                  string     `json:"id"`
+	SessionID           string     `json:"session_id"`
+	LearnerIDs          []string   `json:"learner_ids"`
+	PartySize           int        `json:"party_size"`
+	PricePerPersonCents int        `json:"price_per_person_cents"`
+	TotalCents          int        `json:"total_cents"`
+	Currency            string     `json:"currency"`
+	Status              string     `json:"status"`
+	CreatedAt           time.Time  `json:"created_at"`
+	CancelledAt         *time.Time `json:"cancelled_at"`  // null unless cancelled
+	RefundCents         int        `json:"refund_cents"`  // credit given back when cancelled
+	BalanceCents        int        `json:"balance_cents"` // the payer's credit after this booking
 }
 
 // bookingError is a "you can't book this" answer: an HTTP status, a code the
@@ -312,12 +314,13 @@ func bookGroupSession(ctx context.Context, pool *pgxpool.Pool, payerID, key stri
 	return b, created, err
 }
 
-// loadBooking reads a booking (and the payer's current balance) for a replay.
+// loadBooking reads a booking (and the payer's current balance), for a replay
+// or after a cancellation.
 func loadBooking(ctx context.Context, tx pgx.Tx, id, payerID string) (bookingDTO, error) {
 	b := bookingDTO{ID: id}
 	err := tx.QueryRow(ctx, `
 		SELECT b.session_id, b.party_size, b.price_per_person_cents, b.total_cents, b.currency,
-		       b.status, b.created_at,
+		       b.status, b.created_at, b.cancelled_at, b.refund_cents,
 		       COALESCE((SELECT array_agg(a.learner_id::text ORDER BY a.learner_id::text)
 		                 FROM booking_attendee a
 		                 WHERE a.booking_id = b.id AND a.learner_id IS NOT NULL), '{}'),
@@ -325,6 +328,6 @@ func loadBooking(ctx context.Context, tx pgx.Tx, id, payerID string) (bookingDTO
 		                 WHERE account_id = $2 AND currency = b.currency), 0)
 		FROM booking b WHERE b.id = $1`, id, payerID).
 		Scan(&b.SessionID, &b.PartySize, &b.PricePerPersonCents, &b.TotalCents, &b.Currency,
-			&b.Status, &b.CreatedAt, &b.LearnerIDs, &b.BalanceCents)
+			&b.Status, &b.CreatedAt, &b.CancelledAt, &b.RefundCents, &b.LearnerIDs, &b.BalanceCents)
 	return b, err
 }

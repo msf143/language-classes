@@ -75,6 +75,7 @@ func main() {
 
 	mux.HandleFunc("GET /sessions", signedIn(pool, listSessions(pool)))
 	mux.HandleFunc("POST /bookings", requireSignIn(pool, createBooking(pool)))
+	mux.HandleFunc("POST /bookings/{id}/cancel", requireSignIn(pool, cancelBooking(pool)))
 
 	// Which environment this is (the page shows a banner on test sites), and
 	// fake credit, which only exists on test sites: on production this route
