@@ -14,6 +14,7 @@ const state = {
 
   me: undefined,                   // undefined = not checked yet, null = signed out, else the account
                                    // plus balanceCents and learners (from GET /me)
+  myBookings: [],                  // my upcoming bookings (GET /bookings); [] when signed out
   book: {
     open: false,                   // is the Book dialog showing?
     sessionId: null,               // which class
@@ -74,9 +75,23 @@ async function loadMe() {
   const res = await api("GET", "/me");
   if (res.ok) {
     state.me = { ...res.data.account, balanceCents: res.data.balance_cents, learners: res.data.learners };
+    loadMyBookings();   // signed in: fetch the "My bookings" list too
   } else {
     if (res.status !== 401) console.error("loadMe failed", res);   // 401 just means signed out
     state.me = null;
+  }
+  render();
+}
+
+// My upcoming bookings, for the "My bookings" list and the "You're booked"
+// tags on cards. A failure just leaves the list as it was: the catalog still
+// works, and the next reload tries again.
+async function loadMyBookings() {
+  const res = await api("GET", "/bookings");
+  if (res.ok) {
+    state.myBookings = res.data;
+  } else if (res.status !== 401) {
+    console.error("loadMyBookings failed", res);
   }
   render();
 }
@@ -134,6 +149,7 @@ async function logout() {
     return;
   }
   state.me = null;
+  state.myBookings = [];
   render();
 }
 
@@ -148,7 +164,31 @@ function render() {
   renderBook();
   renderFilters();
   renderStatus();
+  renderMyBookings();
   renderList();
+}
+
+// The bookings to show: none unless someone is signed in, however state.me got
+// cleared (sign-out, expired session).
+function myBookings() {
+  return state.me ? state.myBookings : [];
+}
+
+// "My bookings": one row per upcoming booking.
+function renderMyBookings() {
+  const bookings = myBookings();
+  document.querySelector("#my-bookings").hidden = bookings.length === 0;
+  document.querySelector("#my-bookings-list").replaceChildren(...bookings.map((b) => {
+    const { dateText, timeText } = formatWhen(b.session);
+    const names = b.attendees.map((a) => a.display_name).join(", ");
+    return h("li", { class: "my-booking", "data-booking-id": b.id },
+      h("span", { class: "my-booking-title" }, b.session.title ?? t("privateClass")),
+      h("span", { class: "my-booking-detail" },
+        `${dateText} · ${timeText} · ${t("minutes", b.session.duration_minutes)}`),
+      h("span", { class: "my-booking-detail" }, t("forWhom", names)),
+      h("span", { class: "my-booking-detail" }, t("paid", money(b.total_cents, b.currency))),
+    );
+  }));
 }
 
 // The test-site strip: hidden on production; the credit and the button only
@@ -260,10 +300,13 @@ function sessionCard(s) {
     seatsText = t("seatsLeft", s.seats_left);
   }
 
+  const booked = myBookings().some((b) => b.session.id === s.id);
+
   return h("li", { class: "card", "data-session-id": s.id },
     h("div", { class: "card-tags" },
       h("span", { class: `tag tag-${s.target_language}` }, languageTag),
       h("span", { class: "tag" }, audienceText),
+      booked ? h("span", { class: "tag tag-booked" }, t("youreBooked")) : "",
     ),
     h("h3", { class: "card-title" }, title),
     h("p", { class: "card-when" },

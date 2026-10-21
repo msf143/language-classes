@@ -178,3 +178,16 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .test-banner-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; padding-block: 8px; }
 .test-banner-credit { margin-left: auto; }
 .test-banner .btn-secondary { background: #fffbeb; color: #422006; border-color: #b45309; }
+
+/* ---------- my bookings ---------- */
+.my-bookings { margin-bottom: 32px; }
+.my-bookings h2 { margin: 0 0 12px; }
+.my-bookings-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.my-booking {
+  background: var(--surface); border: 1px solid var(--border); border-left: 4px solid var(--accent);
+  border-radius: var(--radius); padding: 12px 16px;
+  display: flex; flex-wrap: wrap; align-items: center; gap: 4px 16px;
+}
+.my-booking-title { font-weight: 600; flex: 1 1 100%; }
+.my-booking-detail { color: var(--muted); font-size: 0.9rem; }
+.tag-booked { background: var(--accent-soft); color: var(--accent); }

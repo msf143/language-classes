@@ -313,7 +313,9 @@ For what's already built, read the code and `git log`. Next, in order:
          oversell). Rule numbers are Go constants (the policies page will read them). Pieces: (1) [x] cancel
          endpoint (`cmd/api/bookings_cancel.go`, `refundFor`) + tests incl. a gated race test; (2) [x] `GET /bookings` (mine as payer, confirmed, upcoming; with session, attendees,
          `refund_if_cancelled_cents` from `refundFor`);
-         (3) [ ] page: "My bookings", cancel confirmation, "You're booked" on cards.
+         (3) page: [x] 3a "My bookings" section + "You're booked" tags (`state.myBookings` from GET /bookings,
+         loaded by loadMe; ignored when signed out via `myBookings()`); [ ] 3b Cancel button + confirmation
+         dialog with the refund, POST cancel, refresh.
 4. **Teacher side:** publish availability blocks; API computes bookable private slots.
 5. **Worker:** process `outbox_event` (claim rows with `FOR UPDATE SKIP LOCKED`), send emails and
    reminders, run the 24h group-minimum check, purge expired login tokens and web sessions.

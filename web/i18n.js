@@ -48,6 +48,13 @@ const STRINGS = {
     errAudience: "Someone you picked can't attend this class (age group).",
     errSignedOut: "Your sign-in has expired. Please sign in again.",
 
+    // My bookings
+    myBookings: "My bookings",
+    youreBooked: "You're booked",
+    privateClass: "Private class",
+    forWhom: (names) => `For: ${names}`,
+    paid: (amount) => `Paid ${amount}`,
+
     // Test-site banner (staging and dev only)
     testBanner: "Test site: classes and credit here are not real.",
     yourCredit: (amount) => `Your credit: ${amount}`,
@@ -127,6 +134,12 @@ const STRINGS = {
     errAlreadyBooked: "Alguien que elegiste ya tiene un cupo en esta clase.",
     errAudience: "Alguien que elegiste no puede asistir a esta clase (grupo de edad).",
     errSignedOut: "Tu sesión expiró. Por favor, inicia sesión de nuevo.",
+
+    myBookings: "Mis reservas",
+    youreBooked: "Ya reservaste",
+    privateClass: "Clase privada",
+    forWhom: (names) => `Para: ${names}`,
+    paid: (amount) => `Pagado: ${amount}`,
 
     testBanner: "Sitio de prueba: las clases y el crédito aquí no son reales.",
     yourCredit: (amount) => `Tu crédito: ${amount}`,
