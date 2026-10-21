@@ -47,6 +47,8 @@ const STRINGS = {
     errAlreadyBooked: "Someone you picked already has a seat in this class.",
     errAudience: "Someone you picked can't attend this class (age group).",
     errSignedOut: "Your sign-in has expired. Please sign in again.",
+    errSlotTaken: "Sorry, someone just booked that time. Please pick another.",
+    errSlotUnavailable: "That time is no longer available. Please pick another.",
 
     // My bookings
     myBookings: "My bookings",
@@ -187,6 +189,8 @@ const STRINGS = {
     errAlreadyBooked: "Alguien que elegiste ya tiene un cupo en esta clase.",
     errAudience: "Alguien que elegiste no puede asistir a esta clase (grupo de edad).",
     errSignedOut: "Tu sesión expiró. Por favor, inicia sesión de nuevo.",
+    errSlotTaken: "Lo sentimos, alguien acaba de reservar ese horario. Elige otro, por favor.",
+    errSlotUnavailable: "Ese horario ya no está disponible. Elige otro, por favor.",
 
     myBookings: "Mis reservas",
     youreBooked: "Ya reservaste",

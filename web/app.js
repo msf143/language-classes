@@ -31,7 +31,8 @@ const state = {
   },
   book: {
     open: false,                   // is the Book dialog showing?
-    sessionId: null,               // which class
+    target: null,                  // what's being booked: { kind: "group", id } for a catalog class,
+                                   // or a private slot { kind: "private", teacher_id, starts_at, ... }
     learnerIds: [],                // who's ticked (copied from the checkboxes on every change)
     key: "",                       // Idempotency-Key for this attempt: new when opened or ticks change
     status: "idle",                // "idle" | "sending"
@@ -475,10 +476,40 @@ function quote(s, n) {
   return { each, total: each * n, currency: price.currency };
 }
 
-// Open the dialog for a session. The checkboxes are built once, here, not on
-// every render: rebuilding them would lose keyboard focus while someone ticks.
-function openBook(sessionId) {
-  const session = state.sessions.find((s) => s.id === sessionId);
+// Open the dialog for a group class from the catalog.
+function openBookGroup(sessionId) {
+  if (state.sessions.some((s) => s.id === sessionId)) openBook({ kind: "group", id: sessionId });
+}
+
+// Open the dialog for a free private time. The target describes the class that
+// booking will create, in the same shape the dialog uses for a group class:
+// starts_at, duration, prices (the teacher's private prices), seats (a party
+// of up to 4) and an audience ("all": any age; the class is yours).
+function openBookPrivate(teacherId, startsAt) {
+  const teacher = state.private.teachers.find((tr) => tr.teacher_id === teacherId);
+  if (!teacher || !teacher.slots.some((sl) => sl.starts_at === startsAt)) return;
+  openBook({
+    kind: "private", teacher_id: teacherId, teacher_name: teacher.teacher_name,
+    starts_at: startsAt, duration_minutes: state.private.minutes,
+    target_language: state.private.language, audience: "all",
+    prices: teacher.prices, seats_left: 4,
+  });
+}
+
+// What the dialog shows for its target: a group class is re-read from the
+// catalog every time (so live seat counts and prices show), a private slot is
+// used as described. null when a group class has gone from the list.
+function bookTarget() {
+  const tg = state.book.target;
+  if (tg?.kind === "group") return state.sessions.find((s) => s.id === tg.id) ?? null;
+  return tg;
+}
+
+// Open the dialog. The checkboxes are built once, here, not on every render:
+// rebuilding them would lose keyboard focus while someone ticks.
+function openBook(target) {
+  state.book.target = target;
+  const session = bookTarget();
   if (!session) return;
   const eligible = state.me.learners.filter((l) => canAttend(session, l));
   const preselect = eligible.length === 1 ? eligible[0].id : null;   // only one person? tick them
@@ -495,7 +526,7 @@ function openBook(sessionId) {
   }));
 
   state.book = {
-    open: true, sessionId, learnerIds: preselect ? [preselect] : [],
+    open: true, target, learnerIds: preselect ? [preselect] : [],
     key: crypto.randomUUID(), status: "idle", error: null,
   };
   render();
@@ -510,6 +541,8 @@ const bookingErrorKeys = {
   already_booked: "errAlreadyBooked",
   audience_mismatch: "errAudience",
   no_price: "noPriceForParty",
+  slot_taken: "errSlotTaken",
+  slot_unavailable: "errSlotUnavailable",
 };
 
 // Send the booking. Pressing Book again after a failure resends the same
@@ -521,18 +554,28 @@ async function submitBooking() {
   b.error = null;
   render();
 
-  const res = await api("POST", "/bookings",
-    { session_id: b.sessionId, learner_ids: b.learnerIds },
-    { "Idempotency-Key": b.key });
+  // A group class is booked by its ID; a private class by the time it should be
+  // (the server creates the session).
+  const tg = b.target;
+  const body = tg.kind === "group"
+    ? { session_id: tg.id, learner_ids: b.learnerIds }
+    : {
+        private: {
+          teacher_id: tg.teacher_id, starts_at: tg.starts_at,
+          duration_minutes: tg.duration_minutes, target_language: tg.target_language,
+        },
+        learner_ids: b.learnerIds,
+      };
+  const res = await api("POST", "/bookings", body, { "Idempotency-Key": b.key });
   b.status = "idle";
 
   if (res.ok) {   // 201 booked now, or 200 = this attempt had already gone through
-    const title = state.sessions.find((s) => s.id === b.sessionId)?.title ?? "";
     b.open = false;
     render();
-    showToast(t("booked", title));
-    loadMe();         // new balance
-    loadSessions();   // new seat counts
+    showToast(t("booked", targetTitle(tg)));
+    loadMe();             // new balance and My bookings
+    loadSessions();       // new seat counts
+    loadPrivateSlots();   // a private booking takes its time off the list
     return;
   }
   if (res.status === 401) {   // signed out meanwhile (expired, or signed out in another tab)
@@ -549,7 +592,13 @@ async function submitBooking() {
   render();
   // The class or the balance may have changed since the page loaded (someone
   // took the last seat, say): reload both so the dialog shows the real numbers.
-  if (key) { loadMe(); loadSessions(); }
+  if (key) { loadMe(); loadSessions(); loadPrivateSlots(); }
+}
+
+// "Conversational Spanish – Beginners", or "Private class · Learn Spanish".
+function targetTitle(tg) {
+  if (tg.kind === "group") return state.sessions.find((s) => s.id === tg.id)?.title ?? "";
+  return `${t("privateClass")} · ${tg.target_language === "es" ? t("learnSpanish") : t("learnEnglish")}`;
 }
 
 // Fill in the dialog from state: which class, why some people are greyed out,
@@ -560,7 +609,7 @@ function renderBook() {
   if (!b.open && bookDialogEl.open) bookDialogEl.close();
   if (!b.open) return;
 
-  const s = state.sessions.find((x) => x.id === b.sessionId);
+  const s = bookTarget();
   if (!s) {   // the class vanished from the list on a reload (started or cancelled)
     b.open = false;
     bookDialogEl.close();
@@ -571,7 +620,7 @@ function renderBook() {
   const err = b.error;
   document.querySelector("#book-error").textContent =
     err ? t(err.key) + (err.requestId ? ` ${t("reference")}: ${err.requestId}` : "") : "";
-  document.querySelector("#book-title").textContent = s.title;
+  document.querySelector("#book-title").textContent = targetTitle(b.target);
   document.querySelector("#book-when").textContent =
     `${dateText} · ${timeText} · ${t("minutes", s.duration_minutes)}`;
 
@@ -599,7 +648,16 @@ function renderBook() {
     : t("balanceAfter", money(balance), money(balance - q.total));
   balanceEl.classList.toggle("is-short", short);
   submit.textContent = b.status === "sending" ? t("booking") : t("bookFor", money(q.total, q.currency));
-  submit.disabled = short || b.status === "sending";   // no double submits while one is on its way
+  submit.disabled = short || b.status === "sending" || !stillFree(b.target);   // no double submits either
+}
+
+// A private time is still bookable if the latest slot list still has it (it
+// drops out when someone else books it). A group class always counts as free
+// here; its seats are checked by quote().
+function stillFree(tg) {
+  if (tg.kind !== "private" || state.private.status !== "ready") return true;
+  return state.private.teachers.some((tr) => tr.teacher_id === tg.teacher_id &&
+    tr.slots.some((sl) => sl.starts_at === tg.starts_at));
 }
 
 // ---------- cancel dialog ----------
@@ -722,9 +780,15 @@ document.addEventListener("click", (e) => {
     // Signed out: sign in first. Still checking (undefined): ignore the click.
     const sessionId = e.target.closest("[data-session-id]").dataset.sessionId;
     if (state.me === null) openSignin();
-    else if (state.me) openBook(sessionId);
+    else if (state.me) openBookGroup(sessionId);
   }
   if (action === "close-book") { state.book.open = false; render(); }
+  if (action === "pick-slot") {
+    // A free private time: same as Book on a card (sign in first if needed).
+    const chip = e.target.closest("[data-starts-at]");
+    if (state.me === null) openSignin();
+    else if (state.me) openBookPrivate(chip.dataset.teacherId, chip.dataset.startsAt);
+  }
   if (action === "cancel-booking") {
     openCancel(e.target.closest("[data-booking-id]").dataset.bookingId);
   }

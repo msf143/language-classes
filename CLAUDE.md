@@ -327,7 +327,7 @@ For what's already built, read the code and `git log`. Next, in order:
          loaded by loadMe; ignored when signed out via `myBookings()`); [x] 3b Cancel button + confirmation
          dialog (refund from the server's preview; toast uses the refund in the response), refresh.
          Done 2026-10-21, checked in headless Chrome.
-4. **← resume here: Teacher side:** publish availability blocks; API computes bookable private slots.
+4. **Teacher side** (done 2026-10-21): publish availability blocks; API computes bookable private slots.
    Design (agreed 2026-10-21):
    - Blocks are concrete date ranges (`availability_block.period`), with an optional "repeat weekly for N
      weeks" that creates N ordinary blocks in one transaction. No recurring rules (add later if needed).
@@ -359,8 +359,11 @@ For what's already built, read the code and `git log`. Next, in order:
    in the account's zone via Intl `timeZone`, add form → {date, from, to, repeat_weeks}, withdraw chips, classes
    with attendees and the minor note; header "Teacher page" link; banner "Become the test teacher" on test sites); 4e student "book a private class": [x] 4e-1 browsing ("Private classes" section on
    index: language + length 30/45/60, per-teacher price line, slots by day in the visitor's zone, break note;
-   possible polish: fewer buttons than every 15 min); [ ] 4e-2 pick a time → Book dialog in private mode → POST.
-5. **Worker:** process `outbox_event` (claim rows with `FOR UPDATE SKIP LOCKED`), send emails and
+   possible polish: fewer buttons than every 15 min); [x] 4e-2 a time chip opens the Book dialog with a
+   private target (`openBookPrivate`; `bookTarget()` re-reads group classes live), posts `{private: ...}`,
+   `slot_taken` / `slot_unavailable` messages, reloads slots, disables Book for a time that's gone; break note in
+   the dialog. Step 4 done 2026-10-21, checked in headless Chrome (incl. a two-browser race).
+5. **← resume here: Worker:** process `outbox_event` (claim rows with `FOR UPDATE SKIP LOCKED`), send emails and
    reminders, run the 24h group-minimum check, purge expired login tokens and web sessions.
    Same Go binary, `worker` mode, separate Cloud Run service.
 6. **Payments:** buy credit packs; processor webhooks (provider TBD; must support payouts to Colombia).
