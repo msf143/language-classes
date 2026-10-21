@@ -54,6 +54,16 @@ const STRINGS = {
     privateClass: "Private class",
     forWhom: (names) => `For: ${names}`,
     paid: (amount) => `Paid ${amount}`,
+    cancelBooking: "Cancel booking",
+    cancelTitle: "Cancel this booking?",
+    keepBooking: "Keep booking",
+    cancelling: "Cancelling…",
+    refundFull: (amount) => `You'll get ${amount} back to your credit (full refund).`,
+    refundLate: (amount) =>
+      `You'll get ${amount} back to your credit: the class starts within 24 hours, so half of what you paid.`,
+    cancelled: (amount) => `Booking cancelled. ${amount} went back to your credit.`,
+    errTooLate: "This class has already started, so the booking can't be cancelled.",
+    errNotCancellable: "This booking can no longer be cancelled.",
 
     // Test-site banner (staging and dev only)
     testBanner: "Test site: classes and credit here are not real.",
@@ -140,6 +150,16 @@ const STRINGS = {
     privateClass: "Clase privada",
     forWhom: (names) => `Para: ${names}`,
     paid: (amount) => `Pagado: ${amount}`,
+    cancelBooking: "Cancelar reserva",
+    cancelTitle: "¿Cancelar esta reserva?",
+    keepBooking: "Mantener reserva",
+    cancelling: "Cancelando…",
+    refundFull: (amount) => `Se devolverán ${amount} a tu crédito (reembolso completo).`,
+    refundLate: (amount) =>
+      `Se devolverán ${amount} a tu crédito: la clase empieza en menos de 24 horas, así que es la mitad de lo que pagaste.`,
+    cancelled: (amount) => `Reserva cancelada. Se devolvieron ${amount} a tu crédito.`,
+    errTooLate: "Esta clase ya empezó, así que la reserva no se puede cancelar.",
+    errNotCancellable: "Esta reserva ya no se puede cancelar.",
 
     testBanner: "Sitio de prueba: las clases y el crédito aquí no son reales.",
     yourCredit: (amount) => `Tu crédito: ${amount}`,

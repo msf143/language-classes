@@ -114,13 +114,17 @@ body {
 .seats.is-full { color: var(--danger); font-weight: 600; }
 
 /* ---------- buttons ---------- */
-.btn-primary, .btn-secondary {
+.btn-primary, .btn-secondary, .btn-danger {
   font: inherit; font-weight: 600; border-radius: 999px; padding: 8px 18px; cursor: pointer; border: 1px solid transparent;
 }
 .btn-primary { background: var(--accent); color: var(--accent-text); }
 .btn-primary:hover { filter: brightness(1.08); }
 .btn-primary:disabled { opacity: 0.4; cursor: not-allowed; filter: none; }
 .btn-secondary { background: transparent; color: inherit; border-color: currentColor; }
+/* Irreversible actions (cancelling a booking) are red. */
+.btn-danger { background: var(--danger); color: var(--surface); } /* white on red; dark on pink in dark mode */
+.btn-danger:hover { filter: brightness(1.08); }
+.btn-danger:disabled { opacity: 0.4; cursor: not-allowed; filter: none; }
 
 button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
@@ -191,3 +195,4 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .my-booking-title { font-weight: 600; flex: 1 1 100%; }
 .my-booking-detail { color: var(--muted); font-size: 0.9rem; }
 .tag-booked { background: var(--accent-soft); color: var(--accent); }
+.my-booking .btn-secondary { margin-left: auto; }

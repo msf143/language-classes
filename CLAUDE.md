@@ -266,7 +266,7 @@ For what's already built, read the code and `git log`. Next, in order:
          hablemos.live); `resendSender` (`cmd/api/email.go`, plain-text bilingual email from
          login@hablemos.live). Real sign-in on https://hablemos.live works (2026-10-20, `ccd5222`).
          Later: tighten DMARC to `quarantine` once mail has flowed cleanly for a while.
-3. **Booking:** `POST /bookings` in one transaction (check seats, debit credits, insert booking +
+3. **Booking** (done 2026-10-21; group sessions): `POST /bookings` in one transaction (check seats, debit credits, insert booking +
    attendees + outbox event), with idempotency keys. First handler + transaction tests go here.
    Design (agreed 2026-10-20): group sessions first; private bookings wait for step 4.
    - Request: `POST /bookings {"session_id", "learner_ids"}` + `Idempotency-Key` header; sign-in required.
@@ -300,7 +300,7 @@ For what's already built, read the code and `git log`. Next, in order:
          Terraform: `for_each = local.envs` (`infra/envs.tf`), renames in `infra/moved.tf`. Pipeline: test →
          build once → deploy-staging → **approval** (GitHub environment `production`, reviewer msf143) →
          same image to prod. How to approve and roll back: `docs/deploy.md`.
-   - [ ] **← resume here:** 3d. Cancel a booking: refund rules (>24h full, within 24h 50%) as new ledger entries. Also
+   - [x] 3d. Cancel a booking: refund rules (>24h full, within 24h 50%) as new ledger entries. Also
          "my bookings": show "You're booked" on catalog cards (today you only learn it by trying)
          and list upcoming bookings with a Cancel button.
          Design (agreed 2026-10-21): `POST /bookings/{id}/cancel`, payer only (others' bookings → 404); no
@@ -314,9 +314,10 @@ For what's already built, read the code and `git log`. Next, in order:
          endpoint (`cmd/api/bookings_cancel.go`, `refundFor`) + tests incl. a gated race test; (2) [x] `GET /bookings` (mine as payer, confirmed, upcoming; with session, attendees,
          `refund_if_cancelled_cents` from `refundFor`);
          (3) page: [x] 3a "My bookings" section + "You're booked" tags (`state.myBookings` from GET /bookings,
-         loaded by loadMe; ignored when signed out via `myBookings()`); [ ] 3b Cancel button + confirmation
-         dialog with the refund, POST cancel, refresh.
-4. **Teacher side:** publish availability blocks; API computes bookable private slots.
+         loaded by loadMe; ignored when signed out via `myBookings()`); [x] 3b Cancel button + confirmation
+         dialog (refund from the server's preview; toast uses the refund in the response), refresh.
+         Done 2026-10-21, checked in headless Chrome.
+4. **← resume here: Teacher side:** publish availability blocks; API computes bookable private slots.
 5. **Worker:** process `outbox_event` (claim rows with `FOR UPDATE SKIP LOCKED`), send emails and
    reminders, run the 24h group-minimum check, purge expired login tokens and web sessions.
    Same Go binary, `worker` mode, separate Cloud Run service.

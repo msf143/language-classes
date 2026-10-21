@@ -15,6 +15,12 @@ const state = {
   me: undefined,                   // undefined = not checked yet, null = signed out, else the account
                                    // plus balanceCents and learners (from GET /me)
   myBookings: [],                  // my upcoming bookings (GET /bookings); [] when signed out
+  cancel: {
+    open: false,                   // is the Cancel dialog showing?
+    bookingId: null,
+    status: "idle",                // "idle" | "sending"
+    error: null,                   // { key, requestId? } when the last attempt failed
+  },
   book: {
     open: false,                   // is the Book dialog showing?
     sessionId: null,               // which class
@@ -41,6 +47,8 @@ const dialogEl = document.querySelector("#signin-dialog");
 const signinFormEl = document.querySelector("#signin-form");
 const bookDialogEl = document.querySelector("#book-dialog");
 const bookFormEl = document.querySelector("#book-form");
+const cancelDialogEl = document.querySelector("#cancel-dialog");
+const cancelFormEl = document.querySelector("#cancel-form");
 
 // The visitor's time zone, e.g. "America/New_York". The API sends UTC; we convert here.
 const visitorTimeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
@@ -162,6 +170,7 @@ function render() {
   renderAccount();
   renderSignin();
   renderBook();
+  renderCancel();
   renderFilters();
   renderStatus();
   renderMyBookings();
@@ -187,6 +196,8 @@ function renderMyBookings() {
         `${dateText} · ${timeText} · ${t("minutes", b.session.duration_minutes)}`),
       h("span", { class: "my-booking-detail" }, t("forWhom", names)),
       h("span", { class: "my-booking-detail" }, t("paid", money(b.total_cents, b.currency))),
+      h("button", { type: "button", class: "btn-secondary btn-small", "data-action": "cancel-booking" },
+        t("cancelBooking")),
     );
   }));
 }
@@ -496,6 +507,87 @@ function renderBook() {
   submit.disabled = short || b.status === "sending";   // no double submits while one is on its way
 }
 
+// ---------- cancel dialog ----------
+
+function openCancel(bookingId) {
+  state.cancel = { open: true, bookingId, status: "idle", error: null };
+  render();
+}
+
+// Which booking, and how much comes back. The amount is the server's preview
+// (refund_if_cancelled_cents from GET /bookings), so the page never applies the
+// 24-hour rule itself.
+function renderCancel() {
+  const c = state.cancel;
+  if (c.open && !cancelDialogEl.open) cancelDialogEl.showModal();
+  if (!c.open && cancelDialogEl.open) cancelDialogEl.close();
+  if (!c.open) return;
+
+  const b = myBookings().find((x) => x.id === c.bookingId);
+  if (!b) {   // gone from the list (cancelled elsewhere, or signed out)
+    c.open = false;
+    cancelDialogEl.close();
+    return;
+  }
+  const { dateText, timeText } = formatWhen(b.session);
+  document.querySelector("#cancel-what").textContent =
+    `${b.session.title ?? t("privateClass")} · ${dateText} · ${timeText}`;
+
+  const refund = money(b.refund_if_cancelled_cents, b.currency);
+  document.querySelector("#cancel-refund").textContent =
+    b.refund_if_cancelled_cents === b.total_cents ? t("refundFull", refund) : t("refundLate", refund);
+
+  const err = c.error;
+  document.querySelector("#cancel-error").textContent =
+    err ? t(err.key) + (err.requestId ? ` ${t("reference")}: ${err.requestId}` : "") : "";
+
+  const submit = document.querySelector("#cancel-submit");
+  submit.textContent = c.status === "sending" ? t("cancelling") : t("cancelBooking");
+  submit.disabled = c.status === "sending";
+}
+
+// Which message to show for an error code from POST /bookings/{id}/cancel.
+const cancelErrorKeys = {
+  too_late: "errTooLate",
+  not_cancellable: "errNotCancellable",
+  booking_not_found: "errNotCancellable",
+};
+
+// Send the cancellation. No idempotency key needed: cancelling a booking that's
+// already cancelled just returns it (the server refunds only once).
+async function submitCancel() {
+  const c = state.cancel;
+  c.status = "sending";
+  c.error = null;
+  render();
+
+  const res = await api("POST", `/bookings/${c.bookingId}/cancel`);
+  c.status = "idle";
+
+  if (res.ok) {
+    c.open = false;
+    render();
+    // The server's refund, not the preview: it's what actually went back.
+    showToast(t("cancelled", money(res.data.refund_cents, res.data.currency)));
+    loadMe();         // new balance and booking list
+    loadSessions();   // the freed seat
+    return;
+  }
+  if (res.status === 401) {
+    c.open = false;
+    state.me = null;
+    openSignin();
+    state.signin.error = { key: "errSignedOut" };
+    state.signin.status = "error";
+    render();
+    return;
+  }
+  const key = cancelErrorKeys[res.data.code];
+  c.error = key ? { key } : { key: "somethingWrong", requestId: res.requestId };
+  render();
+  if (key) loadMe();   // the list is out of date: refresh it
+}
+
 function openSignin() {
   state.signin = { open: true, status: "idle", email: "", expiresInMinutes: 0, error: null };
   render();
@@ -527,6 +619,10 @@ document.addEventListener("click", (e) => {
     else if (state.me) openBook(sessionId);
   }
   if (action === "close-book") { state.book.open = false; render(); }
+  if (action === "cancel-booking") {
+    openCancel(e.target.closest("[data-booking-id]").dataset.bookingId);
+  }
+  if (action === "close-cancel") { state.cancel.open = false; render(); }
   if (action === "open-signin") openSignin();
   if (action === "close-signin") { state.signin.open = false; render(); }
   if (action === "logout") logout();
@@ -540,6 +636,11 @@ document.addEventListener("submit", (e) => {
   if (e.target === bookFormEl) {
     e.preventDefault();
     if (state.book.status !== "sending") submitBooking();
+    return;
+  }
+  if (e.target === cancelFormEl) {
+    e.preventDefault();
+    if (state.cancel.status !== "sending") submitCancel();
     return;
   }
   if (e.target !== signinFormEl) return;
@@ -569,6 +670,7 @@ document.addEventListener("change", (e) => {
 // ("close" doesn't bubble, so these listeners sit on the dialogs themselves.)
 dialogEl.addEventListener("close", () => { state.signin.open = false; });
 bookDialogEl.addEventListener("close", () => { state.book.open = false; });
+cancelDialogEl.addEventListener("close", () => { state.cancel.open = false; });
 
 // signin.html links here as /#signin ("Request a new link"): open the dialog,
 // then drop the #signin so a reload doesn't reopen it.

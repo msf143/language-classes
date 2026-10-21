@@ -134,6 +134,20 @@
     </form>
   </dialog>
 
+  <!-- Cancel dialog: which booking, and how much credit comes back (app.js fills it in). -->
+  <dialog id="cancel-dialog" class="dialog" aria-labelledby="cancel-title">
+    <form id="cancel-form" novalidate>
+      <h2 id="cancel-title" data-i18n="cancelTitle"></h2>
+      <p id="cancel-what"></p>
+      <p id="cancel-refund" class="book-price"></p>
+      <p id="cancel-error" class="form-error" aria-live="polite"></p>
+      <div class="dialog-actions">
+        <button type="button" class="btn-secondary" data-action="close-cancel" data-i18n="keepBooking"></button>
+        <button type="submit" class="btn-danger" id="cancel-submit"></button>
+      </div>
+    </form>
+  </dialog>
+
   <div id="toast" class="toast" role="status" hidden></div>
 </body>
 </html>
