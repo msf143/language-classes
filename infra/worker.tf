@@ -117,10 +117,10 @@ resource "google_cloud_scheduler_job" "worker" {
   schedule  = "* * * * *"
   time_zone = "Etc/UTC"
 
-  # A missed minute is fine: the next run picks up everything still due.
-  retry_config {
-    retry_count = 0
-  }
+  # No retries: a missed minute is fine, the next run picks up everything still
+  # due. That's Cloud Scheduler's default (retry_count 0), so there's no
+  # retry_config block: Google doesn't store an all-default one, and writing it
+  # out makes every plan want to add it again.
 
   http_target {
     http_method = "POST"

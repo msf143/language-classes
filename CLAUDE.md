@@ -366,7 +366,7 @@ For what's already built, read the code and `git log`. Next, in order:
    private target (`openBookPrivate`; `bookTarget()` re-reads group classes live), posts `{private: ...}`,
    `slot_taken` / `slot_unavailable` messages, reloads slots, disables Book for a time that's gone; break note in
    the dialog. Step 4 done 2026-10-21, checked in headless Chrome (incl. a two-browser race).
-5. **← resume here: Worker:** process `outbox_event` (claim rows with `FOR UPDATE SKIP LOCKED`), send emails and
+5. **Worker** (done 2026-10-23): process `outbox_event` (claim rows with `FOR UPDATE SKIP LOCKED`), send emails and
    reminders, run the 24h group-minimum check, purge expired login tokens and web sessions.
    Design (agreed 2026-10-23):
    - `api worker` (same binary) as a **Cloud Run Job** started **every minute by Cloud Scheduler** (cron's finest
@@ -395,10 +395,11 @@ For what's already built, read the code and `git log`. Next, in order:
    never an account lock so it can't deadlock with booking; under minimum → `under_minimum`, full refunds,
    `booking_cancelled` events with `cancelled_by: system`), `queueReminders` (`booking_reminder` with
    `dedupe_key = reminder:<booking>`, `ON CONFLICT DO NOTHING`), `purgeExpired`. Tests in a private schema.
-   Seed now also resets seed classes' status on rerun (the worker cancels under-minimum seed classes); [ ] 5d Terraform: jobs `worker` / `worker-staging` + Scheduler (written:
-   `infra/worker.tf`, plan 8 to add; order: push + approve prod first (prod needs migration 5), then set
-   `local.image_tag` to that image and apply, then add the worker-image update to the pipeline).
-6. **Payments:** buy credit packs; processor webhooks (provider TBD; must support payouts to Colombia).
+   Seed now also resets seed classes' status on rerun (the worker cancels under-minimum seed classes); [x] 5d `infra/worker.tf` applied 2026-10-23: jobs `worker` / `worker-staging`
+   (args `worker`, Resend key, `APP_BASE_URL`), SA `scheduler-invoker` with `run.invoker` on those jobs only,
+   Cloud Scheduler `* * * * *` → Run Admin API `jobs:run`. Pipeline updates both worker images after the
+   service. Each email logs `email sent` with event, role and provider ID. Step 5 done.
+6. **← resume here: Payments:** buy credit packs; processor webhooks (provider TBD; must support payouts to Colombia).
    Credit expiry (see Business rules) and a bilingual **policies page** (cancellation, refunds,
    credit expiry period, children) that reads its numbers from the same config the code uses.
 7. **Setup path:** first-run setup that creates the teacher account and profile (bio, buffer,

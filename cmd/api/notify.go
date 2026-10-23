@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"strings"
 	"time"
 
@@ -81,16 +82,28 @@ func notifyBooking(ctx context.Context, pool *pgxpool.Pool, send mailer, siteURL
 	}
 
 	toPayer.IdempotencyKey = ev.ID + ":payer"
-	if _, err := send(ctx, toPayer); err != nil {
+	if err := sendLogged(ctx, send, ev, "payer", toPayer); err != nil {
 		return err
 	}
 	// The teacher hears about private classes (group classes he set up himself).
 	if f.kind == "private" {
 		toTeacher.IdempotencyKey = ev.ID + ":teacher"
-		if _, err := send(ctx, toTeacher); err != nil {
+		if err := sendLogged(ctx, send, ev, "teacher", toTeacher); err != nil {
 			return err // a retry resends the payer's email too, but its key makes that a no-op
 		}
 	}
+	return nil
+}
+
+// sendLogged sends one email and logs it with the provider's message ID (to
+// find it in Resend's dashboard). It logs the recipient's role, not their
+// address: no personal data in the logs.
+func sendLogged(ctx context.Context, send mailer, ev outboxEvent, role string, m email) error {
+	id, err := send(ctx, m)
+	if err != nil {
+		return err
+	}
+	slog.Info("email sent", "event_id", ev.ID, "event_type", ev.EventType, "to", role, "provider_id", id)
 	return nil
 }
 
