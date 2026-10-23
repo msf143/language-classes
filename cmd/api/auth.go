@@ -165,7 +165,8 @@ func requestLoginLink(pool *pgxpool.Pool, send loginSender, baseURL string) http
 func verifyLoginToken(pool *pgxpool.Pool) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		var body struct {
-			Token string `json:"token"`
+			Token    string `json:"token"`
+			Timezone string `json:"timezone"` // the browser's zone, e.g. "America/New_York" (optional)
 		}
 		r.Body = http.MaxBytesReader(w, r.Body, 1<<10)
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.Token == "" || len(body.Token) > 100 {
@@ -245,6 +246,19 @@ func verifyLoginToken(pool *pgxpool.Pool) http.HandlerFunc {
 		if status == "disabled" {
 			writeError(w, r, http.StatusForbidden, "this account is disabled")
 			return
+		}
+
+		// Remember the person's time zone, so emails can show class times in it.
+		// Only while the account still has the default (UTC): a zone that's set is
+		// never overridden by whatever zone a browser happens to be in (a teacher
+		// signing in while travelling mustn't move his availability).
+		if acct.Timezone == "UTC" && validTimezone(body.Timezone) {
+			if _, err := tx.Exec(ctx, `UPDATE account SET timezone = $2 WHERE id = $1`, acct.ID, body.Timezone); err != nil {
+				logFrom(r).Error("verify: save timezone failed", "err", err)
+				writeError(w, r, http.StatusInternalServerError, "could not sign you in")
+				return
+			}
+			acct.Timezone = body.Timezone
 		}
 
 		secret := newSecret()
@@ -422,4 +436,14 @@ func logout(pool *pgxpool.Pool) http.HandlerFunc {
 		})
 		writeJSON(w, http.StatusOK, map[string]string{"message": "signed out"})
 	}
+}
+
+// validTimezone reports whether name is an IANA time zone Go knows, like
+// "America/Bogota". "Local" and "" are refused: they'd mean the server's zone.
+func validTimezone(name string) bool {
+	if name == "" || name == "Local" || len(name) > 64 {
+		return false
+	}
+	_, err := time.LoadLocation(name)
+	return err == nil
 }

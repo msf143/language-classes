@@ -413,3 +413,46 @@ func TestFirstSignInCreatesLearner(t *testing.T) {
 		t.Errorf("after second sign-in: %d learners, want still 1", n)
 	}
 }
+
+// Signing in records the browser's time zone, but only while the account has
+// none of its own yet (the default, UTC); bad zone names are ignored.
+func TestVerifySavesTimezone(t *testing.T) {
+	pool := testPool(t)
+	signInWithZone := func(t *testing.T, email, zone string) {
+		t.Helper()
+		body := `{"token": "` + newLoginToken(t, pool, email, time.Minute) + `", "timezone": "` + zone + `"}`
+		if rec := postVerify(t, verifyLoginToken(pool), body); rec.Code != http.StatusOK {
+			t.Fatalf("sign-in with zone %q: status %d, body %s", zone, rec.Code, rec.Body)
+		}
+	}
+	zoneOf := func(t *testing.T, email string) string {
+		t.Helper()
+		var z string
+		if err := pool.QueryRow(context.Background(), `SELECT timezone FROM account WHERE lower(email) = lower($1)`, email).Scan(&z); err != nil {
+			t.Fatal(err)
+		}
+		return z
+	}
+
+	t.Run("first sign-in saves it; a later one from elsewhere doesn't change it", func(t *testing.T) {
+		email := testEmail()
+		signInWithZone(t, email, "America/New_York")
+		if z := zoneOf(t, email); z != "America/New_York" {
+			t.Fatalf("zone %q, want America/New_York", z)
+		}
+		signInWithZone(t, email, "Europe/Madrid")
+		if z := zoneOf(t, email); z != "America/New_York" {
+			t.Errorf("zone %q after signing in from Madrid, want still America/New_York", z)
+		}
+	})
+
+	for _, zone := range []string{"", "Not/AZone", "Local", "America/New_York\"; DROP TABLE account; --"} {
+		t.Run("ignored: "+zone, func(t *testing.T) {
+			email := testEmail()
+			signInWithZone(t, email, strings.ReplaceAll(zone, `"`, `\"`))
+			if z := zoneOf(t, email); z != "UTC" {
+				t.Errorf("zone %q, want UTC (the bad value ignored)", z)
+			}
+		})
+	}
+}

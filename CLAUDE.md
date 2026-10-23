@@ -365,7 +365,22 @@ For what's already built, read the code and `git log`. Next, in order:
    the dialog. Step 4 done 2026-10-21, checked in headless Chrome (incl. a two-browser race).
 5. **← resume here: Worker:** process `outbox_event` (claim rows with `FOR UPDATE SKIP LOCKED`), send emails and
    reminders, run the 24h group-minimum check, purge expired login tokens and web sessions.
-   Same Go binary, `worker` mode, separate Cloud Run service.
+   Design (agreed 2026-10-23):
+   - `api worker` (same binary) as a **Cloud Run Job** started **every minute by Cloud Scheduler** (cron's finest
+     grain; ~$0–3/month; emails within ~1 min). Each run drains the outbox, runs the time-based checks, exits.
+   - Claim with `FOR UPDATE SKIP LOCKED` (competing consumers). At-least-once + idempotent consumer: Resend
+     `Idempotency-Key` = event id. Retries with backoff (1, 2, 4… min, cap 1 h), give up after 10; `last_error`.
+   - Emails (bilingual, times in the recipient's account zone): booking_created → payer (+ teacher for private);
+     booking_cancelled → payer (+ teacher for private).
+   - Time-based: group minimum 24 h before start (under `min_seats` → cancel `under_minimum`, full refunds,
+     `booking_cancelled` events; else `confirmed`); one reminder 24 h before (none if booked within 24 h),
+     deduped by a unique outbox `dedupe_key`; purge long-expired login tokens and web sessions (not business records).
+   - Events older than 2 days on first start: marked processed, not sent (`last_error = 'skipped: stale'`).
+   - Gap: no video link yet (`session.meeting_url` unset); reminders say the teacher will send it.
+   Steps: [x] 5a save the browser's time zone at sign-in (signin.js sends
+   `Intl…timeZone` with the token; `verifyLoginToken` stores it only while the account's zone is still `UTC`,
+   checked with `validTimezone` / `time.LoadLocation`); [ ] 5b outbox migration + `api worker` for booking
+   emails; [ ] 5c group minimum, reminders, purge; [ ] 5d Terraform: jobs `worker` / `worker-staging` + Scheduler.
 6. **Payments:** buy credit packs; processor webhooks (provider TBD; must support payouts to Colombia).
    Credit expiry (see Business rules) and a bilingual **policies page** (cancellation, refunds,
    credit expiry period, children) that reads its numbers from the same config the code uses.

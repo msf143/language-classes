@@ -28,7 +28,10 @@ async function verify() {
   state.status = "verifying";
   render();
 
-  const res = await api("POST", "/auth/verify", { token: state.token });
+  // The browser's time zone goes along, so emails can show class times in it
+  // (the server keeps it only if the account doesn't have one yet).
+  const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+  const res = await api("POST", "/auth/verify", { token: state.token, timezone });
   if (res.ok) {
     // The server set the session cookie. replace() (not assign) so the back
     // button doesn't return to this page with its spent token.
