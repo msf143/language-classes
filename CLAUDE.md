@@ -64,6 +64,7 @@ cmd/api/            main.go    server wiring, middleware, shared helpers (writeJ
                     teacher.go requireTeacher, /teacher/availability (publish, list, withdraw)
                     slots.go   bookableStarts: blocks minus busy sessions → slot start times (pure)
                     worker.go  drainOutbox: claims outbox events (SKIP LOCKED), retries, skips; runWorker
+                    payments.go credit packs (GET /credit-packs); Stripe Checkout from 6b
                     checks.go  worker's clock-driven checks: group minimum, reminders, purge
                     one file per resource as the API grows (bookings.go, ...); *_test.go beside it
 migrations/         000NNN_description.up.sql / .down.sql  (numbered, append-only)
@@ -168,6 +169,12 @@ then find the link in the log.
 - **Payment model: dollar-valued credits.** Students buy credit packs (with a bonus, e.g.
   pay $50 get $55) and bookings debit the balance. Refunds go back as credit by default;
   cash refund of unused credit on request.
+- **Who collects (decided 2026-10-23):** Mike receives all payments in the US through **Stripe Checkout**
+  (cards worldwide, Apple Pay, Google Pay; hosted page, so card data never touches our server) and pays the
+  teacher in Colombia himself (e.g. Xoom), outside the app. So the app needs no payouts or splits.
+  PayPal/Venmo may come later as a second provider (`payment.provider`).
+- **Credit packs (decided 2026-10-23), stored as data:** pay $25 → $25 credit; $50 → $55; $100 → $115.
+  Ledger: one `purchase` entry (what was paid) + one `bonus` entry (the extra), both pointing at the payment.
 - **Student cancels:** more than 24h before start → full refund; within 24h → 50%; no-show → none.
 - **Teacher cancels** (any time) or a group auto-cancels → full refund.
 - **Teacher no-show** → full refund **plus** a goodwill credit equal to the full amount paid
@@ -399,7 +406,13 @@ For what's already built, read the code and `git log`. Next, in order:
    (args `worker`, Resend key, `APP_BASE_URL`), SA `scheduler-invoker` with `run.invoker` on those jobs only,
    Cloud Scheduler `* * * * *` → Run Admin API `jobs:run`. Pipeline updates both worker images after the
    service. Each email logs `email sent` with event, role and provider ID. Step 5 done.
-6. **← resume here: Payments:** buy credit packs; processor webhooks (provider TBD; must support payouts to Colombia).
+6. **← resume here: Payments:** buy credit packs; processor webhooks (Stripe Checkout; no payouts needed, see Business rules).
+   Steps: [x] 6a migration 000006 (`credit_pack` with the three packs, in the migration so prod gets them;
+   `payment.credit_pack_id` + `payment.bonus_cents` snapshot) + `GET /credit-packs` (`cmd/api/payments.go`);
+   [ ] 6b `POST /payments/checkout` → Stripe Checkout session (REST via net/http); [ ] 6c `POST /webhooks/stripe`
+   (HMAC signature, one tx: payment succeeded + ledger purchase + bonus, idempotent); [ ] 6d Buy credit dialog;
+   [ ] 6e keys in Secret Manager (test for staging, live for prod) + webhook registration; [ ] 6f credit expiry +
+   policies page (decisions pending: period, which credit expires first).
    Credit expiry (see Business rules) and a bilingual **policies page** (cancellation, refunds,
    credit expiry period, children) that reads its numbers from the same config the code uses.
 7. **Setup path:** first-run setup that creates the teacher account and profile (bio, buffer,
