@@ -11,12 +11,11 @@
   <script src="app.js" defer></script>
 </head>
 <body>
-  <!-- Test sites only (staging, dev): says money here is fake, shows the credit,
-       and offers free test credit. Hidden on production (app.js asks GET /env). -->
+  <!-- Test sites only (staging, dev): says money here is fake and offers free
+       test credit. Hidden on production (app.js asks GET /env). -->
   <div id="test-banner" class="test-banner" hidden>
     <div class="wrap test-banner-row">
       <span data-i18n="testBanner"></span>
-      <span id="test-banner-credit" class="test-banner-credit"></span>
       <button type="button" class="btn-secondary btn-small" id="test-credit-btn" data-action="test-credit"></button>
       <button type="button" class="btn-secondary btn-small" id="test-teacher-btn" data-action="test-teacher"></button>
     </div>
@@ -26,7 +25,7 @@
     <div class="wrap header-row">
       <span class="brand">Hablemos</span>
       <div class="header-actions">
-        <!-- Sign-in button, or the signed-in name + Sign out (built in app.js) -->
+        <!-- Sign-in button, or the signed-in name, credit, Buy credit + Sign out (built in app.js) -->
         <div id="account-area" class="account-area"></div>
         <!-- Language switch for the interface itself -->
         <div class="lang-switch" role="group" aria-label="Interface language">
@@ -153,6 +152,10 @@
 
       <p id="book-price" class="book-price"></p>
       <p id="book-balance" class="muted"></p>
+      <!-- Shown only when the credit is short: closes this dialog, opens Buy credit. -->
+      <p id="book-buy" hidden>
+        <button type="button" class="btn-secondary btn-small" data-action="open-buy" data-i18n="buyCredit"></button>
+      </p>
       <p class="muted small" data-i18n="breakNote"></p>
       <p id="book-error" class="form-error" aria-live="polite"></p>
 
@@ -173,6 +176,26 @@
       <div class="dialog-actions">
         <button type="button" class="btn-secondary" data-action="close-cancel" data-i18n="keepBooking"></button>
         <button type="submit" class="btn-danger" id="cancel-submit"></button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- Buy credit dialog: one radio button per pack (GET /credit-packs, built in
+       app.js). Continue sends you to Stripe's payment page; Stripe sends you back. -->
+  <dialog id="buy-dialog" class="dialog" aria-labelledby="buy-title">
+    <form id="buy-form" novalidate>
+      <h2 id="buy-title" data-i18n="buyTitle"></h2>
+      <p data-i18n="buyIntro"></p>
+      <fieldset class="packs">
+        <legend data-i18n="choosePack"></legend>
+        <div id="buy-packs"></div>
+      </fieldset>
+      <p id="buy-status" class="muted" aria-live="polite"></p>
+      <p class="muted small" data-i18n="buyNote"></p>
+      <p id="buy-error" class="form-error" aria-live="polite"></p>
+      <div class="dialog-actions">
+        <button type="button" class="btn-secondary" data-action="close-buy" data-i18n="cancel"></button>
+        <button type="submit" class="btn-primary" id="buy-submit"></button>
       </div>
     </form>
   </dialog>

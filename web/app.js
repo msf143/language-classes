@@ -38,6 +38,14 @@ const state = {
     status: "idle",                // "idle" | "sending"
     error: null,                   // { key, requestId? } when the last attempt failed
   },
+  buy: {
+    open: false,                   // is the Buy credit dialog showing?
+    status: "idle",                // "loading" | "ready" | "error" | "sending" | "redirecting"
+    packs: [],                     // [{ id, price_cents, bonus_cents, credit_cents, currency }]
+    packId: null,                  // the ticked pack
+    key: null,                     // Idempotency-Key for this purchase attempt
+    error: null,                   // { key, requestId? } when the last attempt failed
+  },
   signin: {
     open: false,                   // is the sign-in dialog showing?
     status: "idle",                // "idle" | "sending" | "sent" | "error"
@@ -58,6 +66,8 @@ const bookDialogEl = document.querySelector("#book-dialog");
 const bookFormEl = document.querySelector("#book-form");
 const cancelDialogEl = document.querySelector("#cancel-dialog");
 const cancelFormEl = document.querySelector("#cancel-form");
+const buyDialogEl = document.querySelector("#buy-dialog");
+const buyFormEl = document.querySelector("#buy-form");
 
 // The visitor's time zone, e.g. "America/New_York". The API sends UTC; we convert here.
 const visitorTimeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
@@ -209,6 +219,7 @@ function render() {
   renderSignin();
   renderBook();
   renderCancel();
+  renderBuy();
   renderFilters();
   renderStatus();
   renderMyBookings();
@@ -294,14 +305,12 @@ function renderMyBookings() {
   }));
 }
 
-// The test-site strip: hidden on production; the credit and the button only
-// when someone is signed in.
+// The test-site strip: hidden on production; the buttons only when someone is
+// signed in. (The credit itself is in the header, on every site.)
 function renderBanner() {
   document.querySelector("#test-banner").hidden = !state.testSite;
   if (!state.testSite) return;
   const signedIn = Boolean(state.me);
-  const credit = document.querySelector("#test-banner-credit");
-  credit.textContent = signedIn ? t("yourCredit", money(state.me.balanceCents)) : "";
   const btn = document.querySelector("#test-credit-btn");
   btn.hidden = !signedIn;
   btn.textContent = t("addTestCredit", money(5000));
@@ -312,7 +321,8 @@ function renderBanner() {
   teacherBtn.textContent = t("becomeTestTeacher");
 }
 
-// Header: nothing until we know, then "Sign in" or name + "Sign out".
+// Header: nothing until we know, then "Sign in", or name, credit, "Buy credit"
+// and "Sign out".
 function renderAccount() {
   accountEl.replaceChildren();
   if (state.me === undefined) return;   // avoids flashing "Sign in" for signed-in visitors
@@ -321,6 +331,8 @@ function renderAccount() {
     return;
   }
   accountEl.append(h("span", { class: "account-name", title: state.me.email }, state.me.display_name));
+  accountEl.append(h("span", { class: "account-credit" }, t("yourCredit", money(state.me.balanceCents))));
+  accountEl.append(h("button", { type: "button", class: "btn-secondary btn-small", "data-action": "open-buy" }, t("buyCredit")));
   if (state.me.is_teacher) accountEl.append(h("a", { class: "link", href: "teacher.html" }, t("teacherLink")));
   accountEl.append(h("button", { type: "button", class: "btn-secondary btn-small", "data-action": "logout" }, t("signOut")));
 }
@@ -634,7 +646,9 @@ function renderBook() {
   const submit = document.querySelector("#book-submit");
   const balance = state.me.balanceCents;
 
+  const buyEl = document.querySelector("#book-buy");
   if (q.problem) {
+    buyEl.hidden = true;
     priceEl.textContent = t(q.problem, s.seats_left);
     balanceEl.textContent = "";
     submit.textContent = t("book");
@@ -647,6 +661,7 @@ function renderBook() {
     ? t("balanceShort", money(balance))
     : t("balanceAfter", money(balance), money(balance - q.total));
   balanceEl.classList.toggle("is-short", short);
+  buyEl.hidden = !short;   // not enough credit: offer to buy some
   submit.textContent = b.status === "sending" ? t("booking") : t("bookFor", money(q.total, q.currency));
   submit.disabled = short || b.status === "sending" || !stillFree(b.target);   // no double submits either
 }
@@ -741,6 +756,105 @@ async function submitCancel() {
   if (key) loadMe();   // the list is out of date: refresh it
 }
 
+// ---------- buy credit dialog ----------
+
+// Open the dialog and fetch the packs (they're data on the server, so the page
+// never has prices of its own). One Idempotency-Key per purchase attempt: a new
+// one each time the dialog opens or another pack is ticked.
+async function openBuy() {
+  state.buy = { open: true, status: "loading", packs: [], packId: null, key: crypto.randomUUID(), error: null };
+  document.querySelector("#buy-packs").replaceChildren();
+  render();
+
+  const res = await api("GET", "/credit-packs");
+  const b = state.buy;
+  if (!res.ok) {
+    console.error("load credit packs failed", res);
+    b.status = "error";
+    b.error = { key: "loadError", requestId: res.requestId };
+    render();
+    return;
+  }
+  b.packs = res.data;
+  b.status = "ready";
+  // The radio buttons are built once, here, like the Book dialog's checkboxes
+  // (rebuilding them on every render would lose the tick and keyboard focus);
+  // renderBuy fills in their text.
+  document.querySelector("#buy-packs").replaceChildren(...b.packs.map((p) =>
+    h("label", { class: "pack" },
+      h("input", { type: "radio", name: "pack", value: p.id }),
+      h("span", { class: "pack-line", "data-pack-id": p.id }),
+      p.bonus_cents > 0 ? h("span", { class: "tag tag-booked pack-bonus", "data-bonus-id": p.id }) : "",
+    )));
+  render();
+}
+
+function renderBuy() {
+  const b = state.buy;
+  if (b.open && !buyDialogEl.open) buyDialogEl.showModal();
+  if (!b.open && buyDialogEl.open) buyDialogEl.close();
+  if (!b.open) return;
+
+  for (const p of b.packs) {
+    document.querySelector(`[data-pack-id="${p.id}"]`).textContent =
+      t("packLine", money(p.price_cents, p.currency), money(p.credit_cents, p.currency));
+    const bonus = document.querySelector(`[data-bonus-id="${p.id}"]`);
+    if (bonus) bonus.textContent = t("packBonus", money(p.bonus_cents, p.currency));
+  }
+  document.querySelector("#buy-status").textContent =
+    b.status === "loading" ? t("loadingPacks") :
+    b.status === "redirecting" ? t("openingPayment") : "";
+
+  const err = b.error;
+  document.querySelector("#buy-error").textContent =
+    err ? t(err.key) + (err.requestId ? ` ${t("reference")}: ${err.requestId}` : "") : "";
+
+  const pack = b.packs.find((p) => p.id === b.packId);
+  const submit = document.querySelector("#buy-submit");
+  submit.textContent = pack ? t("payAmount", money(pack.price_cents, pack.currency)) : t("continueToPayment");
+  submit.disabled = !pack || b.status !== "ready";   // also stops double submits
+}
+
+// Which message to show for an error code from POST /payments/checkout.
+const buyErrorKeys = {
+  payments_unavailable: "errPaymentsUnavailable",
+  payment_provider_error: "errPaymentProvider",
+  pack_unavailable: "errPackUnavailable",
+  already_paid: "errAlreadyPaid",
+};
+
+// Ask the server for a Stripe Checkout page, then leave for it. Nothing is
+// paid yet: the credit arrives when Stripe tells our server (the webhook).
+// Retrying after a failure resends the same key, so the server reuses the same
+// payment and the same Stripe page instead of starting a second purchase.
+async function submitBuy() {
+  const b = state.buy;
+  b.status = "sending";
+  b.error = null;
+  render();
+
+  const res = await api("POST", "/payments/checkout", { pack_id: b.packId }, { "Idempotency-Key": b.key });
+  if (res.ok) {
+    b.status = "redirecting";
+    render();
+    location.assign(res.data.checkout_url);   // like clicking a link: Back returns here
+    return;
+  }
+  b.status = "ready";
+  if (res.status === 401) {
+    b.open = false;
+    state.me = null;
+    openSignin();
+    state.signin.error = { key: "errSignedOut" };
+    state.signin.status = "error";
+    render();
+    return;
+  }
+  const key = buyErrorKeys[res.data.code];
+  b.error = key ? { key } : { key: "somethingWrong", requestId: res.requestId };
+  render();
+}
+
 function openSignin() {
   state.signin = { open: true, status: "idle", email: "", expiresInMinutes: 0, error: null };
   render();
@@ -795,6 +909,11 @@ document.addEventListener("click", (e) => {
   if (action === "close-cancel") { state.cancel.open = false; render(); }
   if (action === "open-signin") openSignin();
   if (action === "close-signin") { state.signin.open = false; render(); }
+  if (action === "open-buy" && state.me) {
+    state.book.open = false;   // from the Book dialog: one dialog at a time
+    openBuy();
+  }
+  if (action === "close-buy") { state.buy.open = false; render(); }
   if (action === "logout") logout();
   if (action === "test-credit" && !state.addingCredit) addTestCredit();
   if (action === "test-teacher") becomeTestTeacher();
@@ -814,6 +933,11 @@ document.addEventListener("submit", (e) => {
     if (state.cancel.status !== "sending") submitCancel();
     return;
   }
+  if (e.target === buyFormEl) {
+    e.preventDefault();
+    if (state.buy.status === "ready" && state.buy.packId) submitBuy();
+    return;
+  }
   if (e.target !== signinFormEl) return;
   e.preventDefault();
   const email = String(new FormData(signinFormEl).get("email")).trim();
@@ -830,6 +954,13 @@ document.addEventListener("submit", (e) => {
 // (FormData reads the checked boxes named "learner"), then re-render the price.
 // "change" bubbles, so one document listener catches it.
 document.addEventListener("change", (e) => {
+  if (e.target.form === buyFormEl) {   // another pack = another purchase attempt
+    state.buy.packId = new FormData(buyFormEl).get("pack");
+    state.buy.key = crypto.randomUUID();
+    state.buy.error = null;
+    render();
+    return;
+  }
   if (e.target.form !== bookFormEl) return;
   state.book.learnerIds = new FormData(bookFormEl).getAll("learner");
   state.book.key = crypto.randomUUID();   // different people = a different booking attempt
@@ -842,6 +973,18 @@ document.addEventListener("change", (e) => {
 dialogEl.addEventListener("close", () => { state.signin.open = false; });
 bookDialogEl.addEventListener("close", () => { state.book.open = false; });
 cancelDialogEl.addEventListener("close", () => { state.cancel.open = false; });
+buyDialogEl.addEventListener("close", () => { state.buy.open = false; });
+
+// Back from Stripe's page without paying: the browser may show this page from
+// its memory (the "back-forward cache"), frozen as it was when we left, with
+// the dialog still saying "Opening the payment page…". Make it usable again.
+// The key stays the same, so Continue reopens the same Stripe page.
+window.addEventListener("pageshow", (e) => {
+  if (e.persisted && state.buy.status === "redirecting") {
+    state.buy.status = "ready";
+    render();
+  }
+});
 
 // signin.html links here as /#signin ("Request a new link"): open the dialog,
 // then drop the #signin so a reload doesn't reopen it.
