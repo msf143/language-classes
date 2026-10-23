@@ -54,7 +54,8 @@ docs/               deploy.md: how Terraform provisions and how the deployed app
 cmd/api/            main.go    server wiring, middleware, shared helpers (writeJSON, writeError, oneOf)
                     ids.go     newUUIDv7 (primary keys)
                     auth.go    sign-in: login links, verify, signedIn/requireSignIn middleware, /me, logout
-                    email.go   resendSender (login links by email through Resend)
+                    email.go   mailer: resendMailer (Idempotency-Key), logMailer (dev); login links
+                    notify.go  the worker's emails: booking confirmed / cancelled (bilingual, local times)
                     migrate.go `api migrate` (embedded migrations, one transaction each)
                     sessions.go GET /sessions
                     bookings.go POST /bookings (one transaction, row locks, idempotency key)
@@ -384,8 +385,11 @@ For what's already built, read the code and `git log`. Next, in order:
    unique `dedupe_key`; index on due events) + `drainOutbox` (`cmd/api/worker.go`: one event per transaction,
    `FOR UPDATE SKIP LOCKED`, handler → processed / retry with backoff / `skip(reason)`; stale > 48 h skipped;
    gives up after 10). Tests run in a private migrated schema (`migratedSchemaPool`); the two-worker test
-   measures handlers running at once (without SKIP LOCKED they only take turns). [ ] 5b-2 email handlers +
-   `api worker`; [ ] 5c group minimum, reminders, purge; [ ] 5d Terraform: jobs `worker` / `worker-staging` + Scheduler.
+   measures handlers running at once (without SKIP LOCKED they only take turns). [x] 5b-2 `mailer` (`email.go`: `resendMailer` with
+   `Idempotency-Key`, `logMailer` in dev; login links on top), handlers (`notify.go`: booked / cancelled →
+   payer, + teacher for private; bilingual, times in each recipient's zone; keys `<event>:payer|teacher`),
+   `api worker` (50 s per run, ≤ 500 events; refuses to start without a mailer). First dev run drained 718:
+   651 stale, 52 sent to the log, 15 "no longer confirmed"; [ ] 5c group minimum, reminders, purge; [ ] 5d Terraform: jobs `worker` / `worker-staging` + Scheduler.
 6. **Payments:** buy credit packs; processor webhooks (provider TBD; must support payouts to Colombia).
    Credit expiry (see Business rules) and a bilingual **policies page** (cancellation, refunds,
    credit expiry period, children) that reads its numbers from the same config the code uses.

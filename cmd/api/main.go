@@ -61,6 +61,17 @@ func main() {
 		return
 	}
 
+	// `api worker`: process due outbox events (emails), then exit. The Cloud Run
+	// worker job runs this every minute.
+	if len(os.Args) > 1 && os.Args[1] == "worker" {
+		if err := runWorker(ctx, pool, appEnv, os.Getenv("RESEND_API_KEY"), baseURL()); err != nil {
+			slog.Error("worker failed", "err", err)
+			pool.Close()
+			os.Exit(1)
+		}
+		return
+	}
+
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /health", func(w http.ResponseWriter, r *http.Request) {
 		ctx, cancel := context.WithTimeout(r.Context(), 2*time.Second)

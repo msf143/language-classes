@@ -150,3 +150,29 @@ func truncate(s string) string {
 	}
 	return s
 }
+
+// runWorker is `api worker`: one pass over the outbox, then exit. The Cloud
+// Run job runs it every minute; it stops itself after 50 seconds so one run is
+// always done before the next starts (overlapping would be safe, just wasteful).
+func runWorker(ctx context.Context, pool *pgxpool.Pool, appEnv, resendKey, siteURL string) error {
+	var send mailer
+	switch {
+	case appEnv == "dev":
+		send = logMailer // never email real people from a dev setup
+	case resendKey != "":
+		prefix := ""
+		if appEnv == "staging" {
+			prefix = "[TEST] "
+		}
+		send = resendMailer(resendKey, resendEndpoint, prefix)
+	default:
+		// Better to fail loudly than to mark events processed without sending.
+		return errors.New("no mailer: set RESEND_API_KEY (or APP_ENV=dev to log emails instead)")
+	}
+
+	ctx, cancel := context.WithTimeout(ctx, 50*time.Second)
+	defer cancel()
+	stats, err := drainOutbox(ctx, pool, notifyHandler(pool, send, siteURL), 500)
+	slog.Info("worker run done", "processed", stats.Processed, "failed", stats.Failed, "skipped", stats.Skipped)
+	return err
+}
