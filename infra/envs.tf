@@ -19,6 +19,7 @@ locals {
       base_url            = "https://hablemos.live" # used in login links
       app_env             = ""                      # APP_ENV; "" = production (not set)
       job_args            = ["migrate"]             # what the migration job runs
+      worker_job_name     = "worker"                # Cloud Run job for `api worker` (worker.tf)
     }
 
     # https://dev.hablemos.live: a full copy for testing with fake money.
@@ -35,6 +36,7 @@ locals {
       base_url            = "https://dev.hablemos.live"
       app_env             = "staging"             # turns on the test banner, test credit, [TEST] emails
       job_args            = ["migrate", "--seed"] # migrations, then the seed data (refreshes class times)
+      worker_job_name     = "worker-staging"
     }
   }
 }

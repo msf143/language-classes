@@ -52,9 +52,13 @@ CROSS JOIN LATERAL (
   SELECT date_trunc('day', now()) + v.day * interval '1 day' + v.hr * interval '1 hour' AS starts
 ) AS t
 ON CONFLICT (id) DO UPDATE SET   -- EXCLUDED = the row this INSERT tried to add
-  starts_at = EXCLUDED.starts_at,
-  ends_at   = EXCLUDED.ends_at,
-  occupied  = EXCLUDED.occupied;
+  starts_at     = EXCLUDED.starts_at,
+  ends_at       = EXCLUDED.ends_at,
+  occupied      = EXCLUDED.occupied,
+  -- Back to the seed's own status too: the worker cancels a seed class that's
+  -- under its minimum 24 h before it starts, and a rerun should bring it back.
+  status        = EXCLUDED.status,
+  cancel_reason = EXCLUDED.cancel_reason;
 
 -- Bookings: Ana takes a seat in the beginners group; Luis books a private for 2.
 INSERT INTO booking (id, session_id, payer_account_id, party_size,

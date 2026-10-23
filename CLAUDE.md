@@ -63,7 +63,8 @@ cmd/api/            main.go    server wiring, middleware, shared helpers (writeJ
                     bookings_cancel.go POST /bookings/{id}/cancel (refund rule: refundFor), GET /bookings
                     teacher.go requireTeacher, /teacher/availability (publish, list, withdraw)
                     slots.go   bookableStarts: blocks minus busy sessions → slot start times (pure)
-                    worker.go  drainOutbox: claims outbox events (SKIP LOCKED), retries, skips
+                    worker.go  drainOutbox: claims outbox events (SKIP LOCKED), retries, skips; runWorker
+                    checks.go  worker's clock-driven checks: group minimum, reminders, purge
                     one file per resource as the API grows (bookings.go, ...); *_test.go beside it
 migrations/         000NNN_description.up.sql / .down.sql  (numbered, append-only)
 scripts/seed.sql    dev seed data (idempotent; times relative to now()); never on prod
@@ -389,7 +390,14 @@ For what's already built, read the code and `git log`. Next, in order:
    `Idempotency-Key`, `logMailer` in dev; login links on top), handlers (`notify.go`: booked / cancelled →
    payer, + teacher for private; bilingual, times in each recipient's zone; keys `<event>:payer|teacher`),
    `api worker` (50 s per run, ≤ 500 events; refuses to start without a mailer). First dev run drained 718:
-   651 stale, 52 sent to the log, 15 "no longer confirmed"; [ ] 5c group minimum, reminders, purge; [ ] 5d Terraform: jobs `worker` / `worker-staging` + Scheduler.
+   651 stale, 52 sent to the log, 15 "no longer confirmed"; [x] 5c time-based checks (`cmd/api/checks.go`, run before the drain in every
+   worker run, failures logged not fatal): `checkGroupMinimums` (one tx per class, session locked `FOR UPDATE`,
+   never an account lock so it can't deadlock with booking; under minimum → `under_minimum`, full refunds,
+   `booking_cancelled` events with `cancelled_by: system`), `queueReminders` (`booking_reminder` with
+   `dedupe_key = reminder:<booking>`, `ON CONFLICT DO NOTHING`), `purgeExpired`. Tests in a private schema.
+   Seed now also resets seed classes' status on rerun (the worker cancels under-minimum seed classes); [ ] 5d Terraform: jobs `worker` / `worker-staging` + Scheduler (written:
+   `infra/worker.tf`, plan 8 to add; order: push + approve prod first (prod needs migration 5), then set
+   `local.image_tag` to that image and apply, then add the worker-image update to the pipeline).
 6. **Payments:** buy credit packs; processor webhooks (provider TBD; must support payouts to Colombia).
    Credit expiry (see Business rules) and a bilingual **policies page** (cancellation, refunds,
    credit expiry period, children) that reads its numbers from the same config the code uses.

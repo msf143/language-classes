@@ -17,6 +17,7 @@ resource "google_project_service" "api" {
     "siteverification.googleapis.com", # prove we own hablemos.live
     "sts.googleapis.com",              # swaps GitHub tokens for Google ones (github.tf)
     "iamcredentials.googleapis.com",   # short-lived service account tokens (github.tf)
+    "cloudscheduler.googleapis.com",   # starts the worker every minute (worker.tf)
   ])
   service = each.key
 
