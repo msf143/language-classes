@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
@@ -250,5 +251,48 @@ func TestStripeWebhookRace(t *testing.T) {
 	}
 	if got := balance(t, pool, s.accountID); got != 5500 {
 		t.Errorf("balance %d, want 5500", got)
+	}
+}
+
+// GET /payments/{id}: the page polls it after coming back from Stripe.
+func TestGetPayment(t *testing.T) {
+	pool := migratedSchemaPool(t, 4)
+	s := newStudent(t, pool, 0, false)
+	id, session := pendingStripePayment(t, pool, s)
+	get := func(cookie *http.Cookie, pid string) *httptest.ResponseRecorder {
+		req := httptest.NewRequest("GET", "/payments/"+pid, nil)
+		req.SetPathValue("id", pid)
+		if cookie != nil {
+			req.AddCookie(cookie)
+		}
+		rec := httptest.NewRecorder()
+		requireSignIn(pool, getPayment(pool))(rec, req)
+		return rec
+	}
+	type answer struct {
+		Status       string `json:"status"`
+		CreditCents  int    `json:"credit_cents"`
+		BalanceCents int    `json:"balance_cents"`
+	}
+	var p answer
+	decode := func(rec *httptest.ResponseRecorder) {
+		p = answer{}
+		json.Unmarshal(rec.Body.Bytes(), &p)
+	}
+
+	decode(get(s.cookie, id))
+	if p.Status != "pending" || p.CreditCents != 5500 || p.BalanceCents != 0 {
+		t.Errorf("before the webhook: %+v; want pending, credit 5500, balance 0", p)
+	}
+	signedWebhook(pool, checkoutEvent("checkout.session.completed", id, session, "paid", 5000))
+	decode(get(s.cookie, id))
+	if p.Status != "succeeded" || p.BalanceCents != 5500 {
+		t.Errorf("after the webhook: %+v; want succeeded, balance 5500", p)
+	}
+	if rec := get(newStudent(t, pool, 0, false).cookie, id); rec.Code != 404 {
+		t.Errorf("someone else's payment: %d, want 404", rec.Code)
+	}
+	if rec := get(nil, id); rec.Code != 401 {
+		t.Errorf("signed out: %d, want 401", rec.Code)
 	}
 }

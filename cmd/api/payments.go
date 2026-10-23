@@ -177,3 +177,41 @@ func recordPendingPayment(ctx context.Context, pool *pgxpool.Pool, accountID, ke
 	})
 	return p, err
 }
+
+// getPayment handles GET /payments/{id} (wrapped in requireSignIn): the
+// signed-in person's own payment, so the page can wait for Stripe's webhook
+// after the student comes back from paying. Someone else's payment is a 404.
+func getPayment(pool *pgxpool.Pool) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		me, _ := accountFrom(r)
+		id := r.PathValue("id")
+		if !isUUID(id) {
+			writeError(w, r, http.StatusBadRequest, "the payment ID in the path is not valid")
+			return
+		}
+		var p struct {
+			Status       string `json:"status"` // "pending", "succeeded", "failed", "refunded"
+			AmountCents  int    `json:"amount_cents"`
+			BonusCents   int    `json:"bonus_cents"`
+			CreditCents  int    `json:"credit_cents"`
+			Currency     string `json:"currency"`
+			BalanceCents int    `json:"balance_cents"` // the account's credit now
+		}
+		err := pool.QueryRow(r.Context(), `
+			SELECT p.status, p.amount_cents, p.bonus_cents, p.amount_cents + p.bonus_cents, p.currency,
+			       COALESCE((SELECT SUM(l.amount_cents) FROM credit_ledger l
+			                 WHERE l.account_id = p.account_id AND l.currency = p.currency), 0)
+			FROM payment p WHERE p.id = $1 AND p.account_id = $2`, id, me.ID).
+			Scan(&p.Status, &p.AmountCents, &p.BonusCents, &p.CreditCents, &p.Currency, &p.BalanceCents)
+		if errors.Is(err, pgx.ErrNoRows) {
+			writeErrorCode(w, r, http.StatusNotFound, "payment_not_found", "no such payment")
+			return
+		}
+		if err != nil {
+			logFrom(r).Error("get payment failed", "err", err)
+			writeError(w, r, http.StatusInternalServerError, "could not load the payment")
+			return
+		}
+		writeJSON(w, http.StatusOK, p)
+	}
+}
