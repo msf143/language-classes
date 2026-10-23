@@ -37,6 +37,11 @@
   </header>
 
   <main class="wrap">
+    <!-- After coming back from Stripe (/?paid=...): is the credit in yet? (app.js) -->
+    <div id="paid-notice" class="notice" role="status" hidden>
+      <span id="paid-text"></span>
+      <button type="button" class="btn-secondary btn-small" data-action="dismiss-paid" data-i18n="close"></button>
+    </div>
     <section class="hero">
       <h1 data-i18n="heroTitle"></h1>
       <p data-i18n="heroSubtitle"></p>

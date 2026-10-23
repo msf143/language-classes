@@ -46,6 +46,8 @@ const state = {
     key: null,                     // Idempotency-Key for this purchase attempt
     error: null,                   // { key, requestId? } when the last attempt failed
   },
+  paid: null,                      // back from Stripe: { id?, status, creditCents?, balanceCents?, currency? };
+                                   // status "checking" | "done" | "failed" | "slow" | "cancelled" | "signin"
   signin: {
     open: false,                   // is the sign-in dialog showing?
     status: "idle",                // "idle" | "sending" | "sent" | "error"
@@ -214,6 +216,7 @@ async function logout() {
 function render() {
   renderStaticText();
   renderBanner();
+  renderPaid();
   tzNoteEl.textContent = t("timesShown", visitorTimeZone);
   renderAccount();
   renderSignin();
@@ -855,6 +858,50 @@ async function submitBuy() {
   render();
 }
 
+// ---------- coming back from Stripe ----------
+
+// Stripe sends the student back to /?paid=<payment id> after paying, or to
+// /?paid=cancelled. The credit arrives separately, when Stripe's webhook reaches
+// our server: usually within seconds, sometimes before the student is back. So
+// we ask the server about the payment until it's settled. This only updates the
+// screen: the money is decided on the server either way.
+const paidPollMs = (attempt) => (attempt < 10 ? 1000 : 3000);   // 10 × 1 s, then every 3 s
+const paidMaxAttempts = 30;                                         // about a minute in all
+
+async function watchPayment(id) {
+  for (let attempt = 0; attempt < paidMaxAttempts; attempt++) {
+    const res = await api("GET", `/payments/${encodeURIComponent(id)}`);
+    if (state.paid?.id !== id) return;   // the notice was closed: stop asking
+    if (res.ok && res.data.status === "succeeded") {
+      const d = res.data;
+      state.paid = { id, status: "done", creditCents: d.credit_cents, balanceCents: d.balance_cents, currency: d.currency };
+      loadMe();   // the header's credit (loadMe renders)
+      return;
+    }
+    if (res.ok && res.data.status === "failed") { state.paid = { id, status: "failed" }; render(); return; }
+    if (res.status === 401) { state.paid = { id, status: "signin" }; render(); return; }
+    if (res.status === 400 || res.status === 404) { state.paid = null; render(); return; }   // not yours: nothing to show
+    // Still pending (or the network or server hiccuped): wait, then ask again.
+    await new Promise((resolve) => setTimeout(resolve, paidPollMs(attempt)));
+  }
+  if (state.paid?.id === id) { state.paid.status = "slow"; render(); }
+}
+
+function renderPaid() {
+  const p = state.paid;
+  const el = document.querySelector("#paid-notice");
+  el.hidden = !p;
+  if (!p) return;
+  el.classList.toggle("is-error", p.status === "failed");
+  document.querySelector("#paid-text").textContent =
+    p.status === "done" ? t("paymentDone", money(p.creditCents, p.currency), money(p.balanceCents, p.currency)) :
+    p.status === "failed" ? t("paymentFailed") :
+    p.status === "slow" ? t("paymentSlow") :
+    p.status === "cancelled" ? t("paymentCancelled") :
+    p.status === "signin" ? t("paymentSignIn") :
+    t("paymentChecking");
+}
+
 function openSignin() {
   state.signin = { open: true, status: "idle", email: "", expiresInMinutes: 0, error: null };
   render();
@@ -914,6 +961,7 @@ document.addEventListener("click", (e) => {
     openBuy();
   }
   if (action === "close-buy") { state.buy.open = false; render(); }
+  if (action === "dismiss-paid") { state.paid = null; render(); }
   if (action === "logout") logout();
   if (action === "test-credit" && !state.addingCredit) addTestCredit();
   if (action === "test-teacher") becomeTestTeacher();
@@ -991,6 +1039,19 @@ window.addEventListener("pageshow", (e) => {
 if (location.hash === "#signin") {
   history.replaceState(null, "", location.pathname);
   state.signin.open = true;
+}
+
+// Back from Stripe: read ?paid=..., then drop it from the address bar, so a
+// reload or a bookmark doesn't show the notice again.
+const paidParam = new URLSearchParams(location.search).get("paid");
+if (paidParam) {
+  history.replaceState(null, "", location.pathname);
+  if (paidParam === "cancelled") {
+    state.paid = { status: "cancelled" };
+  } else {
+    state.paid = { id: paidParam, status: "checking" };
+    watchPayment(paidParam);
+  }
 }
 
 loadEnv();

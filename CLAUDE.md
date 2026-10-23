@@ -420,7 +420,11 @@ For what's already built, read the code and `git log`. Next, in order:
    503 without; completed+paid / async_payment_succeeded → `creditPayment` (payment row `FOR UPDATE`; amount,
    currency and session must match; succeeded + ledger `purchase` + `bonus` from the snapshot + outbox
    `payment_succeeded` → receipt email); expired / async failed → `failPayment` (pending only). Race test with
-   a gate: without the lock, 4 deliveries credited $220 for one $50 pack; [ ] 6d Buy credit dialog;
+   a gate: without the lock, 4 deliveries credited $220 for one $50 pack; [x] 6d Buy credit (`GET /payments/{id}`: own payment's status + current balance, 404 otherwise; page: credit +
+   Buy credit in the header, pack dialog → checkout → `location.assign`, `pageshow` un-sticks a page restored
+   from the back-forward cache, Book dialog offers Buy credit when short; back at `/?paid=<id>` the page polls
+   ~1 min (10 × 1 s, then 3 s) for succeeded / failed, `?paid=cancelled` notice; checked in headless Chrome
+   with a fake Stripe + signed webhook);
    [ ] 6e keys in Secret Manager (test for staging, live for prod) + webhook registration; [ ] 6f credit expiry +
    policies page (decisions pending: period, which credit expires first).
    Credit expiry (see Business rules) and a bilingual **policies page** (cancellation, refunds,
