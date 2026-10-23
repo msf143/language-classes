@@ -289,6 +289,59 @@ trailing newline; `--data-file=-` reads the value from the pipe. **To rotate:** 
 Resend, run the same three lines (a new secret version), redeploy (Cloud Run reads secrets when an
 instance starts), then delete the old key in Resend.
 
+## The worker: emails and timed checks
+
+Every minute, **Cloud Scheduler** starts the Cloud Run job `worker` (`worker-staging` for staging),
+which runs `api worker` (`infra/worker.tf`, `cmd/api/worker.go`). Each run:
+
+1. **Decides group classes** starting within 24 hours that are still undecided: at least `min_seats`
+   booked → `confirmed`; fewer → cancelled (`under_minimum`) with a full refund for every booking.
+2. **Queues reminders**: one per booking, 24 hours before the class (not for bookings made within 24 hours).
+3. **Purges** login links expired over a day ago and sign-in sessions expired over a week ago.
+4. **Drains the outbox**: every booking, cancellation and reminder event becomes an email (English and
+   Spanish, times in the recipient's zone). Up to 50 seconds per run, then it exits.
+
+```mermaid
+sequenceDiagram
+    participant CS as Cloud Scheduler
+    participant RUN as Cloud Run Admin API
+    participant W as worker job (api worker)
+    participant DB as Cloud SQL
+    participant R as Resend
+
+    CS->>RUN: every minute: jobs.run (as scheduler-invoker)
+    RUN->>W: start an execution (as hablemos-api)
+    W->>DB: decide group classes, queue reminders, purge
+    loop each due outbox event
+        W->>DB: claim it (FOR UPDATE SKIP LOCKED)
+        W->>R: send the email (Idempotency-Key = event id)
+        W->>DB: mark it processed, or schedule a retry
+    end
+    W-->>RUN: exit
+```
+
+**Delivery is at-least-once, but emails go out once.** If a run crashes after sending and before marking
+the event processed, the next run sends again, and Resend drops the repeat because it carries the same
+`Idempotency-Key`. Failed sends are retried after 1, 2, 4 … minutes (at most an hour apart), up to 10
+times; events older than 48 hours are skipped (`last_error = 'skipped: stale'`). Several runs at once are
+safe: `SKIP LOCKED` gives each one different events.
+
+Useful commands:
+
+```bash
+gcloud run jobs executions list --job worker --region us-east1 --limit 5          # recent runs
+gcloud logging read 'resource.type="cloud_run_job" AND resource.labels.job_name="worker" AND jsonPayload.msg="worker run done"' --limit 5 --format='value(timestamp,jsonPayload.processed,jsonPayload.failed,jsonPayload.skipped)'
+gcloud scheduler jobs pause worker-every-minute --location us-east1                 # stop the worker
+gcloud scheduler jobs resume worker-every-minute --location us-east1                # start it again
+```
+
+Stuck or failing events (in a SQL shell on that environment's database):
+
+```sql
+SELECT event_type, attempts, last_error, available_at FROM outbox_event
+WHERE processed_at IS NULL AND attempts > 0 ORDER BY created_at;
+```
+
 ## GitHub Actions: deploying without a stored key
 
 `infra/github.tf` sets up **Workload Identity Federation**: Google trusts identity tokens that
