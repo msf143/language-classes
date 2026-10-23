@@ -66,6 +66,7 @@ cmd/api/            main.go    server wiring, middleware, shared helpers (writeJ
                     worker.go  drainOutbox: claims outbox events (SKIP LOCKED), retries, skips; runWorker
                     payments.go credit packs (GET /credit-packs), POST /payments/checkout
                     stripe.go  minimal Stripe REST client (Checkout sessions), net/http only
+                    webhooks.go POST /webhooks/stripe: signature check, creditPayment, failPayment
                     checks.go  worker's clock-driven checks: group minimum, reminders, purge
                     one file per resource as the API grows (bookings.go, ...); *_test.go beside it
 migrations/         000NNN_description.up.sql / .down.sql  (numbered, append-only)
@@ -414,8 +415,12 @@ For what's already built, read the code and `git log`. Next, in order:
    payment with the pack snapshot, `ON CONFLICT (account_id, idempotency_key)` for replays → Stripe session via
    form-encoded REST with `Idempotency-Key: checkout-<payment id>`, outside any transaction → `provider_ref` =
    session ID; codes `pack_unavailable`, `already_paid`, `payments_unavailable` (503, no key),
-   `payment_provider_error` (502); `STRIPE_SECRET_KEY` env, tests use a fake Stripe); [ ] 6c `POST /webhooks/stripe`
-   (HMAC signature, one tx: payment succeeded + ledger purchase + bonus, idempotent); [ ] 6d Buy credit dialog;
+   `payment_provider_error` (502); `STRIPE_SECRET_KEY` env, tests use a fake Stripe); [x] 6c `POST /webhooks/stripe` (`cmd/api/webhooks.go`:
+   `verifyStripeSignature` = HMAC-SHA256(whsec, t.raw body), `hmac.Equal`, ±5 min; `STRIPE_WEBHOOK_SECRET` env,
+   503 without; completed+paid / async_payment_succeeded → `creditPayment` (payment row `FOR UPDATE`; amount,
+   currency and session must match; succeeded + ledger `purchase` + `bonus` from the snapshot + outbox
+   `payment_succeeded` → receipt email); expired / async failed → `failPayment` (pending only). Race test with
+   a gate: without the lock, 4 deliveries credited $220 for one $50 pack; [ ] 6d Buy credit dialog;
    [ ] 6e keys in Secret Manager (test for staging, live for prod) + webhook registration; [ ] 6f credit expiry +
    policies page (decisions pending: period, which credit expires first).
    Credit expiry (see Business rules) and a bilingual **policies page** (cancellation, refunds,

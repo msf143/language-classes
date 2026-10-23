@@ -25,6 +25,8 @@ func notifyHandler(pool *pgxpool.Pool, send mailer, siteURL string) eventHandler
 		switch ev.EventType {
 		case "booking_created", "booking_cancelled", "booking_reminder":
 			return notifyBooking(ctx, pool, send, siteURL, ev)
+		case "payment_succeeded":
+			return notifyPayment(ctx, pool, send, siteURL, ev)
 		default:
 			return skip("no handler for " + ev.EventType)
 		}
@@ -282,6 +284,54 @@ Tus reservas: %[5]s
 `, f.payer.name, en, whenEN(f.startsAt, f.endsAt, f.payer.loc), f.attendees, siteURL,
 			es, whenES(f.startsAt, f.endsAt, f.payer.loc)),
 	}
+}
+
+// notifyPayment emails the receipt for a credit purchase.
+func notifyPayment(ctx context.Context, pool *pgxpool.Pool, send mailer, siteURL string, ev outboxEvent) error {
+	var name, to, currency, status string
+	var paid, bonus, balance int
+	err := pool.QueryRow(ctx, `
+		SELECT a.display_name, a.email, p.status, p.amount_cents, p.bonus_cents, p.currency,
+		       COALESCE((SELECT SUM(l.amount_cents) FROM credit_ledger l
+		                 WHERE l.account_id = a.id AND l.currency = p.currency), 0)
+		FROM payment p JOIN account a ON a.id = p.account_id
+		WHERE p.id = $1`, ev.AggregateID).Scan(&name, &to, &status, &paid, &bonus, &currency, &balance)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return skip("payment not found")
+	}
+	if err != nil {
+		return err
+	}
+	if status != "succeeded" {
+		return skip("payment not succeeded")
+	}
+	added := paid + bonus
+	bonusEN, bonusES := "", ""
+	if bonus > 0 {
+		bonusEN = fmt.Sprintf(" (%s paid + %s bonus)", moneyEN(paid, currency), moneyEN(bonus, currency))
+		bonusES = fmt.Sprintf(" (%s pagados + %s de bono)", moneyES(paid, currency), moneyES(bonus, currency))
+	}
+	return sendLogged(ctx, send, ev, "payer", email{
+		From: classesEmailFrom, To: to, IdempotencyKey: ev.ID + ":payer",
+		Subject: "Credit added: " + moneyEN(added, currency) + " · Crédito añadido: " + moneyES(added, currency),
+		Text: fmt.Sprintf(`Hi %[1]s, thank you!
+
+  %[2]s of credit added to your account%[3]s.
+  Your credit now: %[4]s
+
+Book a class: %[5]s
+
+—
+
+Hola, %[1]s: ¡gracias!
+
+  Se añadieron %[6]s de crédito a tu cuenta%[7]s.
+  Tu crédito ahora: %[8]s
+
+Reserva una clase: %[5]s
+`, name, moneyEN(added, currency), bonusEN, moneyEN(balance, currency), siteURL,
+			moneyES(added, currency), bonusES, moneyES(balance, currency)),
+	})
 }
 
 // className: the group class's title, or "Private class (Spanish)".
