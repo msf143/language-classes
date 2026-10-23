@@ -4,10 +4,10 @@
 #   test:           go vet + go test against a real Postgres (a throwaway container)
 #   build:          build the image once, push it to Artifact Registry
 #   deploy-staging: migrate-staging job (migrations + seed data), hablemos-staging
-#                   service, check https://dev.hablemos.live
+#                   service, worker-staging job, check https://dev.hablemos.live
 #   deploy-prod:    waits for approval on the "production" environment (repository
 #                   Settings > Environments), then the same image: migrate job,
-#                   hablemos-api service, check https://hablemos.live
+#                   hablemos-api service, worker job, check https://hablemos.live
 #
 # Google sign-in uses Workload Identity Federation (infra/github.tf): no key is
 # stored in GitHub. Google only trusts runs of this repository on main.
@@ -120,6 +120,10 @@ jobs:
       - name: Deploy the staging service
         run: gcloud run services update hablemos-staging --image "$IMAGE" --region "$REGION" --quiet
 
+      # The worker job's next run (within a minute) uses the new code.
+      - name: Update the staging worker
+        run: gcloud run jobs update worker-staging --image "$IMAGE" --region "$REGION" --quiet
+
       - name: Check the staging site
         run: |
           curl -fsS --retry 5 --retry-delay 3 --retry-all-errors https://dev.hablemos.live/health
@@ -157,6 +161,9 @@ jobs:
 
       - name: Deploy the production service
         run: gcloud run services update hablemos-api --image "$IMAGE" --region "$REGION" --quiet
+
+      - name: Update the production worker
+        run: gcloud run jobs update worker --image "$IMAGE" --region "$REGION" --quiet
 
       - name: Check the live site
         run: |

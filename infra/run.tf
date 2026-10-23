@@ -10,7 +10,7 @@ locals {
   # Actions owns which image runs (.github/workflows/deploy.yml): it deploys every
   # push to main, and Terraform ignores image changes (lifecycle blocks below), so
   # the two never undo each other. Changing this line does nothing once created.
-  image_tag = "5689021"
+  image_tag = "06a770b"
   image     = "${local.region}-docker.pkg.dev/${local.project}/${google_artifact_registry_repository.app.repository_id}/api:${local.image_tag}"
 }
 
