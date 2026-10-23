@@ -87,8 +87,10 @@ func main() {
 	mux.HandleFunc("GET /sessions", signedIn(pool, listSessions(pool)))
 	mux.HandleFunc("POST /bookings", requireSignIn(pool, createBooking(pool)))
 	mux.HandleFunc("GET /bookings", requireSignIn(pool, listMyBookings(pool)))
-	mux.HandleFunc("GET /private-slots", listPrivateSlots(pool)) // public, like the catalog
-	mux.HandleFunc("GET /credit-packs", listCreditPacks(pool))   // public: what credit you can buy
+	mux.HandleFunc("GET /private-slots", listPrivateSlots(pool))   // public, like the catalog
+	mux.HandleFunc("GET /credit-packs", listCreditPacks(pool))     // public: what credit you can buy
+	stripe := newStripe(os.Getenv("STRIPE_SECRET_KEY"), stripeAPI) // nil (payments unavailable) without a key
+	mux.HandleFunc("POST /payments/checkout", requireSignIn(pool, startCheckout(pool, stripe, baseURL())))
 	mux.HandleFunc("POST /bookings/{id}/cancel", requireSignIn(pool, cancelBooking(pool)))
 
 	// The teacher's side (teacher.go).

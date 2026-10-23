@@ -64,7 +64,8 @@ cmd/api/            main.go    server wiring, middleware, shared helpers (writeJ
                     teacher.go requireTeacher, /teacher/availability (publish, list, withdraw)
                     slots.go   bookableStarts: blocks minus busy sessions → slot start times (pure)
                     worker.go  drainOutbox: claims outbox events (SKIP LOCKED), retries, skips; runWorker
-                    payments.go credit packs (GET /credit-packs); Stripe Checkout from 6b
+                    payments.go credit packs (GET /credit-packs), POST /payments/checkout
+                    stripe.go  minimal Stripe REST client (Checkout sessions), net/http only
                     checks.go  worker's clock-driven checks: group minimum, reminders, purge
                     one file per resource as the API grows (bookings.go, ...); *_test.go beside it
 migrations/         000NNN_description.up.sql / .down.sql  (numbered, append-only)
@@ -409,7 +410,11 @@ For what's already built, read the code and `git log`. Next, in order:
 6. **← resume here: Payments:** buy credit packs; processor webhooks (Stripe Checkout; no payouts needed, see Business rules).
    Steps: [x] 6a migration 000006 (`credit_pack` with the three packs, in the migration so prod gets them;
    `payment.credit_pack_id` + `payment.bonus_cents` snapshot) + `GET /credit-packs` (`cmd/api/payments.go`);
-   [ ] 6b `POST /payments/checkout` → Stripe Checkout session (REST via net/http); [ ] 6c `POST /webhooks/stripe`
+   [x] 6b `POST /payments/checkout` (`cmd/api/payments.go` + `cmd/api/stripe.go`: pending
+   payment with the pack snapshot, `ON CONFLICT (account_id, idempotency_key)` for replays → Stripe session via
+   form-encoded REST with `Idempotency-Key: checkout-<payment id>`, outside any transaction → `provider_ref` =
+   session ID; codes `pack_unavailable`, `already_paid`, `payments_unavailable` (503, no key),
+   `payment_provider_error` (502); `STRIPE_SECRET_KEY` env, tests use a fake Stripe); [ ] 6c `POST /webhooks/stripe`
    (HMAC signature, one tx: payment succeeded + ledger purchase + bonus, idempotent); [ ] 6d Buy credit dialog;
    [ ] 6e keys in Secret Manager (test for staging, live for prod) + webhook registration; [ ] 6f credit expiry +
    policies page (decisions pending: period, which credit expires first).
