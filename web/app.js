@@ -19,6 +19,7 @@ const state = {
 
   testSite: false,                 // staging or dev (from GET /env): show the banner + test credit
   addingCredit: false,             // a test-credit request is on its way
+  payments: false,                 // can credit be bought here (GET /env)? Shows the Buy credit buttons
 
   me: undefined,                   // undefined = not checked yet, null = signed out, else the account
                                    // plus balanceCents and learners (from GET /me)
@@ -147,6 +148,7 @@ async function loadMyBookings() {
 async function loadEnv() {
   const res = await api("GET", "/env");
   state.testSite = res.ok && res.data.test_site === true;
+  state.payments = res.ok && res.data.payments === true;
   render();
 }
 
@@ -335,7 +337,9 @@ function renderAccount() {
   }
   accountEl.append(h("span", { class: "account-name", title: state.me.email }, state.me.display_name));
   accountEl.append(h("span", { class: "account-credit" }, t("yourCredit", money(state.me.balanceCents))));
-  accountEl.append(h("button", { type: "button", class: "btn-secondary btn-small", "data-action": "open-buy" }, t("buyCredit")));
+  if (state.payments) {
+    accountEl.append(h("button", { type: "button", class: "btn-secondary btn-small", "data-action": "open-buy" }, t("buyCredit")));
+  }
   if (state.me.is_teacher) accountEl.append(h("a", { class: "link", href: "teacher.html" }, t("teacherLink")));
   accountEl.append(h("button", { type: "button", class: "btn-secondary btn-small", "data-action": "logout" }, t("signOut")));
 }
@@ -664,7 +668,7 @@ function renderBook() {
     ? t("balanceShort", money(balance))
     : t("balanceAfter", money(balance), money(balance - q.total));
   balanceEl.classList.toggle("is-short", short);
-  buyEl.hidden = !short;   // not enough credit: offer to buy some
+  buyEl.hidden = !short || !state.payments;   // not enough credit: offer to buy some (where you can)
   submit.textContent = b.status === "sending" ? t("booking") : t("bookFor", money(q.total, q.currency));
   submit.disabled = short || b.status === "sending" || !stillFree(b.target);   // no double submits either
 }

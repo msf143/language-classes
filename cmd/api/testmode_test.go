@@ -12,24 +12,27 @@ import (
 func TestGetEnv(t *testing.T) {
 	tests := []struct {
 		appEnv, wantEnv string
+		payments        bool
 		wantTestSite    bool
 	}{
-		{"", "production", false},
-		{"staging", "staging", true},
-		{"dev", "dev", true},
+		{"", "production", false, false},
+		{"", "production", true, false},
+		{"staging", "staging", true, true},
+		{"dev", "dev", false, true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.wantEnv, func(t *testing.T) {
-			rec := call(getEnv(tt.appEnv), "GET", "/env", nil)
+			rec := call(getEnv(tt.appEnv, tt.payments), "GET", "/env", nil)
 			var got struct {
 				Env      string `json:"env"`
 				TestSite bool   `json:"test_site"`
+				Payments bool   `json:"payments"`
 			}
 			if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
 				t.Fatal(err)
 			}
-			if got.Env != tt.wantEnv || got.TestSite != tt.wantTestSite {
-				t.Errorf("got %+v, want env %q test_site %v", got, tt.wantEnv, tt.wantTestSite)
+			if got.Env != tt.wantEnv || got.TestSite != tt.wantTestSite || got.Payments != tt.payments {
+				t.Errorf("got %+v, want env %q test_site %v payments %v", got, tt.wantEnv, tt.wantTestSite, tt.payments)
 			}
 		})
 	}

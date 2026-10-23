@@ -425,7 +425,13 @@ For what's already built, read the code and `git log`. Next, in order:
    from the back-forward cache, Book dialog offers Buy credit when short; back at `/?paid=<id>` the page polls
    ~1 min (10 × 1 s, then 3 s) for succeeded / failed, `?paid=cancelled` notice; checked in headless Chrome
    with a fake Stripe + signed webhook);
-   [ ] 6e keys in Secret Manager (test for staging, live for prod) + webhook registration; [ ] 6f credit expiry +
+   6e keys + webhook: [x] 6e-1 `infra/stripe.tf` (secrets `stripe-secret-key[-staging]`,
+   `stripe-webhook-secret[-staging]`, empty, each env's SA reads only its own) + `payments` flag per env in `envs.tf`
+   (wires both into the service in `run.tf`; false until the secrets have values) + `GET /env` `payments`
+   (key and webhook secret both set) → page hides Buy credit; procedure in `docs/deploy.md` (Payments);
+   [ ] 6e-2 Mike: sandbox restricted key (Checkout Sessions: Write) + webhook endpoint for dev.hablemos.live, values
+   into the staging secrets; [ ] 6e-3 staging `payments = true`, apply, real test payment (card 4242);
+   [ ] 6e-4 production with live keys (when Mike is ready); [ ] 6f credit expiry +
    policies page (decisions pending: period, which credit expires first).
    Credit expiry (see Business rules) and a bilingual **policies page** (cancellation, refunds,
    credit expiry period, children) that reads its numbers from the same config the code uses.

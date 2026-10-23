@@ -1,7 +1,8 @@
 # The environments: each gets its own database, user, secret, service account,
 # Cloud Run service and migration job (resources with for_each = local.envs).
 # Everything else is shared: the Cloud SQL instance, the image registry, the
-# GitHub deployer, DNS, the Resend key.
+# GitHub deployer, DNS, the Resend key. (Stripe keys are per environment:
+# sandbox keys for staging, live keys for production.)
 #
 # Adding an environment = adding an entry here (plus its domain in domain.tf).
 
@@ -20,6 +21,9 @@ locals {
       app_env             = ""                      # APP_ENV; "" = production (not set)
       job_args            = ["migrate"]             # what the migration job runs
       worker_job_name     = "worker"                # Cloud Run job for `api worker` (worker.tf)
+      stripe_key_secret   = "stripe-secret-key"     # Stripe secrets, this env's own (stripe.tf)
+      stripe_hook_secret  = "stripe-webhook-secret"
+      payments            = false # true once both Stripe secrets have a value (docs/deploy.md)
     }
 
     # https://dev.hablemos.live: a full copy for testing with fake money.
@@ -37,6 +41,9 @@ locals {
       app_env             = "staging"             # turns on the test banner, test credit, [TEST] emails
       job_args            = ["migrate", "--seed"] # migrations, then the seed data (refreshes class times)
       worker_job_name     = "worker-staging"
+      stripe_key_secret   = "stripe-secret-key-staging" # sandbox keys: test cards, no real money
+      stripe_hook_secret  = "stripe-webhook-secret-staging"
+      payments            = false
     }
   }
 }

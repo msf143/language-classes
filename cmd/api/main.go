@@ -90,10 +90,14 @@ func main() {
 	mux.HandleFunc("GET /private-slots", listPrivateSlots(pool))   // public, like the catalog
 	mux.HandleFunc("GET /credit-packs", listCreditPacks(pool))     // public: what credit you can buy
 	stripe := newStripe(os.Getenv("STRIPE_SECRET_KEY"), stripeAPI) // nil (payments unavailable) without a key
+	webhookSecret := os.Getenv("STRIPE_WEBHOOK_SECRET")
+	// Buying credit needs both: the key to open Checkout, the secret to accept
+	// Stripe's "paid" (without it, paid credit would never arrive).
+	paymentsOn := stripe != nil && webhookSecret != ""
 	mux.HandleFunc("POST /payments/checkout", requireSignIn(pool, startCheckout(pool, stripe, baseURL())))
 	mux.HandleFunc("GET /payments/{id}", requireSignIn(pool, getPayment(pool)))
 	// Stripe calls this (no sign-in: it's checked by Stripe's signature instead).
-	mux.HandleFunc("POST /webhooks/stripe", stripeWebhook(pool, os.Getenv("STRIPE_WEBHOOK_SECRET")))
+	mux.HandleFunc("POST /webhooks/stripe", stripeWebhook(pool, webhookSecret))
 	mux.HandleFunc("POST /bookings/{id}/cancel", requireSignIn(pool, cancelBooking(pool)))
 
 	// The teacher's side (teacher.go).
@@ -105,7 +109,7 @@ func main() {
 	// Which environment this is (the page shows a banner on test sites), and
 	// fake credit, which only exists on test sites: on production this route
 	// isn't registered at all.
-	mux.HandleFunc("GET /env", getEnv(appEnv))
+	mux.HandleFunc("GET /env", getEnv(appEnv, paymentsOn))
 	if isTestSite(appEnv) {
 		mux.HandleFunc("POST /test-credit", requireSignIn(pool, addTestCredit(pool)))
 		mux.HandleFunc("POST /test-teacher", requireSignIn(pool, becomeTestTeacher(pool)))

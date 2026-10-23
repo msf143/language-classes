@@ -23,14 +23,15 @@ func isTestSite(appEnv string) bool {
 }
 
 // getEnv handles GET /env: which environment this is, so the page can show a
-// "test site" banner. "production" when APP_ENV isn't set.
-func getEnv(appEnv string) http.HandlerFunc {
+// "test site" banner ("production" when APP_ENV isn't set), and whether buying
+// credit works here, so the page shows Buy credit only where it does.
+func getEnv(appEnv string, payments bool) http.HandlerFunc {
 	name := appEnv
 	if name == "" {
 		name = "production"
 	}
 	return func(w http.ResponseWriter, r *http.Request) {
-		writeJSON(w, http.StatusOK, map[string]any{"env": name, "test_site": isTestSite(appEnv)})
+		writeJSON(w, http.StatusOK, map[string]any{"env": name, "test_site": isTestSite(appEnv), "payments": payments})
 	}
 }
 

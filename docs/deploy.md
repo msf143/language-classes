@@ -289,6 +289,107 @@ trailing newline; `--data-file=-` reads the value from the pipe. **To rotate:** 
 Resend, run the same three lines (a new secret version), redeploy (Cloud Run reads secrets when an
 instance starts), then delete the old key in Resend.
 
+## Payments: buying credit (Stripe Checkout)
+
+Students buy credit packs; Mike's Stripe account receives the money (the teacher is paid outside the
+app). Card details never touch our server: the student pays on Stripe's own page.
+
+```mermaid
+sequenceDiagram
+    participant B as Browser
+    participant A as Our API (Cloud Run)
+    participant S as Stripe
+    participant DB as Postgres
+    B->>A: POST /payments/checkout {pack_id} + Idempotency-Key
+    A->>DB: payment row, status pending (price + bonus snapshot)
+    A->>S: create Checkout session (STRIPE_SECRET_KEY)
+    S-->>A: session ID + page URL
+    A-->>B: checkout_url
+    B->>S: student pays on Stripe's page
+    S-->>B: redirect to /?paid=<payment id>
+    S->>A: POST /webhooks/stripe (signed with the webhook secret)
+    A->>DB: one transaction: payment succeeded + ledger purchase + bonus + outbox receipt
+    loop about a minute
+        B->>A: GET /payments/<id>
+        A-->>B: pending … succeeded + new balance
+    end
+```
+
+Only the webhook adds credit. The browser's part (the redirect, the polling) only updates the screen:
+if the student closes the tab after paying, the credit still arrives. Stripe retries a webhook that
+doesn't get a 2xx answer for up to 3 days, and our handler is idempotent (a repeat finds the
+payment already succeeded and does nothing).
+
+### The secrets
+
+Each environment has its own two secrets (`infra/stripe.tf`); Terraform creates them empty and lets
+only that environment's service account read them. The values are added by hand, like the Resend key.
+
+| Secret | What it is | Staging | Production |
+|---|---|---|---|
+| `stripe-secret-key[-staging]` | API key our server calls Stripe with | sandbox restricted key `rk_test_…` | live restricted key `rk_live_…` |
+| `stripe-webhook-secret[-staging]` | signing secret Stripe signs webhook calls with | `whsec_…` of the sandbox endpoint | `whsec_…` of the live endpoint |
+
+An environment uses them once `payments = true` in `infra/envs.tf` (Cloud Run won't start a revision
+that points at an empty secret, so the values must exist first). Until then `GET /env` says
+`"payments": false` and the page hides Buy credit.
+
+### Setting up an environment (staging shown)
+
+In the Stripe dashboard, make sure you're in the **sandbox** (account menu, top left) for staging,
+or the live account for production. Stripe's menus move around; the names to look for are below.
+
+**1. A restricted API key** (it can only create Checkout pages, like the Resend key can only send):
+Developers > **API keys** > **Create restricted key**. Name it `hablemos-staging`, set
+**Checkout Sessions** to **Write**, leave everything else at None, create it, and copy it (`rk_test_…`).
+Then, in the Codespace:
+
+```bash
+read -rsp "Paste the Stripe restricted key (rk_test_...), then press Enter: " V; echo
+printf '%s' "$V" | gcloud secrets versions add stripe-secret-key-staging --data-file=-
+unset V
+```
+
+Expected output: `Created version [1] of the secret [stripe-secret-key-staging].` (same `read -s` /
+`printf` pattern as the Resend key: nothing is echoed, nothing lands in the shell history.)
+
+**2. The webhook endpoint**: Developers > **Webhooks** (also called Event destinations) >
+**Add endpoint / Add destination**:
+
+- Events (search "checkout.session"): `checkout.session.completed`,
+  `checkout.session.async_payment_succeeded`, `checkout.session.async_payment_failed`,
+  `checkout.session.expired`.
+- Destination type **Webhook endpoint**; payload style **Snapshot** if asked (our handler reads the
+  Checkout session from the event itself).
+- Endpoint URL: `https://dev.hablemos.live/webhooks/stripe` (production: `https://hablemos.live/webhooks/stripe`).
+
+Open the new endpoint, reveal its **Signing secret** (`whsec_…`) and copy it:
+
+```bash
+read -rsp "Paste the webhook signing secret (whsec_...), then press Enter: " V; echo
+printf '%s' "$V" | gcloud secrets versions add stripe-webhook-secret-staging --data-file=-
+unset V
+```
+
+**3. Check you didn't swap or mix them up** (prints only the first 8 characters):
+
+```bash
+for s in stripe-secret-key-staging stripe-webhook-secret-staging; do
+  echo "$s: $(gcloud secrets versions access latest --secret=$s | cut -c1-8)…"
+done
+```
+
+Expected for staging: `rk_test_…` and `whsec_…`. On production the key must start `rk_live_`.
+
+**4. Turn it on**: set `payments = true` for the environment in `infra/envs.tf`, commit, and
+`cd infra && terraform apply` (expected: the service updated in place, a new revision with the two
+`STRIPE_*` variables). `curl -s https://dev.hablemos.live/env` should then show `"payments":true`.
+
+**To rotate** a key: create a new restricted key, add it as a new version (step 1), redeploy (Cloud Run
+reads secrets when an instance starts), then delete the old key in Stripe. **If Stripe refuses** a
+checkout ("does not have the required permissions"), the error in our logs (`checkout: Stripe refused`)
+names the missing permission; add it to the restricted key.
+
 ## The worker: emails and timed checks
 
 Every minute, **Cloud Scheduler** starts the Cloud Run job `worker` (`worker-staging` for staging),

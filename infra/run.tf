@@ -82,6 +82,25 @@ resource "google_cloud_run_v2_service" "api" {
           }
         }
       }
+      # The Stripe keys (stripe.tf), only where the environment has payments
+      # on: the map is empty otherwise, so no env blocks are written.
+      dynamic "env" {
+        for_each = {
+          for name, secret in {
+            STRIPE_SECRET_KEY     = google_secret_manager_secret.stripe_secret_key[each.key].secret_id
+            STRIPE_WEBHOOK_SECRET = google_secret_manager_secret.stripe_webhook_secret[each.key].secret_id
+          } : name => secret if each.value.payments
+        }
+        content {
+          name = env.key
+          value_source {
+            secret_key_ref {
+              secret  = env.value
+              version = "latest"
+            }
+          }
+        }
+      }
       # APP_ENV only where the environment sets one (staging); production has
       # none. A "dynamic" block writes the env block zero or one times.
       dynamic "env" {
@@ -105,6 +124,8 @@ resource "google_cloud_run_v2_service" "api" {
     # starts, or that start fails.
     google_secret_manager_secret_iam_member.api_database_url,
     google_secret_manager_secret_iam_member.api_resend_api_key,
+    google_secret_manager_secret_iam_member.api_stripe_secret_key,
+    google_secret_manager_secret_iam_member.api_stripe_webhook_secret,
     google_project_iam_member.api_sql_client,
   ]
 
