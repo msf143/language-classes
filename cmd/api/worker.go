@@ -172,6 +172,26 @@ func runWorker(ctx context.Context, pool *pgxpool.Pool, appEnv, resendKey, siteU
 
 	ctx, cancel := context.WithTimeout(ctx, 50*time.Second)
 	defer cancel()
+
+	// The clock-driven checks first, so the emails they queue go out in this
+	// same run. A failing check is logged and the run goes on: a problem with
+	// reminders mustn't hold up booking confirmations.
+	if confirmed, cancelled, err := checkGroupMinimums(ctx, pool); err != nil {
+		slog.Error("group minimum check failed", "err", err)
+	} else if confirmed+cancelled > 0 {
+		slog.Info("group classes decided", "confirmed", confirmed, "cancelled", cancelled)
+	}
+	if queued, err := queueReminders(ctx, pool); err != nil {
+		slog.Error("queueing reminders failed", "err", err)
+	} else if queued > 0 {
+		slog.Info("reminders queued", "count", queued)
+	}
+	if tokens, sessions, err := purgeExpired(ctx, pool); err != nil {
+		slog.Error("purge failed", "err", err)
+	} else if tokens+sessions > 0 {
+		slog.Info("expired sign-ins purged", "login_tokens", tokens, "web_sessions", sessions)
+	}
+
 	stats, err := drainOutbox(ctx, pool, notifyHandler(pool, send, siteURL), 500)
 	slog.Info("worker run done", "processed", stats.Processed, "failed", stats.Failed, "skipped", stats.Skipped)
 	return err

@@ -22,7 +22,7 @@ import (
 func notifyHandler(pool *pgxpool.Pool, send mailer, siteURL string) eventHandler {
 	return func(ctx context.Context, ev outboxEvent) error {
 		switch ev.EventType {
-		case "booking_created", "booking_cancelled":
+		case "booking_created", "booking_cancelled", "booking_reminder":
 			return notifyBooking(ctx, pool, send, siteURL, ev)
 		default:
 			return skip("no handler for " + ev.EventType)
@@ -72,6 +72,12 @@ func notifyBooking(ctx context.Context, pool *pgxpool.Pool, send mailer, siteURL
 		toPayer, toTeacher = bookedEmails(f, siteURL)
 	case "booking_cancelled":
 		toPayer, toTeacher = cancelledEmails(f, siteURL)
+	case "booking_reminder":
+		if f.status != "confirmed" {
+			return skip("booking no longer confirmed") // cancelled since the reminder was queued
+		}
+		toPayer = reminderEmail(f, siteURL)
+		f.kind = "" // reminders go to the payer only; the teacher has his dashboard
 	}
 
 	toPayer.IdempotencyKey = ev.ID + ":payer"
@@ -232,6 +238,37 @@ Se canceló una clase privada. El horario vuelve a estar disponible.
 			es, whenES(f.startsAt, f.endsAt, f.teacher.loc)),
 	}
 	return toPayer, toTeacher
+}
+
+func reminderEmail(f bookingFacts, siteURL string) email {
+	en, es := className(f)
+	return email{
+		From: classesEmailFrom, To: f.payer.email,
+		Subject: "Reminder: " + en + " · Recordatorio: " + es,
+		Text: fmt.Sprintf(`Hi %[1]s, a reminder: your class is coming up.
+
+  %[2]s
+  %[3]s
+  For: %[4]s
+
+The teacher will send you the video link before the class.
+Classes may end up to 5 minutes early, so the teacher can take a short break between classes.
+Your bookings: %[5]s
+
+—
+
+Hola, %[1]s: te recordamos que tu clase se acerca.
+
+  %[6]s
+  %[7]s
+  Para: %[4]s
+
+El profesor te enviará el enlace de la videollamada antes de la clase.
+Las clases pueden terminar hasta 5 minutos antes, para que el profesor tome un breve descanso entre clases.
+Tus reservas: %[5]s
+`, f.payer.name, en, whenEN(f.startsAt, f.endsAt, f.payer.loc), f.attendees, siteURL,
+			es, whenES(f.startsAt, f.endsAt, f.payer.loc)),
+	}
 }
 
 // className: the group class's title, or "Private class (Spanish)".
