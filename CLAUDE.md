@@ -62,6 +62,7 @@ cmd/api/            main.go    server wiring, middleware, shared helpers (writeJ
                     bookings_cancel.go POST /bookings/{id}/cancel (refund rule: refundFor), GET /bookings
                     teacher.go requireTeacher, /teacher/availability (publish, list, withdraw)
                     slots.go   bookableStarts: blocks minus busy sessions → slot start times (pure)
+                    worker.go  drainOutbox: claims outbox events (SKIP LOCKED), retries, skips
                     one file per resource as the API grows (bookings.go, ...); *_test.go beside it
 migrations/         000NNN_description.up.sql / .down.sql  (numbered, append-only)
 scripts/seed.sql    dev seed data (idempotent; times relative to now()); never on prod
@@ -379,8 +380,12 @@ For what's already built, read the code and `git log`. Next, in order:
    - Gap: no video link yet (`session.meeting_url` unset); reminders say the teacher will send it.
    Steps: [x] 5a save the browser's time zone at sign-in (signin.js sends
    `Intl…timeZone` with the token; `verifyLoginToken` stores it only while the account's zone is still `UTC`,
-   checked with `validTimezone` / `time.LoadLocation`); [ ] 5b outbox migration + `api worker` for booking
-   emails; [ ] 5c group minimum, reminders, purge; [ ] 5d Terraform: jobs `worker` / `worker-staging` + Scheduler.
+   checked with `validTimezone` / `time.LoadLocation`); 5b: [x] 5b-1 migration 000005 (outbox `available_at`, `last_error`,
+   unique `dedupe_key`; index on due events) + `drainOutbox` (`cmd/api/worker.go`: one event per transaction,
+   `FOR UPDATE SKIP LOCKED`, handler → processed / retry with backoff / `skip(reason)`; stale > 48 h skipped;
+   gives up after 10). Tests run in a private migrated schema (`migratedSchemaPool`); the two-worker test
+   measures handlers running at once (without SKIP LOCKED they only take turns). [ ] 5b-2 email handlers +
+   `api worker`; [ ] 5c group minimum, reminders, purge; [ ] 5d Terraform: jobs `worker` / `worker-staging` + Scheduler.
 6. **Payments:** buy credit packs; processor webhooks (provider TBD; must support payouts to Colombia).
    Credit expiry (see Business rules) and a bilingual **policies page** (cancellation, refunds,
    credit expiry period, children) that reads its numbers from the same config the code uses.
