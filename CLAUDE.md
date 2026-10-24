@@ -67,6 +67,7 @@ cmd/api/            main.go    server wiring, middleware, shared helpers (writeJ
                     teacher_classes.go POST /teacher/sessions (new group class), POST /teacher/sessions/{id}/cancel
                     account.go PUT /me (name), /me/learners (add, edit, archive family members)
                     admin.go   requireAdmin; admin routes (teachers: list, profile, activate/deactivate)
+                    invites.go teacher invitations: create (email sent at once), list, cancel; accept (7g-2)
                     slots.go   bookableStarts: blocks minus busy sessions → slot start times (pure)
                     worker.go  drainOutbox: claims outbox events (SKIP LOCKED), retries, skips; runWorker
                     payments.go credit packs (GET /credit-packs), POST /payments/checkout
@@ -530,7 +531,14 @@ For what's already built, read the code and `git log`. Next, in order:
    classes, Activate / Deactivate; a refusal lists the booked classes in the way) + "Admin" link in the main page's
    header for admins; checked in headless Chrome (refused on the seed teacher; activate → deactivate on a retired one).
    Possible later: an `admin_action` table (permanent audit trail; logs keep 30 days);
-   [ ] 7g invitations.
+   7g invitations (design 2026-10-24: the link signs the invitee in and makes them a `pending` teacher; the email goes
+   out from the API at once, like login links, since only the token's hash is stored; the admin also sees the link
+   once): [x] 7g-1 migration 000009 `teacher_invite` (hash only, `open`/`accepted`/`cancelled`, 7 days, one open per
+   email via a partial unique index; never deleted) + `cmd/api/invites.go`: `POST /admin/invites` (inviting again
+   cancels the open one; active teacher → 409 `already_teacher`; answers with the link + `email_sent`), `GET
+   /admin/invites` (open, expired marked), `POST /admin/invites/{id}/cancel`; API-side `apiMailer` (dev log / Resend);
+   [ ] 7g-2 accept: `invite.html` + `POST /invites/accept` (sign-in + pending teacher), teacher page for pending;
+   [ ] 7g-3 admin page: Invitations section, pending teachers.
    **Order decided 2026-10-24: 8 (My account), then 7g, then 9.** (Found: no screen yet to add family members or friends;
    a new account's name is the part of the email before @, unchangeable.)
    After this, teachers/profiles/prices/classes/availability are data, managed in the app (no deploys); still no

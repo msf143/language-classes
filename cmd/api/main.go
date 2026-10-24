@@ -163,6 +163,23 @@ func main() {
 		sendLoginLink = resendSender(os.Getenv("RESEND_API_KEY"), resendEndpoint, subjectPrefix)
 	}
 	mux.HandleFunc("POST /auth/login", requestLoginLink(pool, sendLoginLink, baseURL()))
+
+	// Other emails the API sends itself (teacher invitations, whose secret
+	// can't wait in the outbox). Same choice as login links; nil = none.
+	var apiMailer mailer
+	switch {
+	case appEnv == "dev":
+		apiMailer = logMailer
+	case os.Getenv("RESEND_API_KEY") != "":
+		subjectPrefix := ""
+		if appEnv == "staging" {
+			subjectPrefix = "[TEST] "
+		}
+		apiMailer = resendMailer(os.Getenv("RESEND_API_KEY"), resendEndpoint, subjectPrefix)
+	}
+	mux.HandleFunc("POST /admin/invites", requireAdmin(pool, createInvite(pool, apiMailer, baseURL())))
+	mux.HandleFunc("GET /admin/invites", requireAdmin(pool, listInvites(pool)))
+	mux.HandleFunc("POST /admin/invites/{id}/cancel", requireAdmin(pool, cancelInvite(pool)))
 	mux.HandleFunc("POST /auth/verify", verifyLoginToken(pool))
 	mux.HandleFunc("POST /auth/logout", logout(pool))
 	mux.HandleFunc("GET /me", requireSignIn(pool, getMe(pool)))
