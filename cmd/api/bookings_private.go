@@ -65,7 +65,7 @@ func bookPrivateSession(ctx context.Context, pool *pgxpool.Pool, payerID, key st
 			if err != nil {
 				return err
 			}
-			if !same || !slices.Equal(existing.LearnerIDs, req.LearnerIDs) {
+			if !same || !slices.Equal(existing.LearnerIDs, req.LearnerIDs) || existing.PartySize != req.Seats {
 				return errKeyReused
 			}
 			b = *existing
@@ -103,11 +103,13 @@ func bookPrivateSession(ctx context.Context, pool *pgxpool.Pool, payerID, key st
 		}
 
 		// 4. The learners: the payer's own and active. Any age: the class is theirs.
+		// The party is the seats booked: the payer's learners plus open seats
+		// for friends (step 9), all paid now at the price for that many people.
 		minors, err := checkLearners(ctx, tx, payerID, req.LearnerIDs)
 		if err != nil {
 			return err
 		}
-		partySize := len(req.LearnerIDs)
+		partySize := req.Seats
 
 		// 5. The private price for this length and party size.
 		pricePerPerson, currency, err := priceFor(ctx, tx, p.TeacherID, "private", p.DurationMinutes, partySize)
@@ -118,11 +120,12 @@ func bookPrivateSession(ctx context.Context, pool *pgxpool.Pool, payerID, key st
 		// 6. Create the session. occupied = the class itself (the teacher's
 		//    break is inside it). If another class already holds any of this
 		//    time, the exclusion constraint refuses the insert: someone was faster.
-		audience := "all" // a mix of ages
-		switch minors {
-		case 0:
+		audience := "all" // a mix of ages, or friends still to come (any age)
+		switch {
+		case partySize > len(req.LearnerIDs):
+		case minors == 0:
 			audience = "adults"
-		case partySize:
+		case minors == partySize:
 			audience = "kids"
 		}
 		sessionID := newUUIDv7()
@@ -143,6 +146,7 @@ func bookPrivateSession(ctx context.Context, pool *pgxpool.Pool, payerID, key st
 		b = bookingDTO{
 			SessionID: sessionID, LearnerIDs: req.LearnerIDs, PartySize: partySize,
 			PricePerPersonCents: pricePerPerson, TotalCents: pricePerPerson * partySize, Currency: currency,
+			OpenSeats: partySize - len(req.LearnerIDs),
 		}
 		if err := chargeAndWrite(ctx, tx, payerID, key, &b); err != nil {
 			return err

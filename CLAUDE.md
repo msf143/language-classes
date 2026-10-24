@@ -573,8 +573,11 @@ For what's already built, read the code and `git log`. Next, in order:
    **50% of that seat's share** back (ledger `refund`, `booking.refund_cents` grows; party_size and price unchanged).
    **A friend who leaves**: the seat stays paid and opens again (new link); only the payer moves money. Friends see the
    class in their My bookings ("Paid by …") and get confirmation + reminder emails.
-   Steps: [ ] 9a book with open seats (`POST /bookings` private: `seats` ≥ learners; extra seats = invited
-   attendees) + `GET /bookings` shows seats; [ ] 9b change seats (add / remove; reprice before the lock, 50% after);
+   Steps: [x] 9a book with open seats (`POST /bookings` private: optional `seats`, from the number of learners up to
+   4, priced at that party size; extra seats = `invited` attendees holding an unusable placeholder token, the hash
+   of a thrown-away secret; audience `all` when seats are open; replay must match the seat count; `seats` on a group
+   class → 400; `loadBooking`'s learner_ids = the payer's own only) + `GET /bookings` has `open_seats` and `seats`
+   (id, status, name); [ ] 9b change seats (add / remove; reprice before the lock, 50% after);
    [ ] 9c links + joining (`POST …/seats/{id}/link`, join page info, `POST /join` signed in, `POST …/leave`);
    [ ] 9d friends' side (their bookings, emails to all attendees); [ ] 9e pages (Book dialog seats, My bookings
    seat management, `join.html` with sign-in round trip).

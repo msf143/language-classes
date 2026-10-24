@@ -260,3 +260,85 @@ func TestBookPrivateRace(t *testing.T) {
 		t.Errorf("%d students charged, want exactly 1", charged)
 	}
 }
+
+// bookSeats: POST /bookings for a private class with a seat count.
+func bookSeats(pool *pgxpool.Pool, cookie *http.Cookie, key, teacher string, start time.Time, seats int, learners ...string) *httptest.ResponseRecorder {
+	body, _ := json.Marshal(map[string]any{
+		"private": map[string]any{
+			"teacher_id": teacher, "starts_at": start, "duration_minutes": 60, "target_language": "es",
+		},
+		"learner_ids": learners, "seats": seats,
+	})
+	req := httptest.NewRequest("POST", "/bookings", strings.NewReader(string(body)))
+	req.Header.Set("Idempotency-Key", key)
+	req.AddCookie(cookie)
+	rec := httptest.NewRecorder()
+	requireSignIn(pool, createBooking(pool))(rec, req)
+	return rec
+}
+
+// Booking a private class for 3 with only yourself: 3 seats paid at the
+// 3-person price, 2 open for friends; a replay; the refusals; GET /bookings.
+func TestBookPrivateOpenSeats(t *testing.T) {
+	pool := testPool(t)
+	teacher, day := privateTeacher(t, pool) // private 60 min: $25 / $20 / $17 / $15 per person
+	me := newStudent(t, pool, 10000, false)
+	start := day.Add(19 * time.Hour)
+
+	rec := bookSeats(pool, me.cookie, "seats-1", teacher, start, 3, me.learners...)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("%d %s", rec.Code, rec.Body)
+	}
+	b := decodeBooking(t, rec)
+	cancelWhenDone(t, pool, b.SessionID)
+	if b.PartySize != 3 || b.PricePerPersonCents != 1700 || b.TotalCents != 5100 || b.OpenSeats != 2 || b.BalanceCents != 4900 {
+		t.Errorf("booking %+v; want 3 seats × $17 = $51, 2 open, $49 left", b)
+	}
+	if n := count(t, pool, `SELECT count(*) FROM booking_attendee WHERE booking_id = $1 AND status = 'invited'
+		AND learner_id IS NULL AND length(invite_token) = 64`, b.ID); n != 2 {
+		t.Errorf("%d open seats with a 64-hex-character placeholder, want 2", n)
+	}
+	if n := count(t, pool, `SELECT count(*) FROM session WHERE id = $1 AND audience = 'all' AND max_seats = 3`, b.SessionID); n != 1 {
+		t.Error("session not 'all' with 3 seats (friends may be any age)")
+	}
+
+	t.Run("replay: the same booking; another seat count: key reused", func(t *testing.T) {
+		if rec := bookSeats(pool, me.cookie, "seats-1", teacher, start, 3, me.learners...); rec.Code != 200 || decodeBooking(t, rec).OpenSeats != 2 {
+			t.Errorf("replay: %d %s", rec.Code, rec.Body)
+		}
+		if rec := bookSeats(pool, me.cookie, "seats-1", teacher, start, 2, me.learners...); rec.Code != 422 {
+			t.Errorf("same key, 2 seats: %d, want 422", rec.Code)
+		}
+	})
+
+	t.Run("refused", func(t *testing.T) {
+		later := day.Add(21 * time.Hour)
+		for _, tc := range []struct {
+			name  string
+			seats int
+		}{{"5 seats", 5}, {"fewer seats than learners", -1}} {
+			if rec := bookSeats(pool, me.cookie, newUUIDv7(), teacher, later, tc.seats, me.learners...); rec.Code != 400 {
+				t.Errorf("%s: %d %s", tc.name, rec.Code, rec.Body)
+			}
+		}
+		group := newSession(t, pool, newTeacher(t, pool), sessionOpts{slot: 30})
+		body := `{"session_id": "` + group + `", "learner_ids": ["` + me.learners[0] + `"], "seats": 2}`
+		req := httptest.NewRequest("POST", "/bookings", strings.NewReader(body))
+		req.Header.Set("Idempotency-Key", newUUIDv7())
+		req.AddCookie(me.cookie)
+		rec := httptest.NewRecorder()
+		requireSignIn(pool, createBooking(pool))(rec, req)
+		if rec.Code != 400 {
+			t.Errorf("seats on a group class: %d %s", rec.Code, rec.Body)
+		}
+	})
+
+	t.Run("GET /bookings: seats and open seats", func(t *testing.T) {
+		var list []myBookingDTO
+		json.Unmarshal(call(requireSignIn(pool, listMyBookings(pool)), "GET", "/bookings", me.cookie).Body.Bytes(), &list)
+		if len(list) != 1 || list[0].OpenSeats != 2 || len(list[0].Seats) != 3 ||
+			list[0].Seats[0].Status != "joined" || list[0].Seats[1].Status != "invited" || list[0].Seats[1].DisplayName != "" {
+			t.Errorf("%+v", list)
+		}
+	})
+}

@@ -21,6 +21,10 @@ type bookingRequest struct {
 	SessionID  string          `json:"session_id"`
 	Private    *privateRequest `json:"private"`
 	LearnerIDs []string        `json:"learner_ids"` // who attends: the payer's own learner profiles
+	// Seats (private classes only): how many places to book and pay for, at
+	// least one per learner; the rest are open for friends (step 9). 0 = one
+	// per learner, no open seats.
+	Seats int `json:"seats"`
 }
 
 // bookingDTO is what the API returns for a booking.
@@ -37,6 +41,7 @@ type bookingDTO struct {
 	CancelledAt         *time.Time `json:"cancelled_at"`  // null unless cancelled
 	RefundCents         int        `json:"refund_cents"`  // credit given back when cancelled
 	BalanceCents        int        `json:"balance_cents"` // the payer's credit after this booking
+	OpenSeats           int        `json:"open_seats"`    // paid seats waiting for a friend (private only)
 }
 
 // bookingError is a "you can't book this" answer: an HTTP status, a code the
@@ -128,6 +133,14 @@ func (req *bookingRequest) normalize() string {
 	slices.Sort(req.LearnerIDs)
 	if len(slices.Compact(slices.Clone(req.LearnerIDs))) != len(req.LearnerIDs) {
 		return "learner_ids lists the same learner twice"
+	}
+	switch {
+	case req.Seats == 0:
+		req.Seats = len(req.LearnerIDs)
+	case req.Private == nil:
+		return "seats is only for private classes"
+	case req.Seats < len(req.LearnerIDs) || req.Seats > maxPartySize:
+		return fmt.Sprintf("seats must be from the number of learner_ids up to %d", maxPartySize)
 	}
 	return ""
 }
@@ -367,6 +380,14 @@ func chargeAndWrite(ctx context.Context, tx pgx.Tx, payerID, key string, b *book
 			return err
 		}
 	}
+	// Open seats (private classes, step 9): paid places waiting for a friend.
+	for range b.OpenSeats {
+		if _, err := tx.Exec(ctx, `
+			INSERT INTO booking_attendee (id, booking_id, status, invite_token) VALUES ($1, $2, 'invited', $3)`,
+			newUUIDv7(), b.ID, unusableInviteToken()); err != nil {
+			return err
+		}
+	}
 	_, err = tx.Exec(ctx, `
 		INSERT INTO credit_ledger (id, account_id, entry_type, amount_cents, currency, booking_id)
 		VALUES ($1, $2, 'spend', $3, $4, $5)`,
@@ -388,20 +409,29 @@ func chargeAndWrite(ctx context.Context, tx pgx.Tx, payerID, key string, b *book
 	return err
 }
 
+// unusableInviteToken is what an open seat holds until the payer asks for a
+// link: the hash (hex) of a secret that's thrown away at once, so no link can
+// match it. Asking for a link (step 9c) replaces it with the hash of a real one.
+func unusableInviteToken() string {
+	return fmt.Sprintf("%x", hashSecret(newSecret()))
+}
+
 // loadBooking reads a booking (and the payer's current balance), for a replay
-// or after a cancellation.
+// or after a cancellation. learner_ids are the payer's own learners only (a
+// friend who joined later mustn't make a replay look different).
 func loadBooking(ctx context.Context, tx pgx.Tx, id, payerID string) (bookingDTO, error) {
 	b := bookingDTO{ID: id}
 	err := tx.QueryRow(ctx, `
 		SELECT b.session_id, b.party_size, b.price_per_person_cents, b.total_cents, b.currency,
 		       b.status, b.created_at, b.cancelled_at, b.refund_cents,
 		       COALESCE((SELECT array_agg(a.learner_id::text ORDER BY a.learner_id::text)
-		                 FROM booking_attendee a
-		                 WHERE a.booking_id = b.id AND a.learner_id IS NOT NULL), '{}'),
+		                 FROM booking_attendee a JOIN learner l ON l.id = a.learner_id AND l.account_id = $2
+		                 WHERE a.booking_id = b.id AND a.status = 'joined'), '{}'),
 		       COALESCE((SELECT SUM(amount_cents) FROM credit_ledger
-		                 WHERE account_id = $2 AND currency = b.currency), 0)
+		                 WHERE account_id = $2 AND currency = b.currency), 0),
+		       (SELECT count(*) FROM booking_attendee a WHERE a.booking_id = b.id AND a.status = 'invited')::int
 		FROM booking b WHERE b.id = $1`, id, payerID).
 		Scan(&b.SessionID, &b.PartySize, &b.PricePerPersonCents, &b.TotalCents, &b.Currency,
-			&b.Status, &b.CreatedAt, &b.CancelledAt, &b.RefundCents, &b.LearnerIDs, &b.BalanceCents)
+			&b.Status, &b.CreatedAt, &b.CancelledAt, &b.RefundCents, &b.LearnerIDs, &b.BalanceCents, &b.OpenSeats)
 	return b, err
 }

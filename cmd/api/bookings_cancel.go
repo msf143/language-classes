@@ -171,6 +171,16 @@ type myBookingDTO struct {
 	RefundIfCancelledCents int           `json:"refund_if_cancelled_cents"` // if cancelled right now
 	Session                mySessionDTO  `json:"session"`
 	Attendees              []attendeeDTO `json:"attendees"`
+	OpenSeats              int           `json:"open_seats"` // paid seats waiting for a friend
+	Seats                  []seatDTO     `json:"seats"`      // every seat: who's in it, or open
+}
+
+// seatDTO is one place in a booking: filled by a learner (status "joined"),
+// or open for a friend ("invited"; display_name empty).
+type seatDTO struct {
+	ID          string `json:"id"`
+	Status      string `json:"status"`
+	DisplayName string `json:"display_name"`
 }
 
 type mySessionDTO struct {
@@ -203,6 +213,11 @@ func listMyBookings(pool *pgxpool.Pool) http.HandlerFunc {
 			                   ORDER BY l.display_name), '[]')
 			        FROM booking_attendee a JOIN learner l ON l.id = a.learner_id
 			        WHERE a.booking_id = b.id AND a.status <> 'removed'),
+			       (SELECT COALESCE(json_agg(json_build_object(
+			                   'id', a.id, 'status', a.status, 'display_name', COALESCE(l.display_name, ''))
+			                   ORDER BY a.status DESC, a.created_at), '[]')
+			        FROM booking_attendee a LEFT JOIN learner l ON l.id = a.learner_id
+			        WHERE a.booking_id = b.id AND a.status <> 'removed'),
 			       now()
 			FROM booking b JOIN session s ON s.id = b.session_id
 			WHERE b.payer_account_id = $1 AND b.status = 'confirmed'
@@ -222,13 +237,18 @@ func listMyBookings(pool *pgxpool.Pool) http.HandlerFunc {
 			var endsAt, now time.Time
 			if err := rows.Scan(&b.ID, &b.PartySize, &b.TotalCents, &b.Currency, &b.CreatedAt,
 				&b.Session.ID, &b.Session.Kind, &b.Session.Title, &b.Session.TargetLanguage,
-				&b.Session.Audience, &b.Session.StartsAt, &endsAt, &b.Attendees, &now); err != nil {
+				&b.Session.Audience, &b.Session.StartsAt, &endsAt, &b.Attendees, &b.Seats, &now); err != nil {
 				logFrom(r).Error("list my bookings: scan failed", "err", err)
 				writeError(w, r, http.StatusInternalServerError, "could not load your bookings")
 				return
 			}
 			b.Session.StartsAt = b.Session.StartsAt.UTC()
 			b.Session.DurationMinutes = int(endsAt.Sub(b.Session.StartsAt).Minutes())
+			for _, seat := range b.Seats {
+				if seat.Status == "invited" {
+					b.OpenSeats++
+				}
+			}
 			// The same rule POST /bookings/{id}/cancel applies, with the database's clock.
 			b.RefundIfCancelledCents = refundFor(b.TotalCents, b.Session.StartsAt.Sub(now))
 			bookings = append(bookings, b)
