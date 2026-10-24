@@ -43,7 +43,7 @@ locals {
       worker_job_name     = "worker-staging"
       stripe_key_secret   = "stripe-secret-key-staging" # sandbox keys: test cards, no real money
       stripe_hook_secret  = "stripe-webhook-secret-staging"
-      payments            = false
+      payments            = true # sandbox secrets added 2026-10-24 (6e-2)
     }
   }
 }

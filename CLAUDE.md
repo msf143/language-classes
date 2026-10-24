@@ -429,8 +429,9 @@ For what's already built, read the code and `git log`. Next, in order:
    `stripe-webhook-secret[-staging]`, empty, each env's SA reads only its own) + `payments` flag per env in `envs.tf`
    (wires both into the service in `run.tf`; false until the secrets have values) + `GET /env` `payments`
    (key and webhook secret both set) → page hides Buy credit; procedure in `docs/deploy.md` (Payments);
-   [ ] 6e-2 Mike: sandbox restricted key (Checkout Sessions: Write) + webhook endpoint for dev.hablemos.live, values
-   into the staging secrets; [ ] 6e-3 staging `payments = true`, apply, real test payment (card 4242);
+   [x] 6e-2 Mike (2026-10-24): sandbox key `hablemos-staging-checkout` (Create secret key → Custom permissions,
+   Checkout Sessions: Write) + event destination `hablemos-staging` (Snapshot, 4 checkout.session.* events) → values
+   in the staging secrets; [ ] 6e-3 staging `payments = true` (set), apply, real test payment (card 4242);
    [ ] 6e-4 production with live keys (when Mike is ready); [ ] 6f credit expiry +
    policies page (decisions pending: period, which credit expires first).
    Credit expiry (see Business rules) and a bilingual **policies page** (cancellation, refunds,

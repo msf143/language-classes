@@ -327,7 +327,7 @@ only that environment's service account read them. The values are added by hand,
 
 | Secret | What it is | Staging | Production |
 |---|---|---|---|
-| `stripe-secret-key[-staging]` | API key our server calls Stripe with | sandbox restricted key `rk_test_…` | live restricted key `rk_live_…` |
+| `stripe-secret-key[-staging]` | API key our server calls Stripe with | sandbox key (`…_test_…`), Custom permissions | live key (`…_live_…`), Custom permissions |
 | `stripe-webhook-secret[-staging]` | signing secret Stripe signs webhook calls with | `whsec_…` of the sandbox endpoint | `whsec_…` of the live endpoint |
 
 An environment uses them once `payments = true` in `infra/envs.tf` (Cloud Run won't start a revision
@@ -339,13 +339,17 @@ that points at an empty secret, so the values must exist first). Until then `GET
 In the Stripe dashboard, make sure you're in the **sandbox** (account menu, top left) for staging,
 or the live account for production. Stripe's menus move around; the names to look for are below.
 
-**1. A restricted API key** (it can only create Checkout pages, like the Resend key can only send):
-Developers > **API keys** > **Create restricted key**. Name it `hablemos-staging`, set
-**Checkout Sessions** to **Write**, leave everything else at None, create it, and copy it (`rk_test_…`).
-Then, in the Codespace:
+**1. A key that can only create Checkout pages** (like the Resend key can only send). Stripe no
+longer has a separate "restricted keys" list: every secret key has its own permissions.
+Developers > **API keys** > **Create secret key** > (for your own integration) > **Custom permissions**
+(not a template, not either "Full access"). Name it `hablemos-staging-checkout` (production:
+`hablemos-prod-checkout`), set **Checkout Sessions** to **Write**, leave everything else at None,
+**Access policy: None** (an IP allow-list would block Cloud Run, which has no fixed outgoing address).
+Create it and copy it right away (shown once). On the API keys list its Permissions column must not say
+"Full access". Leave the account's default Full-access key alone; we don't use it. Then, in the Codespace:
 
 ```bash
-read -rsp "Paste the Stripe restricted key (rk_test_...), then press Enter: " V; echo
+read -rsp "Paste the Stripe key, then press Enter: " V; echo
 printf '%s' "$V" | gcloud secrets versions add stripe-secret-key-staging --data-file=-
 unset V
 ```
@@ -353,14 +357,15 @@ unset V
 Expected output: `Created version [1] of the secret [stripe-secret-key-staging].` (same `read -s` /
 `printf` pattern as the Resend key: nothing is echoed, nothing lands in the shell history.)
 
-**2. The webhook endpoint**: Developers > **Webhooks** (also called Event destinations) >
-**Add endpoint / Add destination**:
+**2. The webhook endpoint**: Developers > **Webhooks** > **Create an event destination**:
 
-- Events (search "checkout.session"): `checkout.session.completed`,
+- Scope **Your account** (not Connected accounts: we're not a platform for other businesses).
+- Payload style **Snapshot** (the event carries the whole Checkout session, which our handler reads;
+  "Thin" would send only an ID, and our key has no permission to fetch the rest). API version: the default.
+- Events (search "checkout"): tick all four, `checkout.session.completed`,
   `checkout.session.async_payment_succeeded`, `checkout.session.async_payment_failed`,
-  `checkout.session.expired`.
-- Destination type **Webhook endpoint**; payload style **Snapshot** if asked (our handler reads the
-  Checkout session from the event itself).
+  `checkout.session.expired` (Selected events: 4).
+- Destination type **Webhook endpoint**. Name `hablemos-staging` (production: `hablemos-prod`).
 - Endpoint URL: `https://dev.hablemos.live/webhooks/stripe` (production: `https://hablemos.live/webhooks/stripe`).
 
 Open the new endpoint, reveal its **Signing secret** (`whsec_…`) and copy it:
@@ -379,7 +384,9 @@ for s in stripe-secret-key-staging stripe-webhook-secret-staging; do
 done
 ```
 
-Expected for staging: `rk_test_…` and `whsec_…`. On production the key must start `rk_live_`.
+Expected for staging: a key with `_test_` in it (`rk_test_` or `sk_test_`) and `whsec_…`. On production
+the key must have `_live_`. No backup copies elsewhere: Secret Manager keeps the versions, and a
+doubtful key is replaced with a new one (rotate, below), not recovered.
 
 **4. Turn it on**: set `payments = true` for the environment in `infra/envs.tf`, commit, and
 `cd infra && terraform apply` (expected: the service updated in place, a new revision with the two
