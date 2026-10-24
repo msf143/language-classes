@@ -180,6 +180,7 @@ func main() {
 	mux.HandleFunc("POST /admin/invites", requireAdmin(pool, createInvite(pool, apiMailer, baseURL())))
 	mux.HandleFunc("GET /admin/invites", requireAdmin(pool, listInvites(pool)))
 	mux.HandleFunc("POST /admin/invites/{id}/cancel", requireAdmin(pool, cancelInvite(pool)))
+	mux.HandleFunc("POST /invites/accept", acceptInvite(pool)) // public: the link is the proof
 	mux.HandleFunc("POST /auth/verify", verifyLoginToken(pool))
 	mux.HandleFunc("POST /auth/logout", logout(pool))
 	mux.HandleFunc("GET /me", requireSignIn(pool, getMe(pool)))

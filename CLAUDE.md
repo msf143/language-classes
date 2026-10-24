@@ -84,7 +84,7 @@ scripts/prod-db.sh  migrate/psql against the prod database through the Cloud SQL
 web/                index.html + app.js (catalog, booking/cancel dialogs, my bookings), signin.html + signin.js
                     (emailed link lands here), teacher.html + teacher.js (teacher dashboard), policies.html + policies.js
                     (public rules, numbers from GET /policies), admin.html + admin.js (teachers: list, profile,
-                    activate/deactivate), common.js (shared
+                    activate/deactivate), invite.html + invite.js (accept a teacher invitation), common.js (shared
                     t/h/api helpers), i18n.js (all UI strings), styles.css
 ```
 
@@ -537,7 +537,13 @@ For what's already built, read the code and `git log`. Next, in order:
    email via a partial unique index; never deleted) + `cmd/api/invites.go`: `POST /admin/invites` (inviting again
    cancels the open one; active teacher → 409 `already_teacher`; answers with the link + `email_sent`), `GET
    /admin/invites` (open, expired marked), `POST /admin/invites/{id}/cancel`; API-side `apiMailer` (dev log / Resend);
-   [ ] 7g-2 accept: `invite.html` + `POST /invites/accept` (sign-in + pending teacher), teacher page for pending;
+   [x] 7g-2 accept: `POST /invites/accept` (public; invitation row `FOR UPDATE`, gated race test: without it a link works
+   twice; account found/created by its email; teacher `pending` (inactive → pending, active stays); browser zone kept if
+   UTC; signed in via the shared `startWebSession` / `setSessionCookie`, moved out of `verifyLoginToken`); codes
+   `invite_used` 409, `invite_expired` 410, `invite_invalid` 404/409, `account_disabled` 403. Pending teachers use the
+   teacher page (`requireTeacher` and `is_teacher` accept pending; students still see only active teachers);
+   `GET /teacher/profile` has `status` → "waiting for activation" note. `web/invite.html` + `invite.js` (button, token
+   cleared from the address bar, never in a server log) → teacher page; checked in headless Chrome incl. a reused link;
    [ ] 7g-3 admin page: Invitations section, pending teachers.
    **Order decided 2026-10-24: 8 (My account), then 7g, then 9.** (Found: no screen yet to add family members or friends;
    a new account's name is the part of the email before @, unchangeable.)

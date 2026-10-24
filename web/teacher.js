@@ -414,6 +414,7 @@ function render() {
   renderStatus();
   document.querySelector("#dashboard").hidden = state.status !== "ready";
   if (state.status !== "ready") return;
+  document.querySelector("#pending-note").hidden = state.profile?.status !== "pending";
   renderProfile();
   renderPrices();
   renderBlocks();

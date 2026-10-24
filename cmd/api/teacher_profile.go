@@ -35,31 +35,33 @@ type teacherProfileDTO struct {
 // The answer also says what the form may offer, so the page has no limits of its own.
 type teacherProfileAnswer struct {
 	teacherProfileDTO
-	AllowedLengths  []int `json:"allowed_lengths"`
-	MaxBreakMinutes int   `json:"max_break_minutes"`
+	AllowedLengths  []int  `json:"allowed_lengths"`
+	MaxBreakMinutes int    `json:"max_break_minutes"`
+	Status          string `json:"status"` // "pending" (students don't see him yet) or "active"; read-only
 }
 
 // getTeacherProfile handles GET /teacher/profile (wrapped in requireTeacher).
 func getTeacherProfile(pool *pgxpool.Pool) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		p, err := loadTeacherProfile(r, pool)
+		p, status, err := loadTeacherProfile(r, pool)
 		if err != nil {
 			logFrom(r).Error("teacher profile: load failed", "err", err)
 			writeError(w, r, http.StatusInternalServerError, "could not load your profile")
 			return
 		}
-		writeJSON(w, http.StatusOK, teacherProfileAnswer{p, allowedLengths, maxBreakMinutes})
+		writeJSON(w, http.StatusOK, teacherProfileAnswer{p, allowedLengths, maxBreakMinutes, status})
 	}
 }
 
-func loadTeacherProfile(r *http.Request, pool *pgxpool.Pool) (teacherProfileDTO, error) {
-	var p teacherProfileDTO
-	err := pool.QueryRow(r.Context(), `
-		SELECT a.display_name, COALESCE(t.bio_en, ''), COALESCE(t.bio_es, ''), t.buffer_minutes, t.offered_durations
+// loadTeacherProfile reads the profile, and the teacher's status (shown on the
+// page as "waiting for activation" while pending; never written by the page).
+func loadTeacherProfile(r *http.Request, pool *pgxpool.Pool) (p teacherProfileDTO, status string, err error) {
+	err = pool.QueryRow(r.Context(), `
+		SELECT a.display_name, COALESCE(t.bio_en, ''), COALESCE(t.bio_es, ''), t.buffer_minutes, t.offered_durations, t.status
 		FROM teacher t JOIN account a ON a.id = t.account_id WHERE t.id = $1`, teacherFrom(r)).
-		Scan(&p.DisplayName, &p.BioEN, &p.BioES, &p.BreakMinutes, &p.OfferedLengths)
+		Scan(&p.DisplayName, &p.BioEN, &p.BioES, &p.BreakMinutes, &p.OfferedLengths, &status)
 	slices.Sort(p.OfferedLengths)
-	return p, err
+	return p, status, err
 }
 
 // putTeacherProfile handles PUT /teacher/profile (wrapped in requireTeacher):
@@ -97,13 +99,13 @@ func putTeacherProfile(pool *pgxpool.Pool) http.HandlerFunc {
 			return
 		}
 		logFrom(r).Info("teacher profile saved", "teacher_id", teacherFrom(r))
-		saved, err := loadTeacherProfile(r, pool)
+		saved, status, err := loadTeacherProfile(r, pool)
 		if err != nil {
 			logFrom(r).Error("teacher profile: reload failed", "err", err)
 			writeError(w, r, http.StatusInternalServerError, "saved, but could not load your profile")
 			return
 		}
-		writeJSON(w, http.StatusOK, teacherProfileAnswer{saved, allowedLengths, maxBreakMinutes})
+		writeJSON(w, http.StatusOK, teacherProfileAnswer{saved, allowedLengths, maxBreakMinutes, status})
 	}
 }
 

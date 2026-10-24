@@ -34,7 +34,7 @@ func requireTeacher(pool *pgxpool.Pool, next http.HandlerFunc) http.HandlerFunc 
 		a, _ := accountFrom(r)
 		var teacherID string
 		err := pool.QueryRow(r.Context(), `
-			SELECT id::text FROM teacher WHERE account_id = $1 AND status = 'active'`, a.ID).Scan(&teacherID)
+			SELECT id::text FROM teacher WHERE account_id = $1 AND status IN ('active', 'pending')`, a.ID).Scan(&teacherID)
 		if errors.Is(err, pgx.ErrNoRows) {
 			writeErrorCode(w, r, http.StatusForbidden, "not_teacher", "this is for teachers only")
 			return

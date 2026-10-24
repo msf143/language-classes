@@ -189,3 +189,86 @@ func cancelInvite(pool *pgxpool.Pool) http.HandlerFunc {
 		writeJSON(w, http.StatusOK, map[string]string{"id": id, "status": status})
 	}
 }
+
+// acceptInvite handles POST /invites/accept {"token": "...", "timezone": "..."}
+// (public: the link itself is the proof, like a login link). In one
+// transaction: the invitation (locked, so two clicks can't both use it) →
+// the account for its email, found or created → a 'pending' teacher (an
+// inactive one becomes pending again; an active one stays active) → the
+// invitation marked accepted → a signed-in browser session.
+func acceptInvite(pool *pgxpool.Pool) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		var body struct {
+			Token    string `json:"token"`
+			Timezone string `json:"timezone"`
+		}
+		if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<10)).Decode(&body); err != nil || body.Token == "" {
+			writeError(w, r, http.StatusBadRequest, `body must be JSON like {"token": "..."}`)
+			return
+		}
+		var inviteID, accountID, teacherStatus, secret string
+		err := pgx.BeginFunc(r.Context(), pool, func(tx pgx.Tx) error {
+			var email, status string
+			var expired bool
+			err := tx.QueryRow(r.Context(), `
+				SELECT id::text, email, status, expires_at <= now() FROM teacher_invite
+				WHERE token_hash = $1 FOR UPDATE`, hashSecret(body.Token)).Scan(&inviteID, &email, &status, &expired)
+			switch {
+			case errors.Is(err, pgx.ErrNoRows):
+				return &bookingError{http.StatusNotFound, "invite_invalid", "this invitation link isn't valid"}
+			case err != nil:
+				return err
+			case status == "accepted":
+				return &bookingError{http.StatusConflict, "invite_used", "this invitation was already used"}
+			case status == "cancelled":
+				return &bookingError{http.StatusConflict, "invite_invalid", "this invitation was cancelled or replaced"}
+			case expired:
+				return &bookingError{http.StatusGone, "invite_expired", "this invitation has expired"}
+			}
+			if accountID, _, err = findOrCreateAccount(r.Context(), tx, email, ""); err != nil {
+				return err
+			}
+			var accountStatus string
+			if err := tx.QueryRow(r.Context(), `SELECT status FROM account WHERE id = $1`, accountID).Scan(&accountStatus); err != nil {
+				return err
+			}
+			if accountStatus != "active" {
+				return &bookingError{http.StatusForbidden, "account_disabled", "this account is disabled"}
+			}
+			// The browser's zone, kept only if the account has none yet (as at sign-in).
+			if validTimezone(body.Timezone) {
+				if _, err := tx.Exec(r.Context(), `
+					UPDATE account SET timezone = $2 WHERE id = $1 AND timezone = 'UTC'`, accountID, body.Timezone); err != nil {
+					return err
+				}
+			}
+			if err := tx.QueryRow(r.Context(), `
+				INSERT INTO teacher (id, account_id, offered_durations, status) VALUES ($1, $2, $3, 'pending')
+				ON CONFLICT (account_id) DO UPDATE
+				  SET status = CASE WHEN teacher.status = 'active' THEN 'active' ELSE 'pending' END
+				RETURNING status`, newUUIDv7(), accountID, defaultOfferedDurations).Scan(&teacherStatus); err != nil {
+				return err
+			}
+			if _, err := tx.Exec(r.Context(), `
+				UPDATE teacher_invite SET status = 'accepted', accepted_at = now(), accepted_account_id = $2
+				WHERE id = $1`, inviteID, accountID); err != nil {
+				return err
+			}
+			secret, err = startWebSession(r.Context(), tx, accountID)
+			return err
+		})
+		var be *bookingError
+		switch {
+		case errors.As(err, &be):
+			writeErrorCode(w, r, be.status, be.code, be.msg)
+			return
+		case err != nil:
+			logFrom(r).Error("accept invite failed", "err", err)
+			writeError(w, r, http.StatusInternalServerError, "could not accept the invitation")
+			return
+		}
+		setSessionCookie(w, secret)
+		logFrom(r).Info("teacher invitation accepted", "invite_id", inviteID, "account_id", accountID, "teacher_status", teacherStatus)
+		writeJSON(w, http.StatusOK, map[string]string{"teacher_status": teacherStatus})
+	}
+}
