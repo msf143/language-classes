@@ -68,6 +68,7 @@ cmd/api/            main.go    server wiring, middleware, shared helpers (writeJ
                     stripe.go  minimal Stripe REST client (Checkout sessions), net/http only
                     webhooks.go POST /webhooks/stripe: signature check, creditPayment, failPayment
                     checks.go  worker's clock-driven checks: group minimum, reminders, purge
+                    expiry.go  credit expiry: reminder before, then the expiry entry (credit_policy)
                     one file per resource as the API grows (bookings.go, ...); *_test.go beside it
 migrations/         000NNN_description.up.sql / .down.sql  (numbered, append-only)
 scripts/seed.sql    dev seed data (idempotent; times relative to now()); never on prod
@@ -441,8 +442,10 @@ For what's already built, read the code and `git log`. Next, in order:
    after a deploy);
    [ ] 6e-4 production with live keys (when Mike is ready); 6f credit expiry (rule A, inactivity, 24 months, see Business rules) + policies page: [x] 6f-1 migration 000007
    (`expiry` entry type, debit only; `credit_policy` one-row table 24 / 30; down file round-trips);
-   [ ] 6f-2 worker: reminder (outbox, `dedupe_key` with the last-activity date) + expiry (account locked `FOR UPDATE`,
-   −balance) + tests; [ ] 6f-3 the two emails; [ ] 6f-4 bilingual policies page (numbers from `credit_policy` + Go constants).
+   [x] 6f-2 `cmd/api/expiry.go`: `queueExpiryReminders` (outbox `credit_expiry_reminder`, `dedupe_key` =
+   account + currency + last-activity time) + `expireCredit` / `expireAccount` (account `FOR UPDATE`, re-read after the
+   lock, one `expiry` entry −balance + outbox `credit_expired`); tests incl. a gated race test (without the lock:
+   balance −$15). **Not yet called by `runWorker`**: unknown events are skipped, so they're wired in with the emails; [ ] 6f-3 the two emails; [ ] 6f-4 bilingual policies page (numbers from `credit_policy` + Go constants).
    Credit expiry (see Business rules) and a bilingual **policies page** (cancellation, refunds,
    credit expiry period, children) that reads its numbers from the same config the code uses.
 7. **Setup path:** first-run setup that creates the teacher account and profile (bio, buffer,
