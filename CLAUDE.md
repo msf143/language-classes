@@ -62,6 +62,7 @@ cmd/api/            main.go    server wiring, middleware, shared helpers (writeJ
                     bookings_private.go private classes in POST /bookings (creates the session)
                     bookings_cancel.go POST /bookings/{id}/cancel (refund rule: refundFor), GET /bookings
                     bookings_seats.go private seats: add / remove (repriced > 24 h ahead, 50% back after)
+                    bookings_join.go friends: seat links, preview, join, leave
                     teacher.go requireTeacher, /teacher/availability (publish, list, withdraw)
                     teacher_profile.go GET/PUT /teacher/profile (name, bio EN/ES, break, offered lengths)
                     teacher_prices.go GET/PUT /teacher/prices (versioned price_tier rows)
@@ -585,7 +586,13 @@ For what's already built, read the code and `git log`. Next, in order:
    grows, price and party size kept); payer's private bookings only (404 / `not_private` / `class_started`); locks
    account → session → booking; answer `{booking, delta_cents}`; gated race test (without the account lock: −$5).
    No email yet (9d);
-   [ ] 9c links + joining (`POST …/seats/{id}/link`, join page info, `POST /join` signed in, `POST …/leave`);
+   [x] 9c links + joining (`cmd/api/bookings_join.go`): `POST /bookings/{id}/seats/{seat}/link` (payer, open seat of an
+   upcoming confirmed booking; a fresh link replaces the old; else 404 `seat_not_open`), `POST /seats/preview {token}`
+   (public: class, teacher, who invited; 404 `seat_link_invalid`), `POST /seats/join {token, learner_id}` (signed in;
+   booking `FOR SHARE` then seat `FOR UPDATE` and the token re-checked: same order as removing a seat, no deadlock;
+   `seat_taken`, `already_in_class` from the unique index, `unknown_learner`, `not_changeable`; token cleared),
+   `POST /seats/{seat}/leave` (my learner; seat back to open with a placeholder; no money). Two gated race tests, each
+   failing without its lock (a friend overwritten; a friend in a cancelled booking);
    [ ] 9d friends' side (their bookings, emails to all attendees); [ ] 9e pages (Book dialog seats, My bookings
    seat management, `join.html` with sign-in round trip).
 

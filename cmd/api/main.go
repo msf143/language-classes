@@ -123,6 +123,10 @@ func main() {
 	mux.HandleFunc("POST /bookings/{id}/cancel", requireSignIn(pool, cancelBooking(pool)))
 	mux.HandleFunc("POST /bookings/{id}/seats", requireSignIn(pool, addSeat(pool)))
 	mux.HandleFunc("POST /bookings/{id}/seats/{seat}/remove", requireSignIn(pool, removeSeat(pool)))
+	mux.HandleFunc("POST /bookings/{id}/seats/{seat}/link", requireSignIn(pool, seatLink(pool, baseURL())))
+	mux.HandleFunc("POST /seats/preview", seatPreview(pool)) // public: the link is the proof
+	mux.HandleFunc("POST /seats/join", requireSignIn(pool, joinSeat(pool)))
+	mux.HandleFunc("POST /seats/{seat}/leave", requireSignIn(pool, leaveSeat(pool)))
 
 	// The teacher's side (teacher.go).
 	mux.HandleFunc("POST /teacher/availability", requireTeacher(pool, publishAvailability(pool)))
