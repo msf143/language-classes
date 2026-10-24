@@ -431,7 +431,11 @@ For what's already built, read the code and `git log`. Next, in order:
    (key and webhook secret both set) → page hides Buy credit; procedure in `docs/deploy.md` (Payments);
    [x] 6e-2 Mike (2026-10-24): sandbox key `hablemos-staging-checkout` (Create secret key → Custom permissions,
    Checkout Sessions: Write) + event destination `hablemos-staging` (Snapshot, 4 checkout.session.* events) → values
-   in the staging secrets; [ ] 6e-3 staging `payments = true` (set), apply, real test payment (card 4242);
+   in the staging secrets; [x] 6e-3 staging `payments = true`, applied; real sandbox payment on dev.hablemos.live 2026-10-24 ($25 pack:
+   checkout → webhook `credited` 41 s later, before the browser returned → page's first poll succeeded → receipt
+   email next worker run). Also fixed: `[hidden] { display: none !important; }` (a `display` rule had kept the
+   empty paid notice visible). Possible follow-up: `Cache-Control: no-cache` on web files (browsers keep old CSS/JS
+   after a deploy);
    [ ] 6e-4 production with live keys (when Mike is ready); [ ] 6f credit expiry +
    policies page (decisions pending: period, which credit expires first).
    Credit expiry (see Business rules) and a bilingual **policies page** (cancellation, refunds,

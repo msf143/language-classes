@@ -134,7 +134,7 @@ func main() {
 	mux.HandleFunc("GET /me", requireSignIn(pool, getMe(pool)))
 
 	// Serve the front-end (the web folder) for every other GET request.
-	mux.Handle("GET /", http.FileServer(http.Dir("web")))
+	mux.Handle("GET /", webFiles("web"))
 
 	port := os.Getenv("PORT")
 	if port == "" {
@@ -199,6 +199,22 @@ func redirectWWW(next http.Handler) http.Handler {
 			return
 		}
 		next.ServeHTTP(w, r)
+	})
+}
+
+// webFiles serves the page files (HTML, CSS, JS) in dir with
+// "Cache-Control: no-cache": browsers may keep a copy but must check with us
+// before reusing it. Without that header they guess how long a file stays
+// fresh (often hours, from its age), so after a deploy someone could run the
+// new index.html with the old app.js. The check is cheap: the browser sends
+// If-Modified-Since, and FileServer answers 304 Not Modified (no body) when
+// the file hasn't changed. Each image is built from a fresh checkout, so
+// every deploy gives the files new modification times.
+func webFiles(dir string) http.Handler {
+	files := http.FileServer(http.Dir(dir))
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Cache-Control", "no-cache")
+		files.ServeHTTP(w, r)
 	})
 }
 

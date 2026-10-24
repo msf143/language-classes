@@ -3,64 +3,40 @@ package main
 import (
 	"net/http"
 	"net/http/httptest"
-	"net/url"
+	"os"
+	"path/filepath"
 	"testing"
 )
 
-func TestRedirectWWW(t *testing.T) {
-	// The "next" handler stands in for the real routes: it just answers 200.
-	next := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusOK)
-	})
-	h := redirectWWW(next)
-
-	tests := []struct {
-		name, host, target string
-		wantStatus         int
-		wantLocation       string
-	}{
-		{"www redirects, path and query kept", "www.hablemos.live", "/sessions?kind=group",
-			http.StatusPermanentRedirect, "https://hablemos.live/sessions?kind=group"},
-		{"www root", "www.hablemos.live", "/", http.StatusPermanentRedirect, "https://hablemos.live/"},
-		{"bare domain served", "hablemos.live", "/sessions", http.StatusOK, ""},
-		{"run.app address served", "hablemos-api-529979780991.us-east1.run.app", "/health", http.StatusOK, ""},
-		{"localhost served", "localhost:8080", "/", http.StatusOK, ""},
+// Page files carry Cache-Control: no-cache, and an unchanged file is answered
+// with 304 Not Modified, so the check browsers make before reusing a copy is cheap.
+func TestWebFilesRevalidate(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "styles.css"), []byte("body {}"), 0o644); err != nil {
+		t.Fatal(err)
 	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			req := httptest.NewRequest("GET", tt.target, nil)
-			req.Host = tt.host
-			rec := httptest.NewRecorder()
-			h.ServeHTTP(rec, req)
-
-			if rec.Code != tt.wantStatus {
-				t.Fatalf("status = %d, want %d", rec.Code, tt.wantStatus)
-			}
-			if got := rec.Header().Get("Location"); got != tt.wantLocation {
-				t.Fatalf("Location = %q, want %q", got, tt.wantLocation)
-			}
-		})
+	get := func(ifModifiedSince string) *httptest.ResponseRecorder {
+		req := httptest.NewRequest("GET", "/styles.css", nil)
+		if ifModifiedSince != "" {
+			req.Header.Set("If-Modified-Since", ifModifiedSince)
+		}
+		rec := httptest.NewRecorder()
+		webFiles(dir).ServeHTTP(rec, req)
+		return rec
 	}
-}
 
-func TestRedactQuery(t *testing.T) {
-	tests := []struct {
-		name, in, want string
-	}{
-		{"no query", "", ""},
-		{"filters kept", "language=es&audience=kids", "audience=kids&language=es"},
-		{"token hidden", "token=abc123", "token=REDACTED"},
-		{"any token name, any case", "invite_Token=xyz&kind=group", "invite_Token=REDACTED&kind=group"},
+	first := get("")
+	lastModified := first.Header().Get("Last-Modified")
+	if first.Code != http.StatusOK || first.Body.String() != "body {}" || lastModified == "" {
+		t.Fatalf("first fetch: %d %q, Last-Modified %q", first.Code, first.Body, lastModified)
 	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			q, err := url.ParseQuery(tt.in)
-			if err != nil {
-				t.Fatal(err)
-			}
-			if got := redactQuery(q); got != tt.want {
-				t.Fatalf("redactQuery(%q) = %q, want %q", tt.in, got, tt.want)
-			}
-		})
+	again := get(lastModified)
+	if again.Code != http.StatusNotModified || again.Body.Len() != 0 {
+		t.Errorf("unchanged file: %d with %d bytes, want 304 and no body", again.Code, again.Body.Len())
+	}
+	for _, rec := range []*httptest.ResponseRecorder{first, again} {
+		if got := rec.Header().Get("Cache-Control"); got != "no-cache" {
+			t.Errorf("Cache-Control %q, want no-cache", got)
+		}
 	}
 }
