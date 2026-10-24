@@ -452,7 +452,10 @@ For what's already built, read the code and `git log`. Next, in order:
    accounts (`expiry-demo-1/2@example.com`); 6f-4 policies: [x] 6f-4a `GET /policies` (`cmd/api/policies.go`, public: refund 24 h / 50 %, group minimum 2 decided
    24 h ahead, private notice 60 min, party ≤ 4, break = longest active teacher's buffer, credit 24 months / 30 days;
    new constants `maxPartySize`, `groupMinStudents`; a test checks them against the schema's CHECKs);
-   [ ] 6f-4b the bilingual page `web/policies.html` (+ links from the site and the emails). Open: a help/contact address.
+   [ ] 6f-4b the bilingual page `web/policies.html` (+ links from the site and the emails, contact hola@hablemos.live,
+   Reply-To: hola@ on our emails). Contact address (decided 2026-10-24): `hola@hablemos.live`, forwarded by Cloudflare
+   Email Routing to Mike's inbox (`infra/inbox.tf`; destination = Codespaces secret `TF_VAR_HOLA_FORWARD_TO`; token
+   needs Email Routing permissions; procedure in `docs/deploy.md`): [ ] applied + destination verified.
    Credit expiry (see Business rules) and a bilingual **policies page** (cancellation, refunds,
    credit expiry period, children) that reads its numbers from the same config the code uses.
 7. **Setup path:** first-run setup that creates the teacher account and profile (bio, buffer,

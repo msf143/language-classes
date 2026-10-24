@@ -397,6 +397,77 @@ reads secrets when an instance starts), then delete the old key in Stripe. **If 
 checkout ("does not have the required permissions"), the error in our logs (`checkout: Stripe refused`)
 names the missing permission; add it to the restricted key.
 
+## Receiving email: hola@hablemos.live (Cloudflare Email Routing)
+
+Resend only sends. For students to write to us (questions, refunds of unused credit), mail to
+`hola@hablemos.live` is **forwarded** by Cloudflare Email Routing to Mike's own inbox (`infra/inbox.tf`):
+
+```mermaid
+flowchart LR
+    S[Student's email] -->|"to hola@hablemos.live"| MX["MX records of hablemos.live<br/>(Cloudflare Email Routing)"]
+    MX -->|"rule: hola@ → forward"| M["Mike's inbox<br/>(Codespaces secret TF_VAR_HOLA_FORWARD_TO)"]
+    MX -.->|"any other name@"| X[rejected]
+```
+
+- Cloudflare adds and manages the MX and SPF records on the bare domain. Resend's records are on the
+  `send.` subdomain, so sending and receiving don't touch.
+- There's no mailbox to check: mail lands in Mike's normal inbox. Replies Mike sends come from his own
+  address. A second person handling mail later would mean a real mailbox (Google Workspace, Zoho); the
+  `hola@` address stays the same.
+- The destination is personal, so it isn't in the repo. It's the Codespaces secret
+  `TF_VAR_HOLA_FORWARD_TO`; Terraform reads any `TF_VAR_<name>` environment variable as the input
+  variable `<name>`. It is stored in Terraform's state (the private state bucket).
+- **Names are case-sensitive in Terraform but not in GitHub:** GitHub stores secret names in UPPER CASE
+  whatever you type, so the Terraform variable is named `HOLA_FORWARD_TO` (capitals) to match. If
+  `terraform plan` ever stops to ask for a variable, the secret isn't reaching it: check the names with
+  `env | cut -d= -f1 | grep TF_VAR` (prints names, never values).
+
+### Setting it up (once)
+
+**1. The secret.** GitHub → your profile picture → **Settings → Codespaces → Secrets → New secret**.
+Name `TF_VAR_HOLA_FORWARD_TO`, value: the inbox to forward to, repository access: `msf143/language-classes`.
+Codespaces inject secrets when a codespace starts, so **stop and restart the codespace** (Command Palette:
+"Codespaces: Stop Current Codespace", then reopen it). Check without printing it:
+
+```bash
+test -n "$TF_VAR_HOLA_FORWARD_TO" && echo "set" || echo "NOT set"
+```
+
+**2. The Cloudflare token's permissions.** The token Terraform uses (`CLOUDFLARE_API_TOKEN`) could only edit
+DNS. Cloudflare dashboard → **My Profile → API Tokens** → the token → **Edit**, and add:
+
+| Scope | Permission | Why |
+|---|---|---|
+| Account | **Email Routing Addresses: Edit** | the destination address (kept per account) |
+| Zone | **Email Routing Rules: Edit** | the `hola@` rule, and turning routing on |
+
+For the Account permission, also set **Account Resources** to include your account. Keep the zone limited to
+`hablemos.live`. Save; the token's value doesn't change, so the Codespaces secret stays as it is. If `apply`
+still answers `403`/`Authentication error` for one resource, the error names the API call; add the matching
+Email Routing permission.
+
+**3. Apply.**
+
+```bash
+cd /workspaces/language-classes/infra && terraform apply
+```
+
+Expected: `3 to add` (`cloudflare_email_routing_dns.main`, `cloudflare_email_routing_address.mike`,
+`cloudflare_email_routing_rule.hola`); the address shows as `(sensitive value)`.
+
+**4. Verify the destination.** Cloudflare emails the destination inbox ("Verify your email address"). Click
+the link. Until then nothing is forwarded.
+
+**5. Check.**
+
+```bash
+dig +short MX hablemos.live
+```
+
+Expected: three `route1/2/3.mx.cloudflare.net` lines. Then send a test from a **different** address than the
+destination (some providers hide a forwarded copy of your own mail) to `hola@hablemos.live`; it should arrive
+within a minute.
+
 ## The worker: emails and timed checks
 
 Every minute, **Cloud Scheduler** starts the Cloud Run job `worker` (`worker-staging` for staging),
