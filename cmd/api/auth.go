@@ -351,9 +351,10 @@ func accountFrom(r *http.Request) (*account, bool) {
 
 // learnerDTO is one of an account's learner profiles (who can attend a class).
 type learnerDTO struct {
-	ID          string `json:"id"`
-	DisplayName string `json:"display_name"`
-	IsMinor     bool   `json:"is_minor"`
+	ID             string `json:"id"`
+	DisplayName    string `json:"display_name"`
+	IsMinor        bool   `json:"is_minor"`
+	NativeLanguage string `json:"native_language"` // "en" or "es"
 }
 
 // getMe handles GET /me (wrapped in requireSignIn): the signed-in account,
@@ -375,7 +376,7 @@ func getMe(pool *pgxpool.Pool) http.HandlerFunc {
 		}
 
 		rows, err := pool.Query(ctx, `
-			SELECT id::text, display_name, is_minor FROM learner
+			SELECT id::text, display_name, is_minor, native_language FROM learner
 			WHERE account_id = $1 AND status = 'active'
 			ORDER BY created_at`, a.ID)
 		if err != nil {
@@ -387,7 +388,7 @@ func getMe(pool *pgxpool.Pool) http.HandlerFunc {
 		learners := []learnerDTO{} // [] rather than null in the JSON when there are none
 		for rows.Next() {
 			var l learnerDTO
-			if err := rows.Scan(&l.ID, &l.DisplayName, &l.IsMinor); err != nil {
+			if err := rows.Scan(&l.ID, &l.DisplayName, &l.IsMinor, &l.NativeLanguage); err != nil {
 				logFrom(r).Error("me: learners scan failed", "err", err)
 				writeError(w, r, http.StatusInternalServerError, "could not load your account")
 				return

@@ -65,6 +65,7 @@ cmd/api/            main.go    server wiring, middleware, shared helpers (writeJ
                     teacher_profile.go GET/PUT /teacher/profile (name, bio EN/ES, break, offered lengths)
                     teacher_prices.go GET/PUT /teacher/prices (versioned price_tier rows)
                     teacher_classes.go POST /teacher/sessions (new group class), POST /teacher/sessions/{id}/cancel
+                    account.go PUT /me (name), /me/learners (add, edit, archive family members)
                     admin.go   requireAdmin; admin routes (teachers: list, profile, activate/deactivate)
                     slots.go   bookableStarts: blocks minus busy sessions → slot start times (pure)
                     worker.go  drainOutbox: claims outbox events (SKIP LOCKED), retries, skips; runWorker
@@ -537,9 +538,11 @@ For what's already built, read the code and `git log`. Next, in order:
    **Setup path:** first-run setup that creates the teacher account and profile (bio, buffer,
    offered durations, price tiers). Until then, `scripts/seed.sql` creates the dev teacher.
 
-8. **My account** (students): [ ] 8a server: `PUT /me` (display name), `POST /me/learners` (add a family member:
-   name, under 18, native language), `PUT /me/learners/{id}`, `POST /me/learners/{id}/archive` (status `archived`, never
-   deleted; refused while booked into an upcoming class); names 1–60, ≤ 10 active learners; [ ] 8b "My Account" dialog
+8. **My account** (students): [x] 8a server (`cmd/api/account.go`): `PUT /me` (display name), `POST /me/learners`
+   (name, under 18, native language; account `FOR UPDATE` for the ≤ 10 limit → 409 `too_many_learners`),
+   `PUT /me/learners/{id}` (mine only, else 404), `POST /me/learners/{id}/archive` (status `archived`, never deleted;
+   409 `learner_booked` while in a confirmed class not yet ended; account `FOR UPDATE` first, like booking: gated race
+   test fails without it); `/me` learners now include `native_language`; [ ] 8b "My Account" dialog
    from the header name (new learners appear under "Who's attending?").
 9. **Friends in private classes** (business rule: one payer, friends join via invite link with their own free
    accounts): the payer books for a party, gets invite links; a friend signs in and joins with one of their learners;
