@@ -530,10 +530,22 @@ For what's already built, read the code and `git log`. Next, in order:
    header for admins; checked in headless Chrome (refused on the seed teacher; activate → deactivate on a retired one).
    Possible later: an `admin_action` table (permanent audit trail; logs keep 30 days);
    [ ] 7g invitations.
+   **Order decided 2026-10-24: 8 (My account), then 7g, then 9.** (Found: no screen yet to add family members or friends;
+   a new account's name is the part of the email before @, unchangeable.)
    After this, teachers/profiles/prices/classes/availability are data, managed in the app (no deploys); still no
    screens for credit packs, `credit_policy`, the payments switch.
    **Setup path:** first-run setup that creates the teacher account and profile (bio, buffer,
    offered durations, price tiers). Until then, `scripts/seed.sql` creates the dev teacher.
+
+8. **My account** (students): [ ] 8a server: `PUT /me` (display name), `POST /me/learners` (add a family member:
+   name, under 18, native language), `PUT /me/learners/{id}`, `POST /me/learners/{id}/archive` (status `archived`, never
+   deleted; refused while booked into an upcoming class); names 1–60, ≤ 10 active learners; [ ] 8b "My Account" dialog
+   from the header name (new learners appear under "Who's attending?").
+9. **Friends in private classes** (business rule: one payer, friends join via invite link with their own free
+   accounts): the payer books for a party, gets invite links; a friend signs in and joins with one of their learners;
+   price per person follows the party size until the 24 h lock (then 50% back per dropped person). Schema is ready:
+   `booking_attendee.status` invited/joined/removed + `invite_token` (store a hash, like login tokens). Shares the
+   invite-link idea with 7g.
 
 Deliberately **not** building yet: a roles/permissions system (admins are one flag, see step 7), teacher payouts/splits, topics or
 levels on sessions, reviews, a message broker (the outbox table is the queue).
