@@ -12,10 +12,14 @@ const state = {
   classes: [],              // GET /teacher/sessions
   adding: false,            // a publish request is on its way
   addError: null,           // { key } when the last publish failed
+  profile: null,            // GET /teacher/profile (incl. allowed_lengths, max_break_minutes)
+  savingProfile: false,     // a PUT is on its way
+  profileError: null,       // { key, requestId? } when the last save failed
 };
 
 const statusEl = document.querySelector("#status");
 const addFormEl = document.querySelector("#add-block");
+const profileFormEl = document.querySelector("#profile-form");
 
 // ---------- data ----------
 
@@ -25,7 +29,12 @@ async function load() {
   if (!me.ok) { state.status = "error"; state.error = { requestId: me.requestId }; return render(); }
   state.me = me.data.account;
   if (!state.me.is_teacher) { state.status = "notTeacher"; return render(); }
-  await loadSchedule();
+  // The profile and the schedule load side by side.
+  const [profile] = await Promise.all([api("GET", "/teacher/profile"), loadSchedule()]);
+  if (!profile.ok) { state.status = "error"; state.error = { requestId: profile.requestId }; return render(); }
+  state.profile = profile.data;
+  fillProfileForm();
+  render();
 }
 
 // Both lists at once: the two requests run in parallel (Promise.all waits for both).
@@ -74,6 +83,68 @@ async function publish() {
   render();
 }
 
+// ---------- profile ----------
+
+// Put the saved profile into the form. Called when it loads and after a save,
+// never from render(): re-rendering (e.g. switching language) must not wipe
+// what the teacher is typing.
+function fillProfileForm() {
+  const p = state.profile;
+  const f = profileFormEl.elements;   // the form's inputs, by name
+  f.display_name.value = p.display_name;
+  f.bio_en.value = p.bio_en;
+  f.bio_es.value = p.bio_es;
+  // Choices come from the server's limits: 0, 5, 10, 15 minutes; 30, 45, 60.
+  const breaks = [];
+  for (let m = 0; m <= p.max_break_minutes; m += 5) breaks.push(m);
+  document.querySelector("#profile-break").replaceChildren(...breaks.map((m) =>
+    h("option", { value: m, selected: m === p.break_minutes ? "" : null }, `${m} min`)));
+  document.querySelector("#profile-lengths").replaceChildren(...p.allowed_lengths.map((len) =>
+    h("label", { class: "attendee" },
+      h("input", { type: "checkbox", name: "offered_lengths", value: len,
+                   checked: p.offered_lengths.includes(len) ? "" : null }),
+      `${len} min`)));
+}
+
+async function saveProfile() {
+  const form = new FormData(profileFormEl);
+  const body = {
+    display_name: String(form.get("display_name")).trim(),
+    bio_en: String(form.get("bio_en")),
+    bio_es: String(form.get("bio_es")),
+    break_minutes: Number(form.get("break_minutes")),
+    offered_lengths: form.getAll("offered_lengths").map(Number),   // every ticked box
+  };
+  if (!body.display_name) {
+    state.profileError = { key: "errProfileName" };
+    return render();
+  }
+  state.savingProfile = true;
+  state.profileError = null;
+  render();
+  const res = await api("PUT", "/teacher/profile", body);
+  state.savingProfile = false;
+  if (res.ok) {
+    state.profile = res.data;   // what the server stored (trimmed, sorted)
+    fillProfileForm();
+    showToast(t("profileSaved"));
+  } else {
+    state.profileError = res.data.code === "invalid_profile"
+      ? { key: "errProfileInvalid" }
+      : { key: "somethingWrong", requestId: res.requestId };
+  }
+  render();
+}
+
+function renderProfile() {
+  const err = state.profileError;
+  document.querySelector("#profile-error").textContent =
+    err ? t(err.key) + (err.requestId ? ` ${t("reference")}: ${err.requestId}` : "") : "";
+  const submit = document.querySelector("#profile-submit");
+  submit.textContent = state.savingProfile ? t("saving") : t("saveProfile");
+  submit.disabled = state.savingProfile;
+}
+
 async function withdraw(blockId) {
   const res = await api("POST", `/teacher/availability/${blockId}/withdraw`);
   if (!res.ok) {
@@ -120,6 +191,7 @@ function render() {
   renderStatus();
   document.querySelector("#dashboard").hidden = state.status !== "ready";
   if (state.status !== "ready") return;
+  renderProfile();
   renderBlocks();
   renderAddForm();
   renderClasses();
@@ -213,6 +285,11 @@ document.addEventListener("click", (e) => {
 });
 
 document.addEventListener("submit", (e) => {
+  if (e.target === profileFormEl) {
+    e.preventDefault();
+    if (!state.savingProfile) saveProfile();
+    return;
+  }
   if (e.target !== addFormEl) return;
   e.preventDefault();
   if (!state.adding) publish();

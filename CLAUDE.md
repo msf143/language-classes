@@ -479,8 +479,10 @@ For what's already built, read the code and `git log`. Next, in order:
    30/45/60 or reactivate; idempotent; tests; procedure in `docs/deploy.md`); 7b profile: [x] 7b-1 `GET`/`PUT /teacher/profile`
    (`cmd/api/teacher_profile.go`: name 1–60 chars on the account, bio EN/ES ≤ 2000 chars (empty → NULL), break 0–15 min,
    lengths ⊆ `allowedLengths` 30/45/60, sorted + de-duplicated, none = group only; one transaction; unknown fields
-   refused; the answer includes `allowed_lengths` + `max_break_minutes` for the form); [ ] 7b-2 the form on the
-   teacher page; [ ] 7c prices (versioned: close the old tier's `valid`, insert new; the EXCLUDE
+   refused; the answer includes `allowed_lengths` + `max_break_minutes` for the form); [x] 7b-2 the form on the
+   teacher page ("My profile" first; filled by `fillProfileForm` on load and after a save, never on render; choices
+   from the server's limits; checked in headless Chrome incl. a reload). Follow-up for 7c: the main page's break
+   sentence (`breakNote`, fixed "5 minutes") should use `GET /policies` `break_minutes`; [ ] 7c prices (versioned: close the old tier's `valid`, insert new; the EXCLUDE
    constraint forbids overlaps); [ ] 7d create group classes + teacher cancels one (full refunds, reuse the
    group-minimum code); [ ] 7e rollout: run 7a for the real teacher, he sets everything up, prod payments on.
    Then admins and teacher invitations (design agreed 2026-10-24, built **after** launch, "launch first"):

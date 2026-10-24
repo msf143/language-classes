@@ -31,6 +31,32 @@
     <div id="status" class="status" aria-live="polite" hidden></div>
 
     <div id="dashboard" hidden>
+      <!-- Profile: the form owns its inputs; teacher.js fills them when the
+           profile loads (and after a save), never on an ordinary re-render. -->
+      <section class="teacher-section">
+        <h2 data-i18n="myProfile"></h2>
+        <p class="muted" data-i18n="profileHint"></p>
+        <form id="profile-form" class="add-block profile-form" novalidate>
+          <label class="field"><span data-i18n="profileName"></span>
+            <input type="text" name="display_name" maxlength="60" required></label>
+          <label class="field"><span data-i18n="profileBioEN"></span>
+            <textarea name="bio_en" rows="4" maxlength="2000"></textarea></label>
+          <label class="field"><span data-i18n="profileBioES"></span>
+            <textarea name="bio_es" rows="4" maxlength="2000"></textarea></label>
+          <div class="add-block-fields">
+            <label class="field"><span data-i18n="profileBreak"></span>
+              <select name="break_minutes" id="profile-break"></select></label>
+            <fieldset class="field profile-lengths">
+              <legend data-i18n="profileLengths"></legend>
+              <div id="profile-lengths"></div>
+            </fieldset>
+          </div>
+          <p class="muted small" data-i18n="profileLengthsHint"></p>
+          <p id="profile-error" class="form-error" aria-live="polite"></p>
+          <button type="submit" class="btn-primary" id="profile-submit"></button>
+        </form>
+      </section>
+
       <section class="teacher-section">
         <h2 data-i18n="myAvailability"></h2>
         <p class="muted" data-i18n="availabilityHint"></p>
