@@ -121,6 +121,8 @@ func main() {
 	// Stripe calls this (no sign-in: it's checked by Stripe's signature instead).
 	mux.HandleFunc("POST /webhooks/stripe", stripeWebhook(pool, webhookSecret))
 	mux.HandleFunc("POST /bookings/{id}/cancel", requireSignIn(pool, cancelBooking(pool)))
+	mux.HandleFunc("POST /bookings/{id}/seats", requireSignIn(pool, addSeat(pool)))
+	mux.HandleFunc("POST /bookings/{id}/seats/{seat}/remove", requireSignIn(pool, removeSeat(pool)))
 
 	// The teacher's side (teacher.go).
 	mux.HandleFunc("POST /teacher/availability", requireTeacher(pool, publishAvailability(pool)))

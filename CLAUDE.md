@@ -61,6 +61,7 @@ cmd/api/            main.go    server wiring, middleware, shared helpers (writeJ
                     bookings.go POST /bookings (one transaction, row locks, idempotency key)
                     bookings_private.go private classes in POST /bookings (creates the session)
                     bookings_cancel.go POST /bookings/{id}/cancel (refund rule: refundFor), GET /bookings
+                    bookings_seats.go private seats: add / remove (repriced > 24 h ahead, 50% back after)
                     teacher.go requireTeacher, /teacher/availability (publish, list, withdraw)
                     teacher_profile.go GET/PUT /teacher/profile (name, bio EN/ES, break, offered lengths)
                     teacher_prices.go GET/PUT /teacher/prices (versioned price_tier rows)
@@ -577,7 +578,13 @@ For what's already built, read the code and `git log`. Next, in order:
    4, priced at that party size; extra seats = `invited` attendees holding an unusable placeholder token, the hash
    of a thrown-away secret; audience `all` when seats are open; replay must match the seat count; `seats` on a group
    class → 400; `loadBooking`'s learner_ids = the payer's own only) + `GET /bookings` has `open_seats` and `seats`
-   (id, status, name); [ ] 9b change seats (add / remove; reprice before the lock, 50% after);
+   (id, status, name); [x] 9b change seats (`cmd/api/bookings_seats.go`): `POST /bookings/{id}/seats` (add an open seat;
+   > 24 h before only, else 409 `seats_locked`; ≤ 4 `party_full`; repriced at the current price, the difference charged,
+   `insufficient_credit` changes nothing), `POST /bookings/{id}/seats/{seat}/remove` (any seat but the last, `last_seat`;
+   > 24 h: repriced, difference back; ≤ 24 h by the DB clock: 50% of the seat's price back, rounded up, `refund_cents`
+   grows, price and party size kept); payer's private bookings only (404 / `not_private` / `class_started`); locks
+   account → session → booking; answer `{booking, delta_cents}`; gated race test (without the account lock: −$5).
+   No email yet (9d);
    [ ] 9c links + joining (`POST …/seats/{id}/link`, join page info, `POST /join` signed in, `POST …/leave`);
    [ ] 9d friends' side (their bookings, emails to all attendees); [ ] 9e pages (Book dialog seats, My bookings
    seat management, `join.html` with sign-in round trip).
