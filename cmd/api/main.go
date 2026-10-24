@@ -117,6 +117,8 @@ func main() {
 	mux.HandleFunc("GET /teacher/availability", requireTeacher(pool, listAvailability(pool)))
 	mux.HandleFunc("POST /teacher/availability/{id}/withdraw", requireTeacher(pool, withdrawAvailability(pool)))
 	mux.HandleFunc("GET /teacher/sessions", requireTeacher(pool, listTeacherSessions(pool)))
+	mux.HandleFunc("GET /teacher/profile", requireTeacher(pool, getTeacherProfile(pool)))
+	mux.HandleFunc("PUT /teacher/profile", requireTeacher(pool, putTeacherProfile(pool)))
 
 	// Which environment this is (the page shows a banner on test sites), and
 	// fake credit, which only exists on test sites: on production this route

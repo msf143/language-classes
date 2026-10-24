@@ -62,6 +62,7 @@ cmd/api/            main.go    server wiring, middleware, shared helpers (writeJ
                     bookings_private.go private classes in POST /bookings (creates the session)
                     bookings_cancel.go POST /bookings/{id}/cancel (refund rule: refundFor), GET /bookings
                     teacher.go requireTeacher, /teacher/availability (publish, list, withdraw)
+                    teacher_profile.go GET/PUT /teacher/profile (name, bio EN/ES, break, offered lengths)
                     slots.go   bookableStarts: blocks minus busy sessions → slot start times (pure)
                     worker.go  drainOutbox: claims outbox events (SKIP LOCKED), retries, skips; runWorker
                     payments.go credit packs (GET /credit-packs), POST /payments/checkout
@@ -475,8 +476,11 @@ For what's already built, read the code and `git log`. Next, in order:
    page**; he becomes a teacher only by a command (`api teacher -email … [-name …] [-timezone …]`, `cmd/api/setup.go`)
    run on prod as a one-off execution of the `migrate` job with `--args` (no web path to becoming a teacher).
    Steps: [x] 7a the command (one transaction: find/create account by lower(email), teacher row with lengths
-   30/45/60 or reactivate; idempotent; tests; procedure in `docs/deploy.md`); [ ] 7b profile on the teacher page
-   (bio EN/ES, break, lengths); [ ] 7c prices (versioned: close the old tier's `valid`, insert new; the EXCLUDE
+   30/45/60 or reactivate; idempotent; tests; procedure in `docs/deploy.md`); 7b profile: [x] 7b-1 `GET`/`PUT /teacher/profile`
+   (`cmd/api/teacher_profile.go`: name 1–60 chars on the account, bio EN/ES ≤ 2000 chars (empty → NULL), break 0–15 min,
+   lengths ⊆ `allowedLengths` 30/45/60, sorted + de-duplicated, none = group only; one transaction; unknown fields
+   refused; the answer includes `allowed_lengths` + `max_break_minutes` for the form); [ ] 7b-2 the form on the
+   teacher page; [ ] 7c prices (versioned: close the old tier's `valid`, insert new; the EXCLUDE
    constraint forbids overlaps); [ ] 7d create group classes + teacher cancels one (full refunds, reuse the
    group-minimum code); [ ] 7e rollout: run 7a for the real teacher, he sets everything up, prod payments on.
    Then admins and teacher invitations (design agreed 2026-10-24, built **after** launch, "launch first"):
