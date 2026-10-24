@@ -89,6 +89,7 @@ func main() {
 	mux.HandleFunc("GET /bookings", requireSignIn(pool, listMyBookings(pool)))
 	mux.HandleFunc("GET /private-slots", listPrivateSlots(pool))   // public, like the catalog
 	mux.HandleFunc("GET /credit-packs", listCreditPacks(pool))     // public: what credit you can buy
+	mux.HandleFunc("GET /policies", getPolicies(pool))             // public: the numbers the policies page states
 	stripe := newStripe(os.Getenv("STRIPE_SECRET_KEY"), stripeAPI) // nil (payments unavailable) without a key
 	webhookSecret := os.Getenv("STRIPE_WEBHOOK_SECRET")
 	// Buying credit needs both: the key to open Checkout, the secret to accept

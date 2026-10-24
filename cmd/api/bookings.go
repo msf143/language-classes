@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"slices"
 	"strings"
@@ -115,8 +116,8 @@ func (req *bookingRequest) normalize() string {
 	default:
 		req.SessionID = strings.ToLower(req.SessionID)
 	}
-	if len(req.LearnerIDs) < 1 || len(req.LearnerIDs) > 4 {
-		return "learner_ids must list 1 to 4 learners"
+	if len(req.LearnerIDs) < 1 || len(req.LearnerIDs) > maxPartySize {
+		return fmt.Sprintf("learner_ids must list 1 to %d learners", maxPartySize)
 	}
 	for i, id := range req.LearnerIDs {
 		if !isUUID(id) {

@@ -65,6 +65,7 @@ cmd/api/            main.go    server wiring, middleware, shared helpers (writeJ
                     slots.go   bookableStarts: blocks minus busy sessions → slot start times (pure)
                     worker.go  drainOutbox: claims outbox events (SKIP LOCKED), retries, skips; runWorker
                     payments.go credit packs (GET /credit-packs), POST /payments/checkout
+                    policies.go GET /policies: the numbers the policies page states (constants + credit_policy)
                     stripe.go  minimal Stripe REST client (Checkout sessions), net/http only
                     webhooks.go POST /webhooks/stripe: signature check, creditPayment, failPayment
                     checks.go  worker's clock-driven checks: group minimum, reminders, purge
@@ -448,7 +449,10 @@ For what's already built, read the code and `git log`. Next, in order:
    balance −$15); [x] 6f-3 emails (`notifyExpiryReminder` re-reads the standing at send time and skips if the expiry
    date moved or nothing is left; `notifyCreditExpired` uses the amount from the event; dates in the account's zone via
    `dateEN` / `dateES`) + both checks wired into `runWorker` (after the class reminders); run on dev with two demo
-   accounts (`expiry-demo-1/2@example.com`); [ ] 6f-4 bilingual policies page (numbers from `credit_policy` + Go constants).
+   accounts (`expiry-demo-1/2@example.com`); 6f-4 policies: [x] 6f-4a `GET /policies` (`cmd/api/policies.go`, public: refund 24 h / 50 %, group minimum 2 decided
+   24 h ahead, private notice 60 min, party ≤ 4, break = longest active teacher's buffer, credit 24 months / 30 days;
+   new constants `maxPartySize`, `groupMinStudents`; a test checks them against the schema's CHECKs);
+   [ ] 6f-4b the bilingual page `web/policies.html` (+ links from the site and the emails). Open: a help/contact address.
    Credit expiry (see Business rules) and a bilingual **policies page** (cancellation, refunds,
    credit expiry period, children) that reads its numbers from the same config the code uses.
 7. **Setup path:** first-run setup that creates the teacher account and profile (bio, buffer,

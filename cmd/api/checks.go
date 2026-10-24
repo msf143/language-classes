@@ -14,7 +14,10 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-const groupDecisionNotice = 24 * time.Hour // a group class is confirmed or cancelled this long before it starts
+const (
+	groupDecisionNotice = 24 * time.Hour // a group class is confirmed or cancelled this long before it starts
+	groupMinStudents    = 2              // the least any group class may require (constraint session_group_min_seats)
+)
 
 // checkGroupMinimums decides every group class that starts within the next 24
 // hours and is still undecided ("scheduled"): enough seats → "confirmed" (it
