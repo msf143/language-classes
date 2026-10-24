@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http/httptest"
 	"strings"
 	"testing"
@@ -288,4 +289,84 @@ func TestGuestSide(t *testing.T) {
 			t.Errorf("friend's cancellation: %s\n%s", g.Subject, g.Text)
 		}
 	})
+}
+
+// latestEvent: the newest outbox event of that type for the booking.
+func latestEvent(t *testing.T, pool *pgxpool.Pool, bookingID, eventType string) outboxEvent {
+	t.Helper()
+	var ev outboxEvent
+	if err := pool.QueryRow(context.Background(), `
+		SELECT id::text, aggregate_type, aggregate_id::text, event_type, payload, created_at, attempts
+		FROM outbox_event WHERE aggregate_id = $1 AND event_type = $2 ORDER BY created_at DESC, id DESC LIMIT 1`, bookingID, eventType).
+		Scan(&ev.ID, &ev.AggregateType, &ev.AggregateID, &ev.EventType, &ev.Payload, &ev.CreatedAt, &ev.Attempts); err != nil {
+		t.Fatalf("no %s event: %v", eventType, err)
+	}
+	return ev
+}
+
+// The seat emails, through a whole friendship: join, a seat added, leave,
+// join again, removed by the payer.
+func TestSeatEmails(t *testing.T) {
+	pool := testPool(t)
+	ctx := context.Background()
+	teacher, day := privateTeacher(t, pool)
+	payer := newStudent(t, pool, 10000, false)
+	b := decodeBooking(t, bookSeats(pool, payer.cookie, newUUIDv7(), teacher, day.Add(19*time.Hour), 2, payer.learners...)) // 2 × $20
+	cancelWhenDone(t, pool, b.SessionID)
+	friend := newStudent(t, pool, 0, false)
+	pool.Exec(ctx, `UPDATE account SET display_name = 'Ana' WHERE id = $1`, friend.accountID)
+	pool.Exec(ctx, `UPDATE learner SET display_name = 'Tomás' WHERE id = $1`, friend.learners[0])
+	handle := func(eventType string) []email {
+		t.Helper()
+		m := &recordingMailer{}
+		if err := notifyHandler(pool, m.send, "https://hablemos.live")(ctx, latestEvent(t, pool, b.ID, eventType)); err != nil {
+			t.Fatal(err)
+		}
+		return m.sent
+	}
+	contains := func(e email, parts ...string) bool {
+		for _, p := range parts {
+			if !strings.Contains(e.Subject+"\n"+e.Text, p) {
+				return false
+			}
+		}
+		return true
+	}
+
+	seat := openSeat(t, pool, b.ID)
+	if rec := join(pool, friend, seatLinkToken(t, pool, payer, b.ID, seat), friend.learners[0]); rec.Code != 200 {
+		t.Fatalf("join: %d", rec.Code)
+	}
+	if sent := handle("seat_joined"); len(sent) != 2 || !contains(sent[0], "A friend joined", "Ana joined your class (Tomás)") ||
+		!contains(sent[1], "You're in", "For: Tomás", "Booked by Test (nothing to pay)") {
+		t.Errorf("joined: %+v", sent)
+	}
+
+	decodeSeat(t, seatReq(pool, addSeat(pool), payer.cookie, b.ID, "")) // 2 × $20 → 3 × $17: $11 more
+	if sent := handle("seats_changed"); len(sent) != 1 || !contains(sent[0], "now has 3 seat(s)", "$11.00 paid from your credit") {
+		t.Errorf("seat added: %+v", sent)
+	}
+
+	if rec := leave(pool, friend, seat); rec.Code != 200 {
+		t.Fatalf("leave: %d", rec.Code)
+	}
+	if sent := handle("seat_left"); len(sent) != 1 || !contains(sent[0], "A friend left", "Ana left your class (Tomás)", "The seat is open again") {
+		t.Errorf("left: %+v", sent)
+	}
+	// The "joined" event, handled now that they've left: skipped, nothing sent.
+	m := &recordingMailer{}
+	err := notifyHandler(pool, m.send, "https://hablemos.live")(ctx, latestEvent(t, pool, b.ID, "seat_joined"))
+	var sk *skipError
+	if !errors.As(err, &sk) || len(m.sent) != 0 {
+		t.Errorf("a stale 'joined': err %v, sent %+v; want a skip and nothing sent", err, m.sent)
+	}
+
+	if rec := join(pool, friend, seatLinkToken(t, pool, payer, b.ID, seat), friend.learners[0]); rec.Code != 200 {
+		t.Fatalf("join again: %d", rec.Code)
+	}
+	decodeSeat(t, seatReq(pool, removeSeat(pool), payer.cookie, b.ID, seat)) // 3 → 2 seats: $11 back, friend removed
+	if sent := handle("seats_changed"); len(sent) != 2 || !contains(sent[0], "now has 2 seat(s)", "$11.00 went back to your credit") ||
+		!contains(sent[1], "Removed from a class", "Test removed Tomás from this class", "Nothing was charged to you") {
+		t.Errorf("friend's seat removed: %+v", sent)
+	}
 }

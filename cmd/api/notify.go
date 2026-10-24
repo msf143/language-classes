@@ -27,6 +27,8 @@ func notifyHandler(pool *pgxpool.Pool, send mailer, siteURL string) eventHandler
 			return notifyBooking(ctx, pool, send, siteURL, ev)
 		case "payment_succeeded":
 			return notifyPayment(ctx, pool, send, siteURL, ev)
+		case "seat_joined", "seat_left", "seats_changed":
+			return notifySeat(ctx, pool, send, siteURL, ev)
 		case "credit_expiry_reminder":
 			return notifyExpiryReminder(ctx, pool, send, siteURL, ev)
 		case "credit_expired":

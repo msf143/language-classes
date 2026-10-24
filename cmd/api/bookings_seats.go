@@ -147,10 +147,12 @@ func addSeat(pool *pgxpool.Pool) http.HandlerFunc {
 			if delta, err = c.reprice(r.Context(), tx, me.ID, c.partySize+1); err != nil {
 				return err
 			}
-			_, err = tx.Exec(r.Context(), `
+			if _, err := tx.Exec(r.Context(), `
 				INSERT INTO booking_attendee (id, booking_id, status, invite_token) VALUES ($1, $2, 'invited', $3)`,
-				newUUIDv7(), id, unusableInviteToken())
-			return err
+				newUUIDv7(), id, unusableInviteToken()); err != nil {
+				return err
+			}
+			return queueSeatEvent(r.Context(), tx, "seats_changed", id, seatEvent{PartySize: c.partySize + 1, DeltaCents: delta})
 		})
 		writeSeatResult(w, r, pool, me.ID, id, delta, err)
 	}
@@ -178,6 +180,18 @@ func removeSeat(pool *pgxpool.Pool) http.HandlerFunc {
 				SELECT count(*) FROM booking_attendee WHERE booking_id = $1 AND status <> 'removed'`, id).Scan(&seats); err != nil {
 				return err
 			}
+			// Whose seat was it? A friend's means telling them (seats_changed below).
+			var occupantAccount, occupantName string
+			if err := tx.QueryRow(r.Context(), `
+				SELECT COALESCE(l.account_id::text, ''), COALESCE(l.display_name, '')
+				FROM booking_attendee a LEFT JOIN learner l ON l.id = a.learner_id
+				WHERE a.id = $1 AND a.booking_id = $2`, seatID, id).Scan(&occupantAccount, &occupantName); err != nil && !errors.Is(err, pgx.ErrNoRows) {
+				return err
+			}
+			removed := seatEvent{}
+			if occupantAccount != "" && occupantAccount != me.ID {
+				removed = seatEvent{RemovedAccountID: occupantAccount, RemovedLearner: occupantName}
+			}
 			tag, err := tx.Exec(r.Context(), `
 				UPDATE booking_attendee SET status = 'removed'
 				WHERE id = $1 AND booking_id = $2 AND status <> 'removed'`, seatID, id)
@@ -190,8 +204,11 @@ func removeSeat(pool *pgxpool.Pool) http.HandlerFunc {
 				return notBookable("last_seat", "this is the only seat; cancel the booking instead")
 			}
 			if !c.locked {
-				delta, err = c.reprice(r.Context(), tx, me.ID, c.partySize-1)
-				return err
+				if delta, err = c.reprice(r.Context(), tx, me.ID, c.partySize-1); err != nil {
+					return err
+				}
+				removed.PartySize, removed.DeltaCents = c.partySize-1, delta
+				return queueSeatEvent(r.Context(), tx, "seats_changed", id, removed)
 			}
 			// Locked: half of that seat's price back, rounded up; the booking keeps
 			// its price and party size (the seat stays paid for, now removed).
@@ -208,7 +225,8 @@ func removeSeat(pool *pgxpool.Pool) http.HandlerFunc {
 				}
 			}
 			delta = -back
-			return nil
+			removed.PartySize, removed.DeltaCents = seats-1, delta // seats people can still sit in
+			return queueSeatEvent(r.Context(), tx, "seats_changed", id, removed)
 		})
 		writeSeatResult(w, r, pool, me.ID, id, delta, err)
 	}

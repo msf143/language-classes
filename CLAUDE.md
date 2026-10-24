@@ -56,6 +56,7 @@ cmd/api/            main.go    server wiring, middleware, shared helpers (writeJ
                     auth.go    sign-in: login links, verify, signedIn/requireSignIn middleware, /me, logout
                     email.go   mailer: resendMailer (Idempotency-Key), logMailer (dev); login links
                     notify.go  the worker's emails: booking confirmed / cancelled (bilingual, local times)
+                    notify_seats.go the worker's seat emails: a friend joined / left, seats changed
                     migrate.go `api migrate` (embedded migrations, one transaction each)
                     sessions.go GET /sessions
                     bookings.go POST /bookings (one transaction, row locks, idempotency key)
@@ -596,7 +597,11 @@ For what's already built, read the code and `git log`. Next, in order:
    9d friends' side: [x] 9d-1 `GET /bookings` also lists friends' classes my people joined (`role` guest, `paid_by`,
    `my_seats`; price and refund hidden) + reminders and cancellations go to every guest account too (their own
    names and zone; guest cancellation has no refund line; key `<event>:guest:<account>`) + My bookings shows
-   "Paid by …" and Leave for guests; [ ] 9d-2 seat emails (a friend joined / left; seats changed with the money); [ ] 9e pages (Book dialog seats, My bookings
+   "Paid by …" and Leave for guests; [x] 9d-2 seat emails (`cmd/api/notify_seats.go`): outbox `seat_joined` (payer:
+   "Ana joined (Tomás)"; friend: "You're in", booked by …, nothing to pay; skipped if they've left again meanwhile),
+   `seat_left` (payer: the seat is open again), `seats_changed` (payer: seats now + what it cost or gave back; a friend
+   whose seat the payer removed: "… removed Tomás"); written in the same transaction as each change; names that
+   won't be in the database afterwards travel in the payload; [ ] 9e pages (Book dialog seats, My bookings
    seat management, `join.html` with sign-in round trip).
 
 Deliberately **not** building yet: a roles/permissions system (admins are one flag, see step 7), teacher payouts/splits, topics or

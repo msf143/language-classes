@@ -172,7 +172,14 @@ func joinSeat(pool *pgxpool.Pool) http.HandlerFunc {
 			if errors.As(err, &pgErr) && pgErr.Code == "23505" { // booking_attendee_learner_uq
 				return notBookable("already_in_class", "this person is already in the class")
 			}
-			return err
+			if err != nil {
+				return err
+			}
+			var name string
+			if err := tx.QueryRow(r.Context(), `SELECT display_name FROM learner WHERE id = $1`, body.LearnerID).Scan(&name); err != nil {
+				return err
+			}
+			return queueSeatEvent(r.Context(), tx, "seat_joined", bookingID, seatEvent{SeatID: seatID, AccountID: me.ID, LearnerName: name})
 		})
 		var be *bookingError
 		switch {
@@ -213,11 +220,11 @@ func leaveSeat(pool *pgxpool.Pool) http.HandlerFunc {
 			writeError(w, r, http.StatusBadRequest, "the seat ID in the path is not valid")
 			return
 		}
-		var bookingID string
+		var bookingID, learnerName string
 		err := pgx.BeginFunc(r.Context(), pool, func(tx pgx.Tx) error {
 			if err := tx.QueryRow(r.Context(), `
-				SELECT a.booking_id::text FROM booking_attendee a JOIN learner l ON l.id = a.learner_id
-				WHERE a.id = $1 AND l.account_id = $2 AND a.status = 'joined'`, seatID, me.ID).Scan(&bookingID); err != nil {
+				SELECT a.booking_id::text, l.display_name FROM booking_attendee a JOIN learner l ON l.id = a.learner_id
+				WHERE a.id = $1 AND l.account_id = $2 AND a.status = 'joined'`, seatID, me.ID).Scan(&bookingID, &learnerName); err != nil {
 				return err
 			}
 			open, err := lockOpenBooking(r.Context(), tx, bookingID)
@@ -233,7 +240,10 @@ func leaveSeat(pool *pgxpool.Pool) http.HandlerFunc {
 			if err == nil && tag.RowsAffected() == 0 {
 				return pgx.ErrNoRows // changed meanwhile (removed by the payer)
 			}
-			return err
+			if err != nil {
+				return err
+			}
+			return queueSeatEvent(r.Context(), tx, "seat_left", bookingID, seatEvent{SeatID: seatID, AccountID: me.ID, LearnerName: learnerName})
 		})
 		var be *bookingError
 		switch {
