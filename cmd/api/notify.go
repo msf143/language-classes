@@ -92,8 +92,9 @@ func notifyBooking(ctx context.Context, pool *pgxpool.Pool, send mailer, siteURL
 	if err := sendLogged(ctx, send, ev, "payer", toPayer); err != nil {
 		return err
 	}
-	// The teacher hears about private classes (group classes he set up himself).
-	if f.kind == "private" {
+	// The teacher hears about private classes (group classes he set up himself),
+	// except a cancellation he made himself.
+	if f.kind == "private" && f.cancelledBy != "teacher" {
 		toTeacher.IdempotencyKey = ev.ID + ":teacher"
 		if err := sendLogged(ctx, send, ev, "teacher", toTeacher); err != nil {
 			return err // a retry resends the payer's email too, but its key makes that a no-op
@@ -207,9 +208,13 @@ Nueva clase privada reservada.
 func cancelledEmails(f bookingFacts, siteURL string) (toPayer, toTeacher email) {
 	en, es := className(f)
 	whyEN, whyES := "", ""
-	if f.cancelledBy == "system" {
+	switch f.cancelledBy {
+	case "system":
 		whyEN = "The class didn't reach the minimum number of students, so it was cancelled with a full refund.\n"
 		whyES = "La clase no alcanzó el mínimo de estudiantes, así que se canceló con reembolso completo.\n"
+	case "teacher":
+		whyEN = "The teacher had to cancel this class. We're sorry! You get a full refund.\n"
+		whyES = "El profesor tuvo que cancelar esta clase. ¡Lo sentimos! Se te devuelve todo.\n"
 	}
 	toPayer = email{
 		From: classesEmailFrom, To: f.payer.email,

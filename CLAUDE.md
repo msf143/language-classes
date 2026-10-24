@@ -64,6 +64,7 @@ cmd/api/            main.go    server wiring, middleware, shared helpers (writeJ
                     teacher.go requireTeacher, /teacher/availability (publish, list, withdraw)
                     teacher_profile.go GET/PUT /teacher/profile (name, bio EN/ES, break, offered lengths)
                     teacher_prices.go GET/PUT /teacher/prices (versioned price_tier rows)
+                    teacher_classes.go POST /teacher/sessions (new group class), POST /teacher/sessions/{id}/cancel
                     slots.go   bookableStarts: blocks minus busy sessions → slot start times (pure)
                     worker.go  drainOutbox: claims outbox events (SKIP LOCKED), retries, skips; runWorker
                     payments.go credit packs (GET /credit-packs), POST /payments/checkout
@@ -490,8 +491,15 @@ For what's already built, read the code and `git log`. Next, in order:
    private 1–4, columns 30/45/60; dollars typed, cents via `textToCents` (no floats; "." or ","); group price sent for
    every party size; empty = no price; checked in headless Chrome incl. reload, server logged changed 2 / removed 1) +
    the break sentence everywhere from data: main page via `GET /policies` (`breakNote(min)`, hidden at 0), booking and
-   reminder emails via the class teacher's `buffer_minutes` (`breakLineEN/ES`, none at 0); [ ] 7d create group classes + teacher cancels one (full refunds, reuse the
-   group-minimum code); [ ] 7e rollout: run 7a for the real teacher, he sets everything up, prod payments on.
+   reminder emails via the class teacher's `buffer_minutes` (`breakLineEN/ES`, none at 0); 7d classes: [x] 7d-1 server (`cmd/api/teacher_classes.go`): `POST /teacher/sessions`
+   creates a group class (date + from in his zone; title ≤ 100; length 30/45/60; min ≥ 2; max empty or min–30; ≥ 48 h ahead
+   `too_soon`; needs a group price for that length `no_price`; overlap → `class_overlap` from the EXCLUDE);
+   `POST /teacher/sessions/{id}/cancel` (group or private; his only, else 404; started → 409 `class_started`; again →
+   200, nothing more): session `FOR UPDATE` → `cancelWithRefunds` (moved out of `decideGroupSession`, shared: session
+   cancelled + full refunds + `booking_cancelled` events with `cancelled_by`), email "The teacher had to cancel", no
+   teacher copy of his own cancellation. Tests: booking vs cancel race (safe even without the FOR UPDATE: the UPDATE
+   takes the row lock) and worker vs teacher (fails without the FOR UPDATE: the reason was overwritten);
+   [ ] 7d-2 the page: a "New group class" form and Cancel buttons in My classes; [ ] 7e rollout: run 7a for the real teacher, he sets everything up, prod payments on.
    Then admins and teacher invitations (design agreed 2026-10-24, built **after** launch, "launch first"):
    - **Admin = one flag**, `account.is_admin` (not a roles system), set only by a command `api admin -email …`
      (one-off job execution, like `api teacher`); Mike and the teacher are the admins. No web path to admin.

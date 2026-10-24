@@ -81,53 +81,70 @@ func decideGroupSession(ctx context.Context, pool *pgxpool.Pool, sessionID strin
 		}
 
 		outcome = "cancelled"
-		if _, err := tx.Exec(ctx, `
-			UPDATE session SET status = 'cancelled', cancel_reason = 'under_minimum' WHERE id = $1`, sessionID); err != nil {
-			return err
-		}
-		// Every confirmed booking: cancelled with a full refund.
-		rows, err := tx.Query(ctx, `
-			UPDATE booking SET status = 'cancelled', cancelled_at = now(), refund_cents = total_cents
-			WHERE session_id = $1 AND status = 'confirmed'
-			RETURNING id::text, payer_account_id::text, total_cents, currency`, sessionID)
-		if err != nil {
-			return err
-		}
-		type refund struct {
-			bookingID, payerID, currency string
-			cents                        int
-		}
-		refunds, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (refund, error) {
-			var r refund
-			err := row.Scan(&r.bookingID, &r.payerID, &r.cents, &r.currency)
-			return r, err
-		})
-		if err != nil {
-			return err
-		}
-		for _, r := range refunds {
-			if r.cents > 0 {
-				if _, err := tx.Exec(ctx, `
-					INSERT INTO credit_ledger (id, account_id, entry_type, amount_cents, currency, booking_id, note)
-					VALUES ($1, $2, 'refund', $3, $4, $5, 'class cancelled: under the minimum')`,
-					newUUIDv7(), r.payerID, r.cents, r.currency, r.bookingID); err != nil {
-					return err
-				}
-			}
-			payload, _ := json.Marshal(map[string]any{
-				"booking_id": r.bookingID, "session_id": sessionID, "payer_account_id": r.payerID,
-				"total_cents": r.cents, "refund_cents": r.cents, "currency": r.currency,
-				"cancelled_by": "system", "reason": "under_minimum",
-			})
-			if _, err := tx.Exec(ctx, `
-				INSERT INTO outbox_event (id, aggregate_type, aggregate_id, event_type, payload)
-				VALUES ($1, 'booking', $2, 'booking_cancelled', $3)`, newUUIDv7(), r.bookingID, payload); err != nil {
-				return err
-			}
-		}
-		return nil
+		_, err = cancelWithRefunds(ctx, tx, sessionID, "under_minimum", "system")
+		return err
 	})
 	return outcome, err
+}
+
+// cancelWithRefunds cancels a session and every confirmed booking in it with a
+// full refund (a ledger 'refund' entry each), and queues a booking_cancelled
+// event per booking, so each payer gets the cancellation email. Used when the
+// class doesn't reach its minimum (reason "under_minimum", by "system") and
+// when the teacher cancels ("teacher_cancelled", by "teacher").
+//
+// The caller has already locked the session row (SELECT ... FOR UPDATE), so a
+// booking for this class can't commit in between: it waits for the lock, then
+// sees the class cancelled.
+func cancelWithRefunds(ctx context.Context, tx pgx.Tx, sessionID, reason, cancelledBy string) (refunded int, err error) {
+	if _, err := tx.Exec(ctx, `
+		UPDATE session SET status = 'cancelled', cancel_reason = $2 WHERE id = $1`, sessionID, reason); err != nil {
+		return 0, err
+	}
+	rows, err := tx.Query(ctx, `
+		UPDATE booking SET status = 'cancelled', cancelled_at = now(), refund_cents = total_cents
+		WHERE session_id = $1 AND status = 'confirmed'
+		RETURNING id::text, payer_account_id::text, total_cents, currency`, sessionID)
+	if err != nil {
+		return 0, err
+	}
+	type refund struct {
+		bookingID, payerID, currency string
+		cents                        int
+	}
+	refunds, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (refund, error) {
+		var r refund
+		err := row.Scan(&r.bookingID, &r.payerID, &r.cents, &r.currency)
+		return r, err
+	})
+	if err != nil {
+		return 0, err
+	}
+	note := map[string]string{
+		"under_minimum":     "class cancelled: under the minimum",
+		"teacher_cancelled": "class cancelled by the teacher",
+	}[reason]
+	for _, r := range refunds {
+		if r.cents > 0 {
+			if _, err := tx.Exec(ctx, `
+				INSERT INTO credit_ledger (id, account_id, entry_type, amount_cents, currency, booking_id, note)
+				VALUES ($1, $2, 'refund', $3, $4, $5, $6)`,
+				newUUIDv7(), r.payerID, r.cents, r.currency, r.bookingID, note); err != nil {
+				return 0, err
+			}
+		}
+		payload, _ := json.Marshal(map[string]any{
+			"booking_id": r.bookingID, "session_id": sessionID, "payer_account_id": r.payerID,
+			"total_cents": r.cents, "refund_cents": r.cents, "currency": r.currency,
+			"cancelled_by": cancelledBy, "reason": reason,
+		})
+		if _, err := tx.Exec(ctx, `
+			INSERT INTO outbox_event (id, aggregate_type, aggregate_id, event_type, payload)
+			VALUES ($1, 'booking', $2, 'booking_cancelled', $3)`, newUUIDv7(), r.bookingID, payload); err != nil {
+			return 0, err
+		}
+	}
+	return len(refunds), nil
 }
 
 // queueReminders queues one "booking_reminder" event per confirmed booking whose
