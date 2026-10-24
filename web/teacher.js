@@ -18,12 +18,18 @@ const state = {
   prices: null,             // GET /teacher/prices (prices valid now + the form's limits)
   savingPrices: false,
   pricesError: null,        // { key, args?, requestId? }
+  creatingClass: false,     // a new-class request is on its way
+  classError: null,         // { key, requestId? } when the last create failed
+  cancelClass: { open: false, id: null, status: "idle", error: null },   // the confirm dialog
 };
 
 const statusEl = document.querySelector("#status");
 const addFormEl = document.querySelector("#add-block");
 const profileFormEl = document.querySelector("#profile-form");
 const pricesFormEl = document.querySelector("#prices-form");
+const newClassFormEl = document.querySelector("#new-class");
+const cancelClassDialogEl = document.querySelector("#cancel-class-dialog");
+const cancelClassFormEl = document.querySelector("#cancel-class-form");
 
 // ---------- data ----------
 
@@ -43,6 +49,7 @@ async function load() {
   state.prices = prices.data;
   fillProfileForm();
   fillPricesForm();
+  fillNewClassForm();
   render();
 }
 
@@ -248,6 +255,119 @@ function renderPrices() {
   submit.disabled = state.savingPrices;
 }
 
+// ---------- group classes: create, cancel ----------
+
+const classErrorKeys = {
+  invalid_class: "errClassInvalid",
+  too_soon: "errClassTooSoon",
+  no_price: "errClassNoPrice",
+  class_overlap: "errClassOverlap",
+};
+
+// The form's choices: lengths from the server (same as prices), languages and
+// audiences from the fixed lists. Built once (choices don't change while the
+// page is open); the labels follow the language on each render.
+function fillNewClassForm() {
+  document.querySelector("#new-class-length").replaceChildren(...state.prices.allowed_lengths.map((len) =>
+    h("option", { value: len, selected: len === 60 ? "" : null }, `${len} min`)));
+  document.querySelector("#new-class-language").replaceChildren(
+    h("option", { value: "es", "data-label": "learnSpanish" }), h("option", { value: "en", "data-label": "learnEnglish" }));
+  document.querySelector("#new-class-audience").replaceChildren(
+    h("option", { value: "adults", "data-label": "adults" }), h("option", { value: "kids", "data-label": "kids" }),
+    h("option", { value: "all", "data-label": "allAges" }));
+}
+
+async function createClass() {
+  const form = new FormData(newClassFormEl);
+  const maxSeats = String(form.get("max_seats")).trim();
+  const body = {
+    title: String(form.get("title")).trim(),
+    target_language: form.get("target_language"),
+    audience: form.get("audience"),
+    date: form.get("date"),
+    from: form.get("from"),
+    duration_minutes: Number(form.get("duration_minutes")),
+    min_seats: Number(form.get("min_seats")),
+    max_seats: maxSeats === "" ? null : Number(maxSeats),   // empty = no cap
+  };
+  if (!body.title || !body.date || !body.from) {
+    state.classError = { key: "errClassFill" };
+    return render();
+  }
+  state.creatingClass = true;
+  state.classError = null;
+  render();
+  const res = await api("POST", "/teacher/sessions", body);
+  state.creatingClass = false;
+  if (res.ok) {
+    newClassFormEl.reset();
+    showToast(t("classCreated"));
+    await loadSchedule();
+    return;
+  }
+  const key = classErrorKeys[res.data.code];
+  state.classError = key ? { key } : { key: "somethingWrong", requestId: res.requestId };
+  render();
+}
+
+function renderNewClassForm() {
+  for (const opt of newClassFormEl.querySelectorAll("option[data-label]")) opt.textContent = t(opt.dataset.label);
+  // The earliest day the server accepts: 2 days ahead (it checks the exact 48 hours).
+  document.querySelector("#new-class-date").min = dayKey(new Date(Date.now() + 2 * 86400000).toISOString());
+  const submit = document.querySelector("#new-class-submit");
+  submit.textContent = state.creatingClass ? t("creating") : t("createClass");
+  submit.disabled = state.creatingClass;
+  const err = state.classError;
+  document.querySelector("#new-class-error").textContent =
+    err ? t(err.key) + (err.requestId ? ` ${t("reference")}: ${err.requestId}` : "") : "";
+}
+
+function openCancelClass(id) {
+  state.cancelClass = { open: true, id, status: "idle", error: null };
+  render();
+}
+
+// The dialog says which class and what happens to the people booked.
+function renderCancelClass() {
+  const c = state.cancelClass;
+  if (c.open && !cancelClassDialogEl.open) cancelClassDialogEl.showModal();
+  if (!c.open && cancelClassDialogEl.open) cancelClassDialogEl.close();
+  if (!c.open) return;
+  const cls = state.classes.find((x) => x.id === c.id);
+  if (!cls) { c.open = false; cancelClassDialogEl.close(); return; }
+  document.querySelector("#cancel-class-what").textContent =
+    `${classTitle(cls)} · ${dayText(cls.starts_at)} · ${timeText(cls.starts_at)}`;
+  document.querySelector("#cancel-class-effect").textContent =
+    cls.seats_taken > 0 ? t("cancelClassRefunds", cls.seats_taken) : t("cancelClassNobody");
+  document.querySelector("#cancel-class-error").textContent =
+    c.error ? t(c.error.key) + (c.error.requestId ? ` ${t("reference")}: ${c.error.requestId}` : "") : "";
+  const submit = document.querySelector("#cancel-class-submit");
+  submit.textContent = c.status === "sending" ? t("cancelling") : t("cancelClass");
+  submit.disabled = c.status === "sending";
+}
+
+async function submitCancelClass() {
+  const c = state.cancelClass;
+  c.status = "sending";
+  c.error = null;
+  render();
+  const res = await api("POST", `/teacher/sessions/${c.id}/cancel`);
+  c.status = "idle";
+  if (res.ok) {
+    c.open = false;
+    showToast(t("classCancelled", res.data.bookings_refunded));
+    await loadSchedule();
+    return;
+  }
+  c.error = res.data.code === "class_started" ? { key: "errClassStarted" } : { key: "somethingWrong", requestId: res.requestId };
+  render();
+}
+
+function classTitle(c) {
+  return `${c.kind === "private" ? t("privateClass") : c.title ?? t("groupClass")} · ` +
+    (c.target_language === "es" ? t("learnSpanish") : t("learnEnglish"));
+}
+
 async function withdraw(blockId) {
   const res = await api("POST", `/teacher/availability/${blockId}/withdraw`);
   if (!res.ok) {
@@ -299,6 +419,8 @@ function render() {
   renderBlocks();
   renderAddForm();
   renderClasses();
+  renderNewClassForm();
+  renderCancelClass();
 }
 
 function renderStatus() {
@@ -359,14 +481,17 @@ function renderClasses() {
     const names = c.attendees.map((a) => (a.is_minor ? `${a.display_name} (${t("child")})` : a.display_name));
     const hasMinor = c.attendees.some((a) => a.is_minor);
     return h("li", { class: "my-booking" },
-      h("span", { class: "my-booking-title" },
-        `${c.kind === "private" ? t("privateClass") : c.title ?? t("groupClass")} · ` +
-        (c.target_language === "es" ? t("learnSpanish") : t("learnEnglish"))),
+      h("span", { class: "my-booking-title" }, classTitle(c)),
       h("span", { class: "my-booking-detail" },
         `${dayText(c.starts_at)} · ${timeText(c.starts_at)} – ${timeText(c.ends_at)}`),
       h("span", { class: "my-booking-detail" }, t("seatsOf", c.seats_taken, c.max_seats)),
       h("span", { class: "my-booking-detail" }, names.length ? t("forWhom", names.join(", ")) : t("noOneYet")),
       hasMinor ? h("span", { class: "minor-note" }, t("minorNote")) : "",
+      // Only classes that haven't started can be cancelled.
+      new Date(c.starts_at) > new Date()
+        ? h("button", { type: "button", class: "btn-secondary btn-small", "data-action": "cancel-class", "data-class-id": c.id },
+            t("cancelClass"))
+        : "",
     );
   }));
 }
@@ -386,6 +511,8 @@ document.addEventListener("click", (e) => {
   if (handleLangClick(e)) return render();
   const action = e.target.closest("[data-action]")?.dataset.action;
   if (action === "withdraw") withdraw(e.target.closest("[data-block-id]").dataset.blockId);
+  if (action === "cancel-class") openCancelClass(e.target.closest("[data-class-id]").dataset.classId);
+  if (action === "close-cancel-class") { state.cancelClass.open = false; render(); }
 });
 
 document.addEventListener("submit", (e) => {
@@ -399,6 +526,16 @@ document.addEventListener("submit", (e) => {
     if (!state.savingPrices) savePrices();
     return;
   }
+  if (e.target === newClassFormEl) {
+    e.preventDefault();
+    if (!state.creatingClass) createClass();
+    return;
+  }
+  if (e.target === cancelClassFormEl) {
+    e.preventDefault();
+    if (state.cancelClass.status !== "sending") submitCancelClass();
+    return;
+  }
   if (e.target !== addFormEl) return;
   e.preventDefault();
   if (!state.adding) publish();
@@ -406,3 +543,6 @@ document.addEventListener("submit", (e) => {
 
 render();
 load();
+
+// Esc closes a <dialog> on its own; keep state in step ("close" doesn't bubble).
+cancelClassDialogEl.addEventListener("close", () => { state.cancelClass.open = false; });

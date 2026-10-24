@@ -101,9 +101,51 @@
       <section class="teacher-section">
         <h2 data-i18n="myClasses"></h2>
         <ul id="class-list" class="block-list"></ul>
+
+        <!-- A new group class: date and time in the teacher's own zone (the server converts). -->
+        <form id="new-class" class="add-block" novalidate>
+          <h3 data-i18n="newClass"></h3>
+          <label class="field"><span data-i18n="classTitle"></span>
+            <input type="text" name="title" maxlength="100" required></label>
+          <div class="add-block-fields">
+            <label class="field"><span data-i18n="filterLanguage"></span>
+              <select name="target_language" id="new-class-language"></select></label>
+            <label class="field"><span data-i18n="filterAudience"></span>
+              <select name="audience" id="new-class-audience"></select></label>
+          </div>
+          <div class="add-block-fields">
+            <label class="field"><span data-i18n="dateLabel"></span>
+              <input type="date" name="date" id="new-class-date" required></label>
+            <label class="field"><span data-i18n="fromLabel"></span>
+              <input type="time" name="from" step="900" required></label>
+            <label class="field"><span data-i18n="lengthLabel"></span>
+              <select name="duration_minutes" id="new-class-length"></select></label>
+            <label class="field"><span data-i18n="minSeats"></span>
+              <input type="number" name="min_seats" min="2" max="30" value="2" required></label>
+            <label class="field"><span data-i18n="maxSeats"></span>
+              <input type="number" name="max_seats" min="2" max="30" placeholder="—"></label>
+          </div>
+          <p class="muted small" data-i18n="newClassHint"></p>
+          <p id="new-class-error" class="form-error" aria-live="polite"></p>
+          <button type="submit" class="btn-primary" id="new-class-submit"></button>
+        </form>
       </section>
     </div>
   </main>
+
+  <!-- Confirm cancelling one of his classes (teacher.js fills it in). -->
+  <dialog id="cancel-class-dialog" class="dialog" aria-labelledby="cancel-class-title">
+    <form id="cancel-class-form" novalidate>
+      <h2 id="cancel-class-title" data-i18n="cancelClassTitle"></h2>
+      <p id="cancel-class-what"></p>
+      <p id="cancel-class-effect" class="book-price"></p>
+      <p id="cancel-class-error" class="form-error" aria-live="polite"></p>
+      <div class="dialog-actions">
+        <button type="button" class="btn-secondary" data-action="close-cancel-class" data-i18n="keepClass"></button>
+        <button type="submit" class="btn-danger" id="cancel-class-submit"></button>
+      </div>
+    </form>
+  </dialog>
 
   <div id="toast" class="toast" role="status" hidden></div>
 </body>

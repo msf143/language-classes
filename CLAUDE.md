@@ -499,7 +499,10 @@ For what's already built, read the code and `git log`. Next, in order:
    cancelled + full refunds + `booking_cancelled` events with `cancelled_by`), email "The teacher had to cancel", no
    teacher copy of his own cancellation. Tests: booking vs cancel race (safe even without the FOR UPDATE: the UPDATE
    takes the row lock) and worker vs teacher (fails without the FOR UPDATE: the reason was overwritten);
-   [ ] 7d-2 the page: a "New group class" form and Cancel buttons in My classes; [ ] 7e rollout: run 7a for the real teacher, he sets everything up, prod payments on.
+   [x] 7d-2 the page: "New group class" form under My classes (lengths from the server, date min 2 days ahead, errors
+   translated: `too_soon`, `no_price`, `class_overlap`) + "Cancel class" on classes not yet started, confirm `<dialog>`
+   saying how many seats get a full refund; checked in headless Chrome (incl. a real overlap with a seed class).
+   Step 7's teacher side is complete: profile, prices, classes, availability. [ ] 7e rollout: run 7a for the real teacher, he sets everything up, prod payments on.
    Then admins and teacher invitations (design agreed 2026-10-24, built **after** launch, "launch first"):
    - **Admin = one flag**, `account.is_admin` (not a roles system), set only by a command `api admin -email …`
      (one-off job execution, like `api teacher`); Mike and the teacher are the admins. No web path to admin.
