@@ -442,7 +442,12 @@ For what's already built, read the code and `git log`. Next, in order:
    email next worker run). Also fixed: `[hidden] { display: none !important; }` (a `display` rule had kept the
    empty paid notice visible). Possible follow-up: `Cache-Control: no-cache` on web files (browsers keep old CSS/JS
    after a deploy);
-   [ ] 6e-4 production with live keys (when Mike is ready); 6f credit expiry (rule A, inactivity, 24 months, see Business rules) + policies page: [x] 6f-1 migration 000007
+   [ ] 6e-4 production with live keys. Decided 2026-10-24: **test, then off**: prod has no teacher/classes until
+   step 7, so payments go on only for one real $25 purchase by Mike, then `payments = false` again until step 7.
+   Order: deploy the latest release to prod (Stripe's review may look at the site and the policies page) → Mike
+   finishes Stripe verification (live mode) → live key `hablemos-prod-checkout` + event destination `hablemos-prod`
+   (https://hablemos.live/webhooks/stripe) into `stripe-secret-key` / `stripe-webhook-secret` → prefix check
+   (`_live_`, `whsec_`) → prod `payments = true`, apply → $25 purchase → `payments = false`, apply; 6f credit expiry (rule A, inactivity, 24 months, see Business rules) + policies page: [x] 6f-1 migration 000007
    (`expiry` entry type, debit only; `credit_policy` one-row table 24 / 30; down file round-trips);
    [x] 6f-2 `cmd/api/expiry.go`: `queueExpiryReminders` (outbox `credit_expiry_reminder`, `dedupe_key` =
    account + currency + last-activity time) + `expireCredit` / `expireAccount` (account `FOR UPDATE`, re-read after the
