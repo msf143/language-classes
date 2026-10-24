@@ -72,7 +72,13 @@ func bookPrivateSession(ctx context.Context, pool *pgxpool.Pool, payerID, key st
 			return nil
 		}
 
-		// 3. Is this time still bookable?
+		// 3. Is this time still bookable? First the teacher (shared lock, see
+		// teacherActiveShared), then the length, the notice and his availability.
+		if active, err := teacherActiveShared(ctx, tx, p.TeacherID); err != nil {
+			return err
+		} else if !active {
+			return notBookable("slot_unavailable", "this teacher isn't taking bookings")
+		}
 		var offered, enoughNotice, inside bool
 		err = tx.QueryRow(ctx, `
 			SELECT EXISTS (SELECT 1 FROM teacher

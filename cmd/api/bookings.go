@@ -180,6 +180,11 @@ func bookGroupSession(ctx context.Context, pool *pgxpool.Pool, payerID, key stri
 		if (s.status != "scheduled" && s.status != "confirmed") || s.started {
 			return notBookable("session_not_open", "this session is no longer open for booking")
 		}
+		if active, err := teacherActiveShared(ctx, tx, s.teacherID); err != nil {
+			return err
+		} else if !active {
+			return notBookable("session_not_open", "this class's teacher isn't taking bookings")
+		}
 
 		// 4. The learners: the payer's own, active, and allowed in this session.
 		minors, err := checkLearners(ctx, tx, payerID, req.LearnerIDs)
@@ -310,6 +315,21 @@ func priceFor(ctx context.Context, tx pgx.Tx, teacherID, kind string, minutes, p
 		return 0, "", notBookable("no_price", "this class has no price set for that many people")
 	}
 	return cents, currency, err
+}
+
+// teacherActiveShared takes a SHARED lock on the teacher's row and says whether
+// he's active. Any number of bookings can hold it at once (they don't wait for
+// each other); deactivating a teacher takes FOR UPDATE (admin.go), which waits
+// for bookings in flight, and they wait for it. So a booking can never slip in
+// between a deactivation's "no bookings?" check and its status change. Lock
+// order stays account → session → teacher; deactivate takes only the teacher.
+func teacherActiveShared(ctx context.Context, tx pgx.Tx, teacherID string) (bool, error) {
+	var active bool
+	err := tx.QueryRow(ctx, `SELECT status = 'active' FROM teacher WHERE id = $1 FOR SHARE`, teacherID).Scan(&active)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return false, nil
+	}
+	return active, err
 }
 
 // chargeAndWrite checks the payer can afford b.TotalCents (the account lock

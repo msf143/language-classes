@@ -70,7 +70,9 @@ WHERE s.status IN ('scheduled', 'confirmed')
   AND ($1::text = '' OR s.kind = $1)
   AND ($2::text = '' OR s.target_language = $2)
   AND ($3::text = '' OR s.audience IN ($3, 'all'))
-  AND (s.kind = 'group'
+  -- group classes of active teachers (an inactive teacher's are hidden, not cancelled);
+  -- private ones only for their teacher or the people in them
+  AND ((s.kind = 'group' AND EXISTS (SELECT 1 FROM teacher ta WHERE ta.id = s.teacher_id AND ta.status = 'active'))
        OR EXISTS (SELECT 1 FROM teacher t WHERE t.id = s.teacher_id AND t.account_id = $4)
        OR EXISTS (SELECT 1 FROM booking pb
                   LEFT JOIN booking_attendee ba ON ba.booking_id = pb.id AND ba.status = 'joined'

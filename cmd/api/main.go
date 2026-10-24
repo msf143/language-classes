@@ -134,6 +134,12 @@ func main() {
 	mux.HandleFunc("POST /teacher/sessions/{id}/cancel", requireTeacher(pool, cancelTeacherSession(pool)))
 	mux.HandleFunc("PUT /teacher/prices", requireTeacher(pool, putTeacherPrices(pool)))
 
+	// Admins (admin.go): the teachers, and switching them on or off.
+	mux.HandleFunc("GET /admin/teachers", requireAdmin(pool, listAdminTeachers(pool)))
+	mux.HandleFunc("GET /admin/teachers/{id}", requireAdmin(pool, getAdminTeacher(pool)))
+	mux.HandleFunc("POST /admin/teachers/{id}/activate", requireAdmin(pool, setTeacherStatus(pool, true)))
+	mux.HandleFunc("POST /admin/teachers/{id}/deactivate", requireAdmin(pool, setTeacherStatus(pool, false)))
+
 	// Which environment this is (the page shows a banner on test sites), and
 	// fake credit, which only exists on test sites: on production this route
 	// isn't registered at all.

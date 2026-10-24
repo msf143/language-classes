@@ -518,9 +518,12 @@ For what's already built, read the code and `git log`. Next, in order:
    Steps: 7f admins: [x] 7f-1 migration 000008 (`account.is_admin`; teacher status gains `pending`; down round-trips)
    + `is_admin` in `accountColumns` (so `/me` and every request carry it) + `requireAdmin` (`cmd/api/admin.go`: 401 / 403
    `not_admin`) + `api admin -email … [-revoke]` (`setup.go`, shares `findOrCreateAccount` with `api teacher`);
-   [ ] 7f-2 `GET /admin/teachers`, a teacher's profile, activate/deactivate (refused while booked upcoming classes;
-   **hide an inactive teacher's group classes**: the catalog `GET /sessions` and group booking don't check teacher
-   status today, while private slots and private booking do), admin actions logged; [ ] 7f-3 `web/admin.html`;
+   [x] 7f-2 (`cmd/api/admin.go`) `GET /admin/teachers` (pending → active → inactive; upcoming / booked classes, prices),
+   `GET /admin/teachers/{id}` (profile, `price_list`, `classes`), `POST …/activate|deactivate` (teacher row `FOR UPDATE`;
+   deactivate refused 409 `has_booked_classes` + the classes; idempotent; log line "admin: teacher status changed" with
+   the admin). Both booking paths take the teacher row **`FOR SHARE`** (`teacherActiveShared`; lock order account →
+   session → teacher), so a booking can't slip past a deactivation (gated race test: without it, $15 charged). The
+   catalog shows group classes of active teachers only (hidden, not cancelled; back on reactivation); [ ] 7f-3 `web/admin.html`;
    [ ] 7g invitations.
    After this, teachers/profiles/prices/classes/availability are data, managed in the app (no deploys); still no
    screens for credit packs, `credit_policy`, the payments switch.
