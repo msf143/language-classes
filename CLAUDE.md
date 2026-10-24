@@ -476,7 +476,7 @@ For what's already built, read the code and `git log`. Next, in order:
    `docs/deploy.md`): [x] applied + destination verified + test mail received (2026-10-24).
    Credit expiry (see Business rules) and a bilingual **policies page** (cancellation, refunds,
    credit expiry period, children) that reads its numbers from the same config the code uses.
-7. **← resume here: Setup path** (then turn prod `payments = true` for good). Before announcing the site: Stripe
+7. **Setup path** (done except **7e, the rollout**; then turn prod `payments = true` for good). Before announcing the site: Stripe
    public details (support email hola@; consider a PO box instead of the home address), accountant/lawyer on credit
    expiry and taxes. Design (agreed 2026-10-24): the **teacher manages his own profile, prices and classes on his
    page**; he becomes a teacher only by a command (`api teacher -email … [-name …] [-timezone …]`, `cmd/api/setup.go`)
@@ -548,7 +548,7 @@ For what's already built, read the code and `git log`. Next, in order:
    Copy; open invitations with who invited, expiry, an Expired tag, Cancel); pending teachers lead the teacher list as
    "Waiting for approval". Checked in headless Chrome: invite → cancel → invite → the invitee joins → pending at the top.
    Step 7 done except 7e (the rollout).
-   **Order decided 2026-10-24: 8 (My account), then 7g, then 9.** (Found: no screen yet to add family members or friends;
+   **Order decided 2026-10-24: 8 (My account), then 7g, then 9 (all done but 9).** (Found: no screen yet to add family members or friends;
    a new account's name is the part of the email before @, unchangeable.)
    After this, teachers/profiles/prices/classes/availability are data, managed in the app (no deploys); still no
    screens for credit packs, `credit_policy`, the payments switch.
@@ -563,11 +563,21 @@ For what's already built, read the code and `git log`. Next, in order:
    learner (the one still carrying the account's old name), same transaction; [x] 8b "My Account" dialog (header name is
    a button; name form; people list with Edit / Remove (browser `confirm()`); one add/edit form; every change reloads
    `/me`; checked in headless Chrome: rename, add a child, edit, "Who's attending?", remove). Step 8 done.
-9. **Friends in private classes** (business rule: one payer, friends join via invite link with their own free
-   accounts): the payer books for a party, gets invite links; a friend signs in and joins with one of their learners;
-   price per person follows the party size until the 24 h lock (then 50% back per dropped person). Schema is ready:
-   `booking_attendee.status` invited/joined/removed + `invite_token` (store a hash, like login tokens). Shares the
-   invite-link idea with 7g.
+9. **← resume here: Friends in private classes** (design agreed 2026-10-24). A private booking holds **seats** (1–4,
+   `booking.party_size`), all **paid by the payer when added**, at the per-person price for that party size. A seat
+   is filled by one of the payer's own learners or **open with an invite link**; a friend opens it, signs in (free
+   account), picks one of *their* learners, and the seat is theirs (`booking_attendee` status invited → joined).
+   Links: only a hash is stored (`invite_token` holds the SHA-256 hex); the payer can always make a fresh link, which
+   replaces the old one. More than 24 h before: add/remove seats → **repriced** (ledger `spend` for the extra or
+   `refund` for the difference; booking's price/total updated). Within 24 h (locked): no new seats; removing one →
+   **50% of that seat's share** back (ledger `refund`, `booking.refund_cents` grows; party_size and price unchanged).
+   **A friend who leaves**: the seat stays paid and opens again (new link); only the payer moves money. Friends see the
+   class in their My bookings ("Paid by …") and get confirmation + reminder emails.
+   Steps: [ ] 9a book with open seats (`POST /bookings` private: `seats` ≥ learners; extra seats = invited
+   attendees) + `GET /bookings` shows seats; [ ] 9b change seats (add / remove; reprice before the lock, 50% after);
+   [ ] 9c links + joining (`POST …/seats/{id}/link`, join page info, `POST /join` signed in, `POST …/leave`);
+   [ ] 9d friends' side (their bookings, emails to all attendees); [ ] 9e pages (Book dialog seats, My bookings
+   seat management, `join.html` with sign-in round trip).
 
 Deliberately **not** building yet: a roles/permissions system (admins are one flag, see step 7), teacher payouts/splits, topics or
 levels on sessions, reviews, a message broker (the outbox table is the queue).
