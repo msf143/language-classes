@@ -54,6 +54,7 @@ type bookingFacts struct {
 	payer, teacher          person
 	attendees               string // "Ana, Sofía"
 	cancelledBy             string // from the event: "student", "system", ...
+	breakMinutes            int    // the teacher's break inside the class (teacher.buffer_minutes)
 }
 
 func notifyBooking(ctx context.Context, pool *pgxpool.Pool, send mailer, siteURL string, ev outboxEvent) error {
@@ -120,7 +121,7 @@ func loadBookingFacts(ctx context.Context, pool *pgxpool.Pool, bookingID string)
 		SELECT b.status, b.total_cents, b.refund_cents, b.currency,
 		       s.kind, s.target_language, s.title, s.starts_at, s.ends_at,
 		       pa.display_name, pa.email, pa.timezone,
-		       ta.display_name, ta.email, ta.timezone,
+		       ta.display_name, ta.email, ta.timezone, t.buffer_minutes,
 		       COALESCE((SELECT string_agg(l.display_name, ', ' ORDER BY l.display_name)
 		                 FROM booking_attendee a JOIN learner l ON l.id = a.learner_id
 		                 WHERE a.booking_id = b.id AND a.status <> 'removed'), '')
@@ -133,7 +134,7 @@ func loadBookingFacts(ctx context.Context, pool *pgxpool.Pool, bookingID string)
 		Scan(&f.status, &f.totalCents, &f.refundCents, &f.currency,
 			&f.kind, &f.targetLanguage, &f.title, &f.startsAt, &f.endsAt,
 			&f.payer.name, &f.payer.email, &payerZone,
-			&f.teacher.name, &f.teacher.email, &teacherZone,
+			&f.teacher.name, &f.teacher.email, &teacherZone, &f.breakMinutes,
 			&f.attendees)
 	f.payer.loc, f.teacher.loc = zone(payerZone), zone(teacherZone)
 	return f, err
@@ -162,8 +163,7 @@ func bookedEmails(f bookingFacts, siteURL string) (toPayer, toTeacher email) {
   Paid: %[5]s
 
 The teacher will send you the video link before the class.
-Classes may end up to 5 minutes early, so the teacher can take a short break between classes.
-Your bookings: %[6]s
+%[10]sYour bookings: %[6]s
 
 —
 
@@ -175,10 +175,10 @@ Your bookings: %[6]s
   Pagado: %[9]s
 
 El profesor te enviará el enlace de la videollamada antes de la clase.
-Las clases pueden terminar hasta 5 minutos antes, para que el profesor tome un breve descanso entre clases.
-Tus reservas: %[6]s
+%[11]sTus reservas: %[6]s
 `, f.payer.name, en, whenEN(f.startsAt, f.endsAt, f.payer.loc), f.attendees, moneyEN(f.totalCents, f.currency),
-			siteURL, es, whenES(f.startsAt, f.endsAt, f.payer.loc), moneyES(f.totalCents, f.currency)),
+			siteURL, es, whenES(f.startsAt, f.endsAt, f.payer.loc), moneyES(f.totalCents, f.currency),
+			breakLineEN(f.breakMinutes), breakLineES(f.breakMinutes)),
 	}
 	toTeacher = email{
 		From: classesEmailFrom, To: f.teacher.email,
@@ -271,8 +271,7 @@ func reminderEmail(f bookingFacts, siteURL string) email {
   For: %[4]s
 
 The teacher will send you the video link before the class.
-Classes may end up to 5 minutes early, so the teacher can take a short break between classes.
-Your bookings: %[5]s
+%[8]sYour bookings: %[5]s
 
 —
 
@@ -283,10 +282,9 @@ Hola, %[1]s: te recordamos que tu clase se acerca.
   Para: %[4]s
 
 El profesor te enviará el enlace de la videollamada antes de la clase.
-Las clases pueden terminar hasta 5 minutos antes, para que el profesor tome un breve descanso entre clases.
-Tus reservas: %[5]s
+%[9]sTus reservas: %[5]s
 `, f.payer.name, en, whenEN(f.startsAt, f.endsAt, f.payer.loc), f.attendees, siteURL,
-			es, whenES(f.startsAt, f.endsAt, f.payer.loc)),
+			es, whenES(f.startsAt, f.endsAt, f.payer.loc), breakLineEN(f.breakMinutes), breakLineES(f.breakMinutes)),
 	}
 }
 
@@ -336,6 +334,22 @@ Reserva una clase: %[5]s
 `, name, moneyEN(added, currency), bonusEN, moneyEN(balance, currency), siteURL,
 			moneyES(added, currency), bonusES, moneyES(balance, currency)),
 	})
+}
+
+// breakLineEN / breakLineES: the "may end early" sentence with this class's
+// teacher's own break, as a line of its own; nothing when he takes none.
+func breakLineEN(minutes int) string {
+	if minutes <= 0 {
+		return ""
+	}
+	return fmt.Sprintf("Classes may end up to %d minutes early, so the teacher can take a short break between classes.\n", minutes)
+}
+
+func breakLineES(minutes int) string {
+	if minutes <= 0 {
+		return ""
+	}
+	return fmt.Sprintf("Las clases pueden terminar hasta %d minutos antes, para que el profesor tome un breve descanso entre clases.\n", minutes)
 }
 
 // className: the group class's title, or "Private class (Spanish)".

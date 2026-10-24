@@ -200,3 +200,34 @@ func httptestServer(t *testing.T, h http.HandlerFunc) string {
 	t.Cleanup(srv.Close)
 	return srv.URL
 }
+
+// The "may end early" sentence states the class's own teacher's break, and is
+// left out for a teacher who takes none.
+func TestNotifyBreakSentence(t *testing.T) {
+	pool := testPool(t)
+	ctx := context.Background()
+	for _, tc := range []struct {
+		breakMinutes int
+		want, wantES string // "" = no sentence at all
+	}{
+		{10, "Classes may end up to 10 minutes early", "Las clases pueden terminar hasta 10 minutos antes"},
+		{0, "", ""},
+	} {
+		teacher := newTeacher(t, pool)
+		pool.Exec(ctx, `UPDATE teacher SET buffer_minutes = $2 WHERE id = $1`, teacher, tc.breakMinutes)
+		s := newStudent(t, pool, 5000, false)
+		b := bookOK(t, pool, s, newSession(t, pool, teacher, sessionOpts{slot: 40 + tc.breakMinutes}))
+		m := &recordingMailer{}
+		if err := notifyHandler(pool, m.send, "https://hablemos.live")(ctx, eventFor(t, pool, b.ID, "booking_created")); err != nil {
+			t.Fatal(err)
+		}
+		text := m.sent[0].Text
+		if tc.want == "" {
+			if strings.Contains(text, "may end up to") || strings.Contains(text, "pueden terminar") {
+				t.Errorf("break 0: the sentence is still there:\n%s", text)
+			}
+		} else if !strings.Contains(text, tc.want) || !strings.Contains(text, tc.wantES) {
+			t.Errorf("break %d: sentence missing:\n%s", tc.breakMinutes, text)
+		}
+	}
+}

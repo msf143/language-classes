@@ -482,13 +482,15 @@ For what's already built, read the code and `git log`. Next, in order:
    lengths ⊆ `allowedLengths` 30/45/60, sorted + de-duplicated, none = group only; one transaction; unknown fields
    refused; the answer includes `allowed_lengths` + `max_break_minutes` for the form); [x] 7b-2 the form on the
    teacher page ("My profile" first; filled by `fillProfileForm` on load and after a save, never on render; choices
-   from the server's limits; checked in headless Chrome incl. a reload). Follow-up for 7c: the main page's break
-   sentence (`breakNote`, fixed "5 minutes") should use `GET /policies` `break_minutes`; 7c prices: [x] 7c-1 `GET`/`PUT /teacher/prices` (`cmd/api/teacher_prices.go`:
+   from the server's limits; checked in headless Chrome incl. a reload); 7c prices: [x] 7c-1 `GET`/`PUT /teacher/prices` (`cmd/api/teacher_prices.go`:
    flat list of cells kind × length × party size; PUT = the whole new list: unchanged → nothing, changed → close the old
    row's `valid` at now() + insert from now(), missing → close; teacher row `FOR UPDATE` serializes saves (gated race
    test: without it the second save fails 500 on the EXCLUDE); $1–$500 per person (no $0: the ledger forbids $0 entries);
-   type `priceCellDTO`); [ ] 7c-2 the price table on the teacher page (group: one price per length applied to every
-   party size) + the main page's break sentence from `GET /policies`; [ ] 7d create group classes + teacher cancels one (full refunds, reuse the
+   type `priceCellDTO`); [x] 7c-2 "My prices" table on the teacher page (rows group +
+   private 1–4, columns 30/45/60; dollars typed, cents via `textToCents` (no floats; "." or ","); group price sent for
+   every party size; empty = no price; checked in headless Chrome incl. reload, server logged changed 2 / removed 1) +
+   the break sentence everywhere from data: main page via `GET /policies` (`breakNote(min)`, hidden at 0), booking and
+   reminder emails via the class teacher's `buffer_minutes` (`breakLineEN/ES`, none at 0); [ ] 7d create group classes + teacher cancels one (full refunds, reuse the
    group-minimum code); [ ] 7e rollout: run 7a for the real teacher, he sets everything up, prod payments on.
    Then admins and teacher invitations (design agreed 2026-10-24, built **after** launch, "launch first"):
    - **Admin = one flag**, `account.is_admin` (not a roles system), set only by a command `api admin -email …`

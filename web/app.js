@@ -20,6 +20,7 @@ const state = {
   testSite: false,                 // staging or dev (from GET /env): show the banner + test credit
   addingCredit: false,             // a test-credit request is on its way
   payments: false,                 // can credit be bought here (GET /env)? Shows the Buy credit buttons
+  breakMinutes: null,              // the "may end early" number (GET /policies); null until known
 
   me: undefined,                   // undefined = not checked yet, null = signed out, else the account
                                    // plus balanceCents and learners (from GET /me)
@@ -152,6 +153,14 @@ async function loadEnv() {
   render();
 }
 
+// The class-break number for the "may end early" sentence: from GET /policies,
+// the same number the policies page states. If it fails, the sentence stays hidden.
+async function loadPolicies() {
+  const res = await api("GET", "/policies");
+  if (res.ok) state.breakMinutes = res.data.break_minutes;
+  render();
+}
+
 // Test sites only: take over the seed teacher profile, then the header shows
 // the "Teacher page" link (loadMe brings back is_teacher = true).
 async function becomeTestTeacher() {
@@ -219,6 +228,12 @@ function render() {
   renderStaticText();
   renderBanner();
   renderPaid();
+  // The break sentence (in the Private classes section and the Book dialog);
+  // hidden until the number is known, and when no teacher takes a break.
+  for (const el of document.querySelectorAll(".break-note")) {
+    el.hidden = !state.breakMinutes;
+    el.textContent = state.breakMinutes ? t("breakNote", state.breakMinutes) : "";
+  }
   tzNoteEl.textContent = t("timesShown", visitorTimeZone);
   renderAccount();
   renderSignin();
@@ -1059,6 +1074,7 @@ if (paidParam) {
 }
 
 loadEnv();
+loadPolicies();
 loadMe();
 loadSessions();
 loadPrivateSlots();

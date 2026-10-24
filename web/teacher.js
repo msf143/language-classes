@@ -15,11 +15,15 @@ const state = {
   profile: null,            // GET /teacher/profile (incl. allowed_lengths, max_break_minutes)
   savingProfile: false,     // a PUT is on its way
   profileError: null,       // { key, requestId? } when the last save failed
+  prices: null,             // GET /teacher/prices (prices valid now + the form's limits)
+  savingPrices: false,
+  pricesError: null,        // { key, args?, requestId? }
 };
 
 const statusEl = document.querySelector("#status");
 const addFormEl = document.querySelector("#add-block");
 const profileFormEl = document.querySelector("#profile-form");
+const pricesFormEl = document.querySelector("#prices-form");
 
 // ---------- data ----------
 
@@ -29,11 +33,16 @@ async function load() {
   if (!me.ok) { state.status = "error"; state.error = { requestId: me.requestId }; return render(); }
   state.me = me.data.account;
   if (!state.me.is_teacher) { state.status = "notTeacher"; return render(); }
-  // The profile and the schedule load side by side.
-  const [profile] = await Promise.all([api("GET", "/teacher/profile"), loadSchedule()]);
-  if (!profile.ok) { state.status = "error"; state.error = { requestId: profile.requestId }; return render(); }
+  // The profile, the prices and the schedule load side by side.
+  const [profile, prices] = await Promise.all([
+    api("GET", "/teacher/profile"), api("GET", "/teacher/prices"), loadSchedule(),
+  ]);
+  const failed = [profile, prices].find((res) => !res.ok);
+  if (failed) { state.status = "error"; state.error = { requestId: failed.requestId }; return render(); }
   state.profile = profile.data;
+  state.prices = prices.data;
   fillProfileForm();
+  fillPricesForm();
   render();
 }
 
@@ -145,6 +154,100 @@ function renderProfile() {
   submit.disabled = state.savingProfile;
 }
 
+// ---------- prices ----------
+
+// Dollars as typed ↔ whole cents, without floating-point arithmetic (0.1 + 0.2
+// isn't exactly 0.3 in binary floating point; money must be exact).
+// "25" → 2500, "25.5" → 2550, "25,50" → 2550 (Spanish comma), "" → null (no price).
+function textToCents(text) {
+  const s = text.trim();
+  if (s === "") return null;
+  const m = /^\$?(\d{1,4})(?:[.,](\d{1,2}))?$/.exec(s);
+  if (!m) return NaN;
+  return Number(m[1]) * 100 + Number((m[2] ?? "0").padEnd(2, "0"));
+}
+const centsToText = (c) => `${Math.floor(c / 100)}.${String(c % 100).padStart(2, "0")}`;
+
+function money(cents) {
+  return new Intl.NumberFormat(state.uiLang, { style: "currency", currency: "USD" }).format(cents / 100);
+}
+
+// Build the table: a column per length; a "Group" row (one price per student,
+// whatever the party size), then a row per private party size. Input names say
+// which cell they are: "group-60", "private-60-2". Built once per load or
+// save, like the profile form; renderPrices only updates the row labels.
+function fillPricesForm() {
+  const a = state.prices;
+  const price = (kind, minutes, people) =>
+    a.prices.find((p) => p.kind === kind && p.duration_minutes === minutes && p.party_size === people);
+  const input = (name, p) => h("input", {
+    type: "text", inputmode: "decimal", name, class: "price-input",
+    value: p ? centsToText(p.price_per_person_cents) : "", "aria-label": name,
+  });
+  document.querySelector("#prices-head").replaceChildren(
+    h("th", {}, ""), ...a.allowed_lengths.map((len) => h("th", { scope: "col" }, `${len} min`)));
+  const rows = [h("tr", {},
+    h("th", { scope: "row", "data-price-label": "group" }),
+    ...a.allowed_lengths.map((len) => h("td", {}, input(`group-${len}`, price("group", len, 1)))))];
+  for (let n = 1; n <= a.max_party_size; n++) {
+    rows.push(h("tr", {},
+      h("th", { scope: "row", "data-price-label": `private-${n}` }),
+      ...a.allowed_lengths.map((len) => h("td", {}, input(`private-${len}-${n}`, price("private", len, n))))));
+  }
+  document.querySelector("#prices-body").replaceChildren(...rows);
+}
+
+async function savePrices() {
+  const a = state.prices;
+  const form = new FormData(pricesFormEl);
+  const list = [];
+  const add = (kind, minutes, people, text) => {
+    const cents = textToCents(String(text));
+    if (cents === null) return true;          // empty: no price
+    if (Number.isNaN(cents)) return false;    // not a dollar amount
+    list.push({ kind, duration_minutes: minutes, party_size: people, price_per_person_cents: cents });
+    return true;
+  };
+  let ok = true;
+  for (const len of a.allowed_lengths) {
+    // The group price counts for every party size (a family of 3 pays it 3 times).
+    for (let n = 1; n <= a.max_party_size; n++) ok = add("group", len, n, form.get(`group-${len}`)) && ok;
+    for (let n = 1; n <= a.max_party_size; n++) ok = add("private", len, n, form.get(`private-${len}-${n}`)) && ok;
+  }
+  if (!ok) {
+    state.pricesError = { key: "errPriceFormat" };
+    return render();
+  }
+  state.savingPrices = true;
+  state.pricesError = null;
+  render();
+  const res = await api("PUT", "/teacher/prices", { prices: list });
+  state.savingPrices = false;
+  if (res.ok) {
+    state.prices = res.data;
+    fillPricesForm();
+    showToast(t("pricesSaved"));
+  } else if (res.data.code === "invalid_prices") {
+    state.pricesError = { key: "errPriceRange", args: [money(a.min_price_cents), money(a.max_price_cents)] };
+  } else {
+    state.pricesError = { key: "somethingWrong", requestId: res.requestId };
+  }
+  render();
+}
+
+function renderPrices() {
+  for (const th of document.querySelectorAll("[data-price-label]")) {
+    const label = th.dataset.priceLabel;
+    th.textContent = label === "group" ? t("priceRowGroup") : t("priceRowPrivate", Number(label.split("-")[1]));
+  }
+  const err = state.pricesError;
+  document.querySelector("#prices-error").textContent =
+    err ? t(err.key, ...(err.args ?? [])) + (err.requestId ? ` ${t("reference")}: ${err.requestId}` : "") : "";
+  const submit = document.querySelector("#prices-submit");
+  submit.textContent = state.savingPrices ? t("saving") : t("savePrices");
+  submit.disabled = state.savingPrices;
+}
+
 async function withdraw(blockId) {
   const res = await api("POST", `/teacher/availability/${blockId}/withdraw`);
   if (!res.ok) {
@@ -192,6 +295,7 @@ function render() {
   document.querySelector("#dashboard").hidden = state.status !== "ready";
   if (state.status !== "ready") return;
   renderProfile();
+  renderPrices();
   renderBlocks();
   renderAddForm();
   renderClasses();
@@ -288,6 +392,11 @@ document.addEventListener("submit", (e) => {
   if (e.target === profileFormEl) {
     e.preventDefault();
     if (!state.savingProfile) saveProfile();
+    return;
+  }
+  if (e.target === pricesFormEl) {
+    e.preventDefault();
+    if (!state.savingPrices) savePrices();
     return;
   }
   if (e.target !== addFormEl) return;

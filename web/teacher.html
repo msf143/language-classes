@@ -57,6 +57,24 @@
         </form>
       </section>
 
+      <!-- Prices: a table of inputs in dollars, built by teacher.js from the
+           server's lengths and party size; empty = no price (can't be booked). -->
+      <section class="teacher-section">
+        <h2 data-i18n="myPrices"></h2>
+        <p class="muted" data-i18n="pricesHint"></p>
+        <form id="prices-form" class="add-block" novalidate>
+          <div class="price-table-wrap">
+            <table class="price-table">
+              <thead><tr id="prices-head"></tr></thead>
+              <tbody id="prices-body"></tbody>
+            </table>
+          </div>
+          <p class="muted small" data-i18n="pricesNote"></p>
+          <p id="prices-error" class="form-error" aria-live="polite"></p>
+          <button type="submit" class="btn-primary" id="prices-submit"></button>
+        </form>
+      </section>
+
       <section class="teacher-section">
         <h2 data-i18n="myAvailability"></h2>
         <p class="muted" data-i18n="availabilityHint"></p>
