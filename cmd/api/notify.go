@@ -52,9 +52,17 @@ type bookingFacts struct {
 	title                   *string
 	startsAt, endsAt        time.Time
 	payer, teacher          person
-	attendees               string // "Ana, Sofía"
-	cancelledBy             string // from the event: "student", "system", ...
-	breakMinutes            int    // the teacher's break inside the class (teacher.buffer_minutes)
+	attendees               string  // "Ana, Sofía"
+	cancelledBy             string  // from the event: "student", "system", ...
+	breakMinutes            int     // the teacher's break inside the class (teacher.buffer_minutes)
+	guests                  []guest // friends with people in the class (private classes, step 9)
+}
+
+// guest is an account, other than the payer's, with people in the class.
+type guest struct {
+	accountID string
+	person
+	names string // their own people in the class: "Ana, Tomás"
 }
 
 func notifyBooking(ctx context.Context, pool *pgxpool.Pool, send mailer, siteURL string, ev outboxEvent) error {
@@ -72,6 +80,7 @@ func notifyBooking(ctx context.Context, pool *pgxpool.Pool, send mailer, siteURL
 	f.cancelledBy = payload.CancelledBy
 
 	var toPayer, toTeacher email
+	var toGuest func(g guest) email // set when guests hear about this event too
 	switch ev.EventType {
 	case "booking_created":
 		if f.status != "confirmed" {
@@ -80,12 +89,14 @@ func notifyBooking(ctx context.Context, pool *pgxpool.Pool, send mailer, siteURL
 		toPayer, toTeacher = bookedEmails(f, siteURL)
 	case "booking_cancelled":
 		toPayer, toTeacher = cancelledEmails(f, siteURL)
+		toGuest = func(g guest) email { return guestCancelledEmail(f, g, siteURL) }
 	case "booking_reminder":
 		if f.status != "confirmed" {
 			return skip("booking no longer confirmed") // cancelled since the reminder was queued
 		}
-		toPayer = reminderEmail(f, siteURL)
-		f.kind = "" // reminders go to the payer only; the teacher has his dashboard
+		toPayer = reminderEmail(f, f.payer, f.attendees, siteURL)
+		toGuest = func(g guest) email { return reminderEmail(f, g.person, g.names, siteURL) }
+		f.kind = "" // reminders go to the people attending; the teacher has his dashboard
 	}
 
 	toPayer.IdempotencyKey = ev.ID + ":payer"
@@ -98,6 +109,16 @@ func notifyBooking(ctx context.Context, pool *pgxpool.Pool, send mailer, siteURL
 		toTeacher.IdempotencyKey = ev.ID + ":teacher"
 		if err := sendLogged(ctx, send, ev, "teacher", toTeacher); err != nil {
 			return err // a retry resends the payer's email too, but its key makes that a no-op
+		}
+	}
+	// Friends with people in the class (private classes): their own email each.
+	if toGuest != nil {
+		for _, g := range f.guests {
+			m := toGuest(g)
+			m.IdempotencyKey = ev.ID + ":guest:" + g.accountID
+			if err := sendLogged(ctx, send, ev, "guest", m); err != nil {
+				return err
+			}
 		}
 	}
 	return nil
@@ -138,6 +159,28 @@ func loadBookingFacts(ctx context.Context, pool *pgxpool.Pool, bookingID string)
 			&f.teacher.name, &f.teacher.email, &teacherZone, &f.breakMinutes,
 			&f.attendees)
 	f.payer.loc, f.teacher.loc = zone(payerZone), zone(teacherZone)
+	if err != nil {
+		return f, err
+	}
+	// The guests: other accounts whose people have joined seats.
+	rows, err := pool.Query(ctx, `
+		SELECT a.id::text, a.display_name, a.email, a.timezone,
+		       string_agg(l.display_name, ', ' ORDER BY l.display_name)
+		FROM booking_attendee ba JOIN learner l ON l.id = ba.learner_id JOIN account a ON a.id = l.account_id
+		JOIN booking b ON b.id = ba.booking_id
+		WHERE ba.booking_id = $1 AND ba.status = 'joined' AND l.account_id <> b.payer_account_id
+		GROUP BY a.id, a.display_name, a.email, a.timezone
+		ORDER BY a.display_name`, bookingID)
+	if err != nil {
+		return f, err
+	}
+	f.guests, err = pgx.CollectRows(rows, func(row pgx.CollectableRow) (guest, error) {
+		var g guest
+		var tz string
+		err := row.Scan(&g.accountID, &g.name, &g.email, &tz, &g.names)
+		g.loc = zone(tz)
+		return g, err
+	})
 	return f, err
 }
 
@@ -264,10 +307,12 @@ Se canceló una clase privada. El horario vuelve a estar disponible.
 	return toPayer, toTeacher
 }
 
-func reminderEmail(f bookingFacts, siteURL string) email {
+// reminderEmail: the reminder for one person (the payer, or a guest), with
+// who of theirs attends and times in their own zone.
+func reminderEmail(f bookingFacts, to person, attendees, siteURL string) email {
 	en, es := className(f)
 	return email{
-		From: classesEmailFrom, To: f.payer.email,
+		From: classesEmailFrom, To: to.email,
 		Subject: "Reminder: " + en + " · Recordatorio: " + es,
 		Text: fmt.Sprintf(`Hi %[1]s, a reminder: your class is coming up.
 
@@ -288,8 +333,42 @@ Hola, %[1]s: te recordamos que tu clase se acerca.
 
 El profesor te enviará el enlace de la videollamada antes de la clase.
 %[9]sTus reservas: %[5]s
-`, f.payer.name, en, whenEN(f.startsAt, f.endsAt, f.payer.loc), f.attendees, siteURL,
-			es, whenES(f.startsAt, f.endsAt, f.payer.loc), breakLineEN(f.breakMinutes), breakLineES(f.breakMinutes)),
+`, to.name, en, whenEN(f.startsAt, f.endsAt, to.loc), attendees, siteURL,
+			es, whenES(f.startsAt, f.endsAt, to.loc), breakLineEN(f.breakMinutes), breakLineES(f.breakMinutes)),
+	}
+}
+
+// guestCancelledEmail: a friend's class was cancelled (by the payer, the
+// teacher, or the minimum check). No refund line: the payer paid, and the
+// refund went to them.
+func guestCancelledEmail(f bookingFacts, g guest, siteURL string) email {
+	en, es := className(f)
+	return email{
+		From: classesEmailFrom, To: g.email,
+		Subject: "Class cancelled: " + en + " · Clase cancelada: " + es,
+		Text: fmt.Sprintf(`Hi %[1]s, a class you were invited to was cancelled.
+
+  %[2]s
+  %[3]s
+  For: %[4]s
+  Booked by %[5]s
+
+Nothing was charged to you.
+Classes: %[6]s
+
+—
+
+Hola, %[1]s: se canceló una clase a la que te invitaron.
+
+  %[7]s
+  %[8]s
+  Para: %[4]s
+  Reservada por %[5]s
+
+No se te cobró nada.
+Clases: %[6]s
+`, g.name, en, whenEN(f.startsAt, f.endsAt, g.loc), g.names, f.payer.name, siteURL,
+			es, whenES(f.startsAt, f.endsAt, g.loc)),
 	}
 }
 

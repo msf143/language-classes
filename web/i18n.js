@@ -80,6 +80,10 @@ const STRINGS = {
 
     // Teacher page (teacher.html) and the way there
     teacherLink: "Teacher page",
+    paidBy: (name) => `Paid by ${name}`,
+    leaveClass: "Leave class",
+    confirmLeaveClass: "Leave this class? Your seat opens again for the person who invited you.",
+    leftClass: "You've left the class.",
     invitePageTitle: "Teach on Hablemos",
     inviteIntro: "You've been invited to teach live language classes on Hablemos. Click below to join: you'll be signed in and can set up your profile and prices right away.",
     joinAsTeacher: "Join as a teacher",
@@ -387,6 +391,10 @@ const STRINGS = {
     withTeacher: (name) => `Con ${name}`,
 
     teacherLink: "Página del profesor",
+    paidBy: (name) => `Pagado por ${name}`,
+    leaveClass: "Salir de la clase",
+    confirmLeaveClass: "¿Salir de esta clase? Tu cupo queda libre otra vez para quien te invitó.",
+    leftClass: "Saliste de la clase.",
     invitePageTitle: "Enseña en Hablemos",
     inviteIntro: "Te invitaron a dar clases de idiomas en vivo en Hablemos. Haz clic abajo para unirte: iniciarás sesión y podrás configurar tu perfil y tus precios de inmediato.",
     joinAsTeacher: "Unirme como profesor",

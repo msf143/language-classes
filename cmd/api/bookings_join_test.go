@@ -224,3 +224,68 @@ func TestJoinWhileCancelled(t *testing.T) {
 		t.Errorf("the friend joined a cancelled booking (%d %s)", rec.Code, rec.Body)
 	}
 }
+
+// The friend's side: the class in their My bookings as a guest (no money
+// shown), and the reminder and cancellation emails reach them too, with their
+// own people's names and times in their own zone.
+func TestGuestSide(t *testing.T) {
+	pool := testPool(t)
+	ctx := context.Background()
+	payer, b, seats := privateWithOpenSeats(t, pool, 19)
+	friend := newStudent(t, pool, 0, false)
+	pool.Exec(ctx, `UPDATE account SET display_name = 'Ana', timezone = 'America/Bogota' WHERE id = $1`, friend.accountID)
+	pool.Exec(ctx, `UPDATE learner SET display_name = 'Tomás' WHERE id = $1`, friend.learners[0])
+	if rec := join(pool, friend, seatLinkToken(t, pool, payer, b.ID, seats[0]), friend.learners[0]); rec.Code != 200 {
+		t.Fatalf("join: %d %s", rec.Code, rec.Body)
+	}
+
+	t.Run("My bookings: guest for the friend, payer for the payer", func(t *testing.T) {
+		var mine []myBookingDTO
+		json.Unmarshal(call(requireSignIn(pool, listMyBookings(pool)), "GET", "/bookings", friend.cookie).Body.Bytes(), &mine)
+		if len(mine) != 1 || mine[0].Role != "guest" || mine[0].PaidBy != "Test" || mine[0].TotalCents != 0 ||
+			len(mine[0].MySeats) != 1 || mine[0].MySeats[0] != seats[0] {
+			t.Errorf("friend: %+v", mine)
+		}
+		var theirs []myBookingDTO
+		json.Unmarshal(call(requireSignIn(pool, listMyBookings(pool)), "GET", "/bookings", payer.cookie).Body.Bytes(), &theirs)
+		if len(theirs) != 1 || theirs[0].Role != "payer" || theirs[0].TotalCents != 5100 {
+			t.Errorf("payer: %+v", theirs)
+		}
+	})
+
+	handle := func(eventType string) []email {
+		ev := outboxEvent{ID: newUUIDv7(), AggregateType: "booking", AggregateID: b.ID, EventType: eventType, Payload: []byte(`{}`)}
+		m := &recordingMailer{}
+		if err := notifyHandler(pool, m.send, "https://hablemos.live")(ctx, ev); err != nil {
+			t.Fatal(err)
+		}
+		return m.sent
+	}
+
+	t.Run("the reminder reaches the friend, with their own people", func(t *testing.T) {
+		sent := handle("booking_reminder")
+		if len(sent) != 2 {
+			t.Fatalf("%d emails, want payer + friend", len(sent))
+		}
+		g := sent[1]
+		if !strings.HasPrefix(g.Text, "Hi Ana,") || !strings.Contains(g.Text, "For: Tomás") || !strings.Contains(g.Text, "America/Bogota") {
+			t.Errorf("friend's reminder:\n%s", g.Text)
+		}
+	})
+
+	t.Run("a cancellation reaches the friend, without the refund line", func(t *testing.T) {
+		if rec := cancel(pool, payer.cookie, b.ID); rec.Code != 200 {
+			t.Fatalf("cancel: %d", rec.Code)
+		}
+		sent := handle("booking_cancelled") // payer, teacher (private class), friend
+		if len(sent) != 3 {
+			t.Fatalf("%d emails, want payer + teacher + friend", len(sent))
+		}
+		g := sent[2]
+		if g.Subject != "Class cancelled: Private class (Spanish) · Clase cancelada: Clase privada (español)" ||
+			!strings.Contains(g.Text, "Booked by Test") || !strings.Contains(g.Text, "Nothing was charged to you") ||
+			strings.Contains(g.Text, "went back to your credit") {
+			t.Errorf("friend's cancellation: %s\n%s", g.Subject, g.Text)
+		}
+	})
+}

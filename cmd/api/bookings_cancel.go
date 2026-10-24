@@ -173,6 +173,9 @@ type myBookingDTO struct {
 	Attendees              []attendeeDTO `json:"attendees"`
 	OpenSeats              int           `json:"open_seats"` // paid seats waiting for a friend
 	Seats                  []seatDTO     `json:"seats"`      // every seat: who's in it, or open
+	Role                   string        `json:"role"`       // "payer", or "guest" (my people are in a friend's class)
+	PaidBy                 string        `json:"paid_by"`    // the payer's name (for guests)
+	MySeats                []string      `json:"my_seats"`   // seats my people sit in (a guest's Leave button)
 }
 
 // seatDTO is one place in a booking: filled by a learner (status "joined"),
@@ -199,8 +202,10 @@ type attendeeDTO struct {
 }
 
 // listMyBookings handles GET /bookings (wrapped in requireSignIn): the signed-in
-// person's upcoming bookings, soonest first. Only bookings they paid for that
-// are still confirmed, for classes that haven't started and weren't cancelled.
+// person's upcoming bookings, soonest first: those they paid for (role
+// "payer"), and friends' private classes their people joined (role "guest":
+// no price or refund shown, that's the payer's). Still confirmed, for classes
+// that haven't started and weren't cancelled.
 func listMyBookings(pool *pgxpool.Pool) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		me, _ := accountFrom(r)
@@ -218,9 +223,17 @@ func listMyBookings(pool *pgxpool.Pool) http.HandlerFunc {
 			                   ORDER BY a.status DESC, a.created_at), '[]')
 			        FROM booking_attendee a LEFT JOIN learner l ON l.id = a.learner_id
 			        WHERE a.booking_id = b.id AND a.status <> 'removed'),
-			       now()
+			       now(),
+			       CASE WHEN b.payer_account_id = $1 THEN 'payer' ELSE 'guest' END,
+			       (SELECT display_name FROM account WHERE id = b.payer_account_id),
+			       (SELECT COALESCE(array_agg(ma.id::text ORDER BY ma.id), '{}') FROM booking_attendee ma
+			        JOIN learner ml ON ml.id = ma.learner_id
+			        WHERE ma.booking_id = b.id AND ma.status = 'joined' AND ml.account_id = $1)
 			FROM booking b JOIN session s ON s.id = b.session_id
-			WHERE b.payer_account_id = $1 AND b.status = 'confirmed'
+			WHERE (b.payer_account_id = $1
+			       OR EXISTS (SELECT 1 FROM booking_attendee ga JOIN learner gl ON gl.id = ga.learner_id
+			                  WHERE ga.booking_id = b.id AND ga.status = 'joined' AND gl.account_id = $1))
+			  AND b.status = 'confirmed'
 			  AND s.status IN ('scheduled', 'confirmed') AND s.starts_at > now()
 			ORDER BY s.starts_at
 			LIMIT 100`, me.ID)
@@ -237,7 +250,8 @@ func listMyBookings(pool *pgxpool.Pool) http.HandlerFunc {
 			var endsAt, now time.Time
 			if err := rows.Scan(&b.ID, &b.PartySize, &b.TotalCents, &b.Currency, &b.CreatedAt,
 				&b.Session.ID, &b.Session.Kind, &b.Session.Title, &b.Session.TargetLanguage,
-				&b.Session.Audience, &b.Session.StartsAt, &endsAt, &b.Attendees, &b.Seats, &now); err != nil {
+				&b.Session.Audience, &b.Session.StartsAt, &endsAt, &b.Attendees, &b.Seats, &now,
+				&b.Role, &b.PaidBy, &b.MySeats); err != nil {
 				logFrom(r).Error("list my bookings: scan failed", "err", err)
 				writeError(w, r, http.StatusInternalServerError, "could not load your bookings")
 				return
@@ -251,6 +265,9 @@ func listMyBookings(pool *pgxpool.Pool) http.HandlerFunc {
 			}
 			// The same rule POST /bookings/{id}/cancel applies, with the database's clock.
 			b.RefundIfCancelledCents = refundFor(b.TotalCents, b.Session.StartsAt.Sub(now))
+			if b.Role == "guest" { // the money is the payer's business
+				b.TotalCents, b.RefundIfCancelledCents = 0, 0
+			}
 			bookings = append(bookings, b)
 		}
 		if err := rows.Err(); err != nil {

@@ -593,7 +593,10 @@ For what's already built, read the code and `git log`. Next, in order:
    `seat_taken`, `already_in_class` from the unique index, `unknown_learner`, `not_changeable`; token cleared),
    `POST /seats/{seat}/leave` (my learner; seat back to open with a placeholder; no money). Two gated race tests, each
    failing without its lock (a friend overwritten; a friend in a cancelled booking);
-   [ ] 9d friends' side (their bookings, emails to all attendees); [ ] 9e pages (Book dialog seats, My bookings
+   9d friends' side: [x] 9d-1 `GET /bookings` also lists friends' classes my people joined (`role` guest, `paid_by`,
+   `my_seats`; price and refund hidden) + reminders and cancellations go to every guest account too (their own
+   names and zone; guest cancellation has no refund line; key `<event>:guest:<account>`) + My bookings shows
+   "Paid by …" and Leave for guests; [ ] 9d-2 seat emails (a friend joined / left; seats changed with the money); [ ] 9e pages (Book dialog seats, My bookings
    seat management, `join.html` with sign-in round trip).
 
 Deliberately **not** building yet: a roles/permissions system (admins are one flag, see step 7), teacher payouts/splits, topics or

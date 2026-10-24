@@ -328,9 +328,15 @@ function renderMyBookings() {
       h("span", { class: "my-booking-detail" },
         `${dateText} · ${timeText} · ${t("minutes", b.session.duration_minutes)}`),
       h("span", { class: "my-booking-detail" }, t("forWhom", names)),
-      h("span", { class: "my-booking-detail" }, t("paid", money(b.total_cents, b.currency))),
-      h("button", { type: "button", class: "btn-secondary btn-small", "data-action": "cancel-booking" },
-        t("cancelBooking")),
+      // A friend's class (guest): who paid, and Leave instead of the price and Cancel.
+      b.role === "guest"
+        ? h("span", { class: "my-booking-detail" }, t("paidBy", b.paid_by))
+        : h("span", { class: "my-booking-detail" }, t("paid", money(b.total_cents, b.currency))),
+      b.role === "guest"
+        ? h("button", { type: "button", class: "btn-secondary btn-small", "data-action": "leave-class",
+            "data-seat-id": b.my_seats[0] }, t("leaveClass"))
+        : h("button", { type: "button", class: "btn-secondary btn-small", "data-action": "cancel-booking" },
+            t("cancelBooking")),
     );
   }));
 }
@@ -1035,6 +1041,19 @@ function renderPaid() {
     t("paymentChecking");
 }
 
+// Leave a friend's private class: the seat opens again for them (they paid
+// for it, so no money moves); then refresh My bookings.
+async function leaveClass(seatId) {
+  if (!confirm(t("confirmLeaveClass"))) return;
+  const res = await api("POST", `/seats/${seatId}/leave`);
+  if (!res.ok) {
+    showToast(`${t("somethingWrong")} ${t("reference")}: ${res.requestId}`);
+    return;
+  }
+  showToast(t("leftClass"));
+  loadMe();
+}
+
 function openSignin() {
   state.signin = { open: true, status: "idle", email: "", expiresInMinutes: 0, error: null };
   render();
@@ -1083,6 +1102,7 @@ document.addEventListener("click", (e) => {
     if (state.me === null) openSignin();
     else if (state.me) openBookPrivate(chip.dataset.teacherId, chip.dataset.startsAt);
   }
+  if (action === "leave-class") leaveClass(e.target.closest("[data-seat-id]").dataset.seatId);
   if (action === "cancel-booking") {
     openCancel(e.target.closest("[data-booking-id]").dataset.bookingId);
   }
