@@ -61,27 +61,10 @@ func makeTeacher(ctx context.Context, pool *pgxpool.Pool, email, name, zone stri
 		}
 	}
 	err := pgx.BeginFunc(ctx, pool, func(tx pgx.Tx) error {
-		// The account: created here if this person never signed in (same rule
-		// as sign-in: one account per email, whatever the capitals).
-		displayName := name
-		if displayName == "" {
-			displayName = t.email[:strings.Index(t.email, "@")]
-		}
-		err := tx.QueryRow(ctx, `
-			INSERT INTO account (id, email, display_name) VALUES ($1, $2, $3)
-			ON CONFLICT ((lower(email))) DO NOTHING
-			RETURNING id::text`, newUUIDv7(), t.email, displayName).Scan(&t.accountID)
-		t.newAccount = err == nil
-		if errors.Is(err, pgx.ErrNoRows) {
-			err = tx.QueryRow(ctx, `SELECT id::text FROM account WHERE lower(email) = $1`, t.email).Scan(&t.accountID)
-		}
+		var err error
+		t.accountID, t.newAccount, err = findOrCreateAccount(ctx, tx, t.email, name)
 		if err != nil {
 			return err
-		}
-		if name != "" {
-			if _, err := tx.Exec(ctx, `UPDATE account SET display_name = $2 WHERE id = $1`, t.accountID, name); err != nil {
-				return err
-			}
 		}
 		if zone != "" {
 			if _, err := tx.Exec(ctx, `UPDATE account SET timezone = $2 WHERE id = $1`, t.accountID, zone); err != nil {
@@ -98,4 +81,74 @@ func makeTeacher(ctx context.Context, pool *pgxpool.Pool, email, name, zone stri
 			Scan(&t.teacherID, &t.newTeacher)
 	})
 	return t, err
+}
+
+// findOrCreateAccount returns the account for email (already lower-cased),
+// creating it if this person never signed in: one account per email, whatever
+// the capitals, like sign-in. A non-empty name replaces the display name.
+func findOrCreateAccount(ctx context.Context, tx pgx.Tx, email, name string) (id string, created bool, err error) {
+	displayName := name
+	if displayName == "" {
+		displayName = email[:strings.Index(email, "@")]
+	}
+	err = tx.QueryRow(ctx, `
+		INSERT INTO account (id, email, display_name) VALUES ($1, $2, $3)
+		ON CONFLICT ((lower(email))) DO NOTHING
+		RETURNING id::text`, newUUIDv7(), email, displayName).Scan(&id)
+	created = err == nil
+	if errors.Is(err, pgx.ErrNoRows) {
+		err = tx.QueryRow(ctx, `SELECT id::text FROM account WHERE lower(email) = $1`, email).Scan(&id)
+	}
+	if err != nil {
+		return "", false, err
+	}
+	if name != "" && !created {
+		if _, err := tx.Exec(ctx, `UPDATE account SET display_name = $2 WHERE id = $1`, id, name); err != nil {
+			return "", false, err
+		}
+	}
+	return id, created, nil
+}
+
+// `api admin -email ... [-revoke]`: make an account an admin, or stop it
+// being one. Like `api teacher`, only through a one-off job execution.
+func runMakeAdmin(ctx context.Context, pool *pgxpool.Pool, args []string) error {
+	fs := flag.NewFlagSet("admin", flag.ContinueOnError)
+	email := fs.String("email", "", "the admin's email (required); they sign in with it")
+	revoke := fs.Bool("revoke", false, "remove admin rights instead of granting them")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	accountID, created, err := setAdmin(ctx, pool, *email, !*revoke)
+	if err != nil {
+		return err
+	}
+	slog.Info("admin updated", "email", strings.ToLower(strings.TrimSpace(*email)), "account_id", accountID,
+		"is_admin", !*revoke, "new_account", created)
+	return nil
+}
+
+// setAdmin sets account.is_admin for email, creating the account when
+// granting (revoking from someone without an account is an error).
+func setAdmin(ctx context.Context, pool *pgxpool.Pool, email string, admin bool) (accountID string, created bool, err error) {
+	email = strings.ToLower(strings.TrimSpace(email))
+	if !strings.Contains(email, "@") {
+		return "", false, errors.New("-email is required and must be an email address")
+	}
+	err = pgx.BeginFunc(ctx, pool, func(tx pgx.Tx) error {
+		if admin {
+			var err error
+			if accountID, created, err = findOrCreateAccount(ctx, tx, email, ""); err != nil {
+				return err
+			}
+		} else if err := tx.QueryRow(ctx, `SELECT id::text FROM account WHERE lower(email) = $1`, email).Scan(&accountID); err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				return fmt.Errorf("no account for %s", email)
+			}
+			return err
+		}
+		_, err := tx.Exec(ctx, `UPDATE account SET is_admin = $2 WHERE id = $1`, accountID, admin)
+		return err
+	})
+	return accountID, created, err
 }

@@ -600,6 +600,19 @@ teacher then signs in with that email (a login link, like everyone) and sees the
 
 Locally: `go run ./cmd/api teacher -email TEACHER_EMAIL -name "TEACHER NAME" -timezone America/Bogota`.
 
+### Making someone an admin
+
+Admins (Mike and the teacher) see and manage teachers on the admin page. Like becoming a teacher, it's only
+possible by command, as a one-off execution of the migration job. Replace the placeholder `ADMIN_EMAIL`:
+
+```bash
+gcloud run jobs execute migrate --region=us-east1 --wait --args="admin,-email,ADMIN_EMAIL"
+```
+
+Expected log line: `admin updated  <email>  is_admin=true` (the account is created if that person never signed in).
+To take admin rights away, add `-revoke`: `--args="admin,-email,ADMIN_EMAIL,-revoke"`. It takes effect on their
+next click: the flag is read on every request.
+
 ## Running migrations on prod
 
 Prod migrations run in the cloud as the Cloud Run **job** `migrate` (`infra/run.tf`): the app's own

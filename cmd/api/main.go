@@ -72,6 +72,16 @@ func main() {
 		return
 	}
 
+	// `api admin -email ... [-revoke]`: grant or remove admin rights (setup.go).
+	if len(os.Args) > 1 && os.Args[1] == "admin" {
+		if err := runMakeAdmin(ctx, pool, os.Args[2:]); err != nil {
+			slog.Error("admin command failed", "err", err)
+			pool.Close()
+			os.Exit(1)
+		}
+		return
+	}
+
 	// `api worker`: process due outbox events (emails), then exit. The Cloud Run
 	// worker job runs this every minute.
 	if len(os.Args) > 1 && os.Args[1] == "worker" {

@@ -65,6 +65,7 @@ cmd/api/            main.go    server wiring, middleware, shared helpers (writeJ
                     teacher_profile.go GET/PUT /teacher/profile (name, bio EN/ES, break, offered lengths)
                     teacher_prices.go GET/PUT /teacher/prices (versioned price_tier rows)
                     teacher_classes.go POST /teacher/sessions (new group class), POST /teacher/sessions/{id}/cancel
+                    admin.go   requireAdmin; admin routes (teachers: list, profile, activate/deactivate)
                     slots.go   bookableStarts: blocks minus busy sessions → slot start times (pure)
                     worker.go  drainOutbox: claims outbox events (SKIP LOCKED), retries, skips; runWorker
                     payments.go credit packs (GET /credit-packs), POST /payments/checkout
@@ -514,7 +515,13 @@ For what's already built, read the code and `git log`. Next, in order:
      (cancel); each admin action logged with who did it.
    - **Deactivating** hides the teacher from new bookings (slots, unbooked classes) and is **refused while he has
      booked upcoming classes** (the admin page lists them; they're cancelled first, with full refunds).
-   Steps: [ ] 7f admin flag + `api admin` + admin page (list, profile, activate/deactivate); [ ] 7g invitations.
+   Steps: 7f admins: [x] 7f-1 migration 000008 (`account.is_admin`; teacher status gains `pending`; down round-trips)
+   + `is_admin` in `accountColumns` (so `/me` and every request carry it) + `requireAdmin` (`cmd/api/admin.go`: 401 / 403
+   `not_admin`) + `api admin -email … [-revoke]` (`setup.go`, shares `findOrCreateAccount` with `api teacher`);
+   [ ] 7f-2 `GET /admin/teachers`, a teacher's profile, activate/deactivate (refused while booked upcoming classes;
+   **hide an inactive teacher's group classes**: the catalog `GET /sessions` and group booking don't check teacher
+   status today, while private slots and private booking do), admin actions logged; [ ] 7f-3 `web/admin.html`;
+   [ ] 7g invitations.
    After this, teachers/profiles/prices/classes/availability are data, managed in the app (no deploys); still no
    screens for credit packs, `credit_policy`, the payments switch.
    **Setup path:** first-run setup that creates the teacher account and profile (bio, buffer,

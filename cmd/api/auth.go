@@ -31,13 +31,14 @@ type account struct {
 	PreferredLanguage string `json:"preferred_language"`
 	Timezone          string `json:"timezone"`
 	IsTeacher         bool   `json:"is_teacher"` // derived: has an active teacher profile
+	IsAdmin           bool   `json:"is_admin"`   // account.is_admin (set by `api admin`)
 }
 
 // accountColumns selects an account (aliased "a") in the field order of account.
 // is_teacher is computed on every read rather than stored, so it can't drift
 // from the teacher table.
 const accountColumns = `a.id::text, a.email, a.display_name, a.preferred_language, a.timezone,
-	EXISTS (SELECT 1 FROM teacher t WHERE t.account_id = a.id AND t.status = 'active')`
+	EXISTS (SELECT 1 FROM teacher t WHERE t.account_id = a.id AND t.status = 'active'), a.is_admin`
 
 // loginSender delivers a login link. In dev it writes the link to the log;
 // in production it will call the email provider.
@@ -237,7 +238,7 @@ func verifyLoginToken(pool *pgxpool.Pool) http.HandlerFunc {
 		var status string
 		err = tx.QueryRow(ctx, `
 			SELECT `+accountColumns+`, a.status FROM account a WHERE lower(a.email) = $1`,
-			email).Scan(&acct.ID, &acct.Email, &acct.DisplayName, &acct.PreferredLanguage, &acct.Timezone, &acct.IsTeacher, &status)
+			email).Scan(&acct.ID, &acct.Email, &acct.DisplayName, &acct.PreferredLanguage, &acct.Timezone, &acct.IsTeacher, &acct.IsAdmin, &status)
 		if err != nil {
 			logFrom(r).Error("verify: load account failed", "err", err)
 			writeError(w, r, http.StatusInternalServerError, "could not sign you in")
@@ -316,7 +317,7 @@ func signedIn(pool *pgxpool.Pool, next http.HandlerFunc) http.HandlerFunc {
 			FROM web_session s JOIN account a ON a.id = s.account_id
 			WHERE s.token_hash = $1 AND s.revoked_at IS NULL AND s.expires_at > now()
 			  AND a.status = 'active'`,
-			hashSecret(c.Value)).Scan(&a.ID, &a.Email, &a.DisplayName, &a.PreferredLanguage, &a.Timezone, &a.IsTeacher)
+			hashSecret(c.Value)).Scan(&a.ID, &a.Email, &a.DisplayName, &a.PreferredLanguage, &a.Timezone, &a.IsTeacher, &a.IsAdmin)
 		if errors.Is(err, pgx.ErrNoRows) {
 			next(w, r)
 			return
