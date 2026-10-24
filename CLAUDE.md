@@ -181,10 +181,13 @@ then find the link in the log.
 - **Teacher cancels** (any time) or a group auto-cancels → full refund.
 - **Teacher no-show** → full refund **plus** a goodwill credit equal to the full amount paid
   (ledger: one `refund` entry and one `goodwill` entry).
-- **Credits expire** after a configurable period (stored as data, not hard-coded). Expiry is a
-  new negative ledger entry, never an edit. Which credits expire first and where the setting
-  lives get decided in the Payments step (the ledger's `entry_type` CHECK has no `expiry` yet,
-  so that needs a migration). The period is shown to students on a public policies page.
+- **Credits expire after inactivity (decided 2026-10-24):** when an account has had **no credit activity
+  for 24 months** (no ledger entry other than an expiry: buying, booking, refunds all count), the whole
+  remaining balance expires as one `expiry` ledger entry (−balance), never an edit. A reminder email goes
+  out **30 days before**. Both numbers are data in the one-row `credit_policy` table (migration 000007),
+  read by the worker and the public policies page. Legal note: paid credit may count as a gift
+  card/prepaid certificate (federal CARD Act: 5 years; some states ban expiry); Mike to check with an
+  accountant/lawyer before launch. Switching to "only bonus credit expires" would change only the amount query.
 - **Group minimum:** checked 24h before start. Fewer than 2 seats booked → auto-cancel with full
   refunds. At 2+ it's confirmed and runs even if someone later drops. Enforced in the schema:
   group sessions must have `min_seats >= 2` (constraint `session_group_min_seats`).
@@ -436,8 +439,10 @@ For what's already built, read the code and `git log`. Next, in order:
    email next worker run). Also fixed: `[hidden] { display: none !important; }` (a `display` rule had kept the
    empty paid notice visible). Possible follow-up: `Cache-Control: no-cache` on web files (browsers keep old CSS/JS
    after a deploy);
-   [ ] 6e-4 production with live keys (when Mike is ready); [ ] 6f credit expiry +
-   policies page (decisions pending: period, which credit expires first).
+   [ ] 6e-4 production with live keys (when Mike is ready); 6f credit expiry (rule A, inactivity, 24 months, see Business rules) + policies page: [x] 6f-1 migration 000007
+   (`expiry` entry type, debit only; `credit_policy` one-row table 24 / 30; down file round-trips);
+   [ ] 6f-2 worker: reminder (outbox, `dedupe_key` with the last-activity date) + expiry (account locked `FOR UPDATE`,
+   −balance) + tests; [ ] 6f-3 the two emails; [ ] 6f-4 bilingual policies page (numbers from `credit_policy` + Go constants).
    Credit expiry (see Business rules) and a bilingual **policies page** (cancellation, refunds,
    credit expiry period, children) that reads its numbers from the same config the code uses.
 7. **Setup path:** first-run setup that creates the teacher account and profile (bio, buffer,
