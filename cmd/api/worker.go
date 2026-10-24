@@ -186,6 +186,16 @@ func runWorker(ctx context.Context, pool *pgxpool.Pool, appEnv, resendKey, siteU
 	} else if queued > 0 {
 		slog.Info("reminders queued", "count", queued)
 	}
+	if queued, err := queueExpiryReminders(ctx, pool); err != nil {
+		slog.Error("queueing credit expiry reminders failed", "err", err)
+	} else if queued > 0 {
+		slog.Info("credit expiry reminders queued", "count", queued)
+	}
+	if expired, err := expireCredit(ctx, pool); err != nil {
+		slog.Error("credit expiry failed", "err", err)
+	} else if expired > 0 {
+		slog.Info("credit expired", "accounts", expired)
+	}
 	if tokens, sessions, err := purgeExpired(ctx, pool); err != nil {
 		slog.Error("purge failed", "err", err)
 	} else if tokens+sessions > 0 {

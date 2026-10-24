@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
 	"slices"
 	"strings"
 	"testing"
@@ -183,4 +185,74 @@ func TestCreditExpiryRace(t *testing.T) {
 	if b := balance(t, pool, id); b != 2500 {
 		t.Errorf("balance %d, want 2500 (the $15 spend counts as activity: nothing expires)", b)
 	}
+}
+
+// The two emails: the reminder (with the expiry date in the student's own time
+// zone), the reminder skipped when the credit was used meanwhile, and the
+// "expired" notice with the amount that expired.
+func TestCreditExpiryEmails(t *testing.T) {
+	pool := migratedSchemaPool(t, 4)
+	ctx := context.Background()
+	bogota, _ := time.LoadLocation("America/Bogota")
+	account := func() string {
+		id, _ := newAccount(t, pool)
+		if _, err := pool.Exec(ctx, `UPDATE account SET display_name = 'Ana', timezone = 'America/Bogota' WHERE id = $1`, id); err != nil {
+			t.Fatal(err)
+		}
+		return id
+	}
+	warned, usedSince, due := account(), account(), account()
+	credit(t, pool, warned, 3000, "24 months -10 days")
+	credit(t, pool, usedSince, 2000, "24 months -10 days")
+	credit(t, pool, due, 4000, "25 months")
+	if _, err := queueExpiryReminders(ctx, pool); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := expireCredit(ctx, pool); err != nil {
+		t.Fatal(err)
+	}
+	credit(t, pool, usedSince, -500, "0 seconds") // booked something after the reminder was queued
+
+	handle := func(ev outboxEvent) (*recordingMailer, error) {
+		m := &recordingMailer{}
+		return m, notifyHandler(pool, m.send, "https://hablemos.live")(ctx, ev)
+	}
+
+	t.Run("reminder", func(t *testing.T) {
+		ev := eventFor(t, pool, warned, "credit_expiry_reminder")
+		var p struct {
+			ExpiresAt time.Time `json:"expires_at"`
+		}
+		json.Unmarshal(ev.Payload, &p)
+		m, err := handle(ev)
+		if err != nil || len(m.sent) != 1 {
+			t.Fatalf("err %v, sent %d", err, len(m.sent))
+		}
+		e := m.sent[0]
+		wantSubject := "Your credit expires on " + dateEN(p.ExpiresAt, bogota) + " · Tu crédito vence el " + dateES(p.ExpiresAt, bogota)
+		if e.Subject != wantSubject || !strings.Contains(e.Text, "You have $30.00 of credit") ||
+			!strings.Contains(e.Text, "after 24 months without any activity") || !strings.Contains(e.Text, "Tienes 30,00 US$ de crédito") {
+			t.Errorf("subject %q (want %q)\n%s", e.Subject, wantSubject, e.Text)
+		}
+	})
+
+	t.Run("reminder skipped when the credit was used since", func(t *testing.T) {
+		m, err := handle(eventFor(t, pool, usedSince, "credit_expiry_reminder"))
+		var sk *skipError
+		if !errors.As(err, &sk) || len(m.sent) != 0 {
+			t.Errorf("err %v, sent %d; want a skip and no email", err, len(m.sent))
+		}
+	})
+
+	t.Run("expired", func(t *testing.T) {
+		m, err := handle(eventFor(t, pool, due, "credit_expired"))
+		if err != nil || len(m.sent) != 1 {
+			t.Fatalf("err %v, sent %d", err, len(m.sent))
+		}
+		e := m.sent[0]
+		if e.Subject != "Your credit of $40.00 has expired · Tu crédito de 40,00 US$ venció" ||
+			!strings.Contains(e.Text, "it had not been used for 24 months") || !strings.Contains(e.Text, "Hola, Ana:") {
+			t.Errorf("subject %q\n%s", e.Subject, e.Text)
+		}
+	})
 }

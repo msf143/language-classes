@@ -27,6 +27,10 @@ func notifyHandler(pool *pgxpool.Pool, send mailer, siteURL string) eventHandler
 			return notifyBooking(ctx, pool, send, siteURL, ev)
 		case "payment_succeeded":
 			return notifyPayment(ctx, pool, send, siteURL, ev)
+		case "credit_expiry_reminder":
+			return notifyExpiryReminder(ctx, pool, send, siteURL, ev)
+		case "credit_expired":
+			return notifyCreditExpired(ctx, pool, send, siteURL, ev)
 		default:
 			return skip("no handler for " + ev.EventType)
 		}
@@ -366,6 +370,16 @@ func whenES(start, end time.Time, loc *time.Location) string {
 	s, e := start.In(loc), end.In(loc)
 	return fmt.Sprintf("%s %d de %s, %s – %s (%s)", weekdaysES[s.Weekday()], s.Day(), monthsES[s.Month()-1],
 		s.Format("15:04"), e.Format("15:04"), loc)
+}
+
+// dateEN: "March 3, 2028"; dateES: "3 de marzo de 2028" (in the reader's zone).
+func dateEN(t time.Time, loc *time.Location) string {
+	return t.In(loc).Format("January 2, 2006")
+}
+
+func dateES(t time.Time, loc *time.Location) string {
+	d := t.In(loc)
+	return fmt.Sprintf("%d de %s de %d", d.Day(), monthsES[d.Month()-1], d.Year())
 }
 
 // shortWhen for subjects: "Tue Oct 27 19:00".

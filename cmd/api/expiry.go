@@ -12,6 +12,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -150,4 +151,112 @@ func expireAccount(ctx context.Context, pool *pgxpool.Pool, accountID, currency 
 		return nil
 	})
 	return expired, err
+}
+
+// ---------- the emails (the worker's notifyHandler sends these) ----------
+
+// notifyExpiryReminder: "your credit expires on …". The reminder was queued
+// up to a minute earlier, so the standing is read again now: if the student
+// booked or bought since (a new expiry date) or has nothing left, the email
+// isn't needed and is skipped.
+func notifyExpiryReminder(ctx context.Context, pool *pgxpool.Pool, send mailer, siteURL string, ev outboxEvent) error {
+	var queued struct {
+		Currency  string    `json:"currency"`
+		ExpiresAt time.Time `json:"expires_at"`
+	}
+	if err := json.Unmarshal(ev.Payload, &queued); err != nil {
+		return skip("bad payload: " + err.Error())
+	}
+	var s standing
+	var name, to, tz string
+	var months int
+	err := pool.QueryRow(ctx, creditStanding+`
+		  AND s.account_id = $1 AND s.currency = $2`, ev.AggregateID, queued.Currency).
+		Scan(&s.accountID, &s.currency, &s.balanceCents, &s.lastActivity, &s.expiresAt, &s.warnDays)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return skip("no credit left")
+	}
+	if err != nil {
+		return err
+	}
+	if !s.expiresAt.Equal(queued.ExpiresAt) {
+		return skip("credit used since the reminder was queued")
+	}
+	if err := pool.QueryRow(ctx, `
+		SELECT a.display_name, a.email, a.timezone, p.expire_after_months
+		FROM account a CROSS JOIN credit_policy p WHERE a.id = $1`, ev.AggregateID).
+		Scan(&name, &to, &tz, &months); err != nil {
+		return err
+	}
+	loc := zone(tz)
+	return sendLogged(ctx, send, ev, "account", email{
+		From: classesEmailFrom, To: to, IdempotencyKey: ev.ID + ":account",
+		Subject: "Your credit expires on " + dateEN(s.expiresAt, loc) + " · Tu crédito vence el " + dateES(s.expiresAt, loc),
+		Text: fmt.Sprintf(`Hi %[1]s,
+
+  You have %[2]s of credit with Hablemos.
+  Credit expires after %[3]d months without any activity. Yours was last
+  used on %[4]s, so it expires on %[5]s.
+
+To keep it, book any class or buy credit before then: %[6]s
+
+—
+
+Hola, %[1]s:
+
+  Tienes %[7]s de crédito en Hablemos.
+  El crédito vence tras %[3]d meses sin actividad. El tuyo se usó por
+  última vez el %[8]s, así que vence el %[9]s.
+
+Para conservarlo, reserva cualquier clase o compra crédito antes de esa fecha: %[6]s
+`, name, moneyEN(s.balanceCents, s.currency), months, dateEN(s.lastActivity, loc), dateEN(s.expiresAt, loc), siteURL,
+			moneyES(s.balanceCents, s.currency), dateES(s.lastActivity, loc), dateES(s.expiresAt, loc)),
+	})
+}
+
+// notifyCreditExpired: "your credit expired". The amount comes from the event,
+// written in the same transaction as the expiry entry, so it's what expired.
+func notifyCreditExpired(ctx context.Context, pool *pgxpool.Pool, send mailer, siteURL string, ev outboxEvent) error {
+	var p struct {
+		ExpiredCents int       `json:"expired_cents"`
+		Currency     string    `json:"currency"`
+		LastActivity time.Time `json:"last_activity"`
+	}
+	if err := json.Unmarshal(ev.Payload, &p); err != nil {
+		return skip("bad payload: " + err.Error())
+	}
+	var name, to, tz string
+	var months int
+	if err := pool.QueryRow(ctx, `
+		SELECT a.display_name, a.email, a.timezone, pol.expire_after_months
+		FROM account a CROSS JOIN credit_policy pol WHERE a.id = $1`, ev.AggregateID).
+		Scan(&name, &to, &tz, &months); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return skip("account not found")
+		}
+		return err
+	}
+	loc := zone(tz)
+	return sendLogged(ctx, send, ev, "account", email{
+		From: classesEmailFrom, To: to, IdempotencyKey: ev.ID + ":account",
+		Subject: "Your credit of " + moneyEN(p.ExpiredCents, p.Currency) + " has expired · Tu crédito de " +
+			moneyES(p.ExpiredCents, p.Currency) + " venció",
+		Text: fmt.Sprintf(`Hi %[1]s,
+
+  Your credit of %[2]s has expired: it had not been used for %[3]d months
+  (last activity on %[4]s).
+
+You're welcome back any time: %[5]s
+
+—
+
+Hola, %[1]s:
+
+  Tu crédito de %[6]s venció: no se había usado en %[3]d meses
+  (última actividad el %[7]s).
+
+Te esperamos cuando quieras: %[5]s
+`, name, moneyEN(p.ExpiredCents, p.Currency), months, dateEN(p.LastActivity, loc), siteURL,
+			moneyES(p.ExpiredCents, p.Currency), dateES(p.LastActivity, loc)),
+	})
 }

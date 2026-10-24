@@ -445,7 +445,10 @@ For what's already built, read the code and `git log`. Next, in order:
    [x] 6f-2 `cmd/api/expiry.go`: `queueExpiryReminders` (outbox `credit_expiry_reminder`, `dedupe_key` =
    account + currency + last-activity time) + `expireCredit` / `expireAccount` (account `FOR UPDATE`, re-read after the
    lock, one `expiry` entry −balance + outbox `credit_expired`); tests incl. a gated race test (without the lock:
-   balance −$15). **Not yet called by `runWorker`**: unknown events are skipped, so they're wired in with the emails; [ ] 6f-3 the two emails; [ ] 6f-4 bilingual policies page (numbers from `credit_policy` + Go constants).
+   balance −$15); [x] 6f-3 emails (`notifyExpiryReminder` re-reads the standing at send time and skips if the expiry
+   date moved or nothing is left; `notifyCreditExpired` uses the amount from the event; dates in the account's zone via
+   `dateEN` / `dateES`) + both checks wired into `runWorker` (after the class reminders); run on dev with two demo
+   accounts (`expiry-demo-1/2@example.com`); [ ] 6f-4 bilingual policies page (numbers from `credit_policy` + Go constants).
    Credit expiry (see Business rules) and a bilingual **policies page** (cancellation, refunds,
    credit expiry period, children) that reads its numbers from the same config the code uses.
 7. **Setup path:** first-run setup that creates the teacher account and profile (bio, buffer,
