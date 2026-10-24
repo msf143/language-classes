@@ -479,8 +479,22 @@ For what's already built, read the code and `git log`. Next, in order:
    (bio EN/ES, break, lengths); [ ] 7c prices (versioned: close the old tier's `valid`, insert new; the EXCLUDE
    constraint forbids overlaps); [ ] 7d create group classes + teacher cancels one (full refunds, reuse the
    group-minimum code); [ ] 7e rollout: run 7a for the real teacher, he sets everything up, prod payments on.
+   Then admins and teacher invitations (design agreed 2026-10-24, built **after** launch, "launch first"):
+   - **Admin = one flag**, `account.is_admin` (not a roles system), set only by a command `api admin -email …`
+     (one-off job execution, like `api teacher`); Mike and the teacher are the admins. No web path to admin.
+   - **Invitations:** an admin invites an email → `teacher_invite` (SHA-256 hash of the secret only, single-use,
+     expires after 7 days, bound to that email; sent by the worker) → invitee signs in with that email (normal
+     login link) → "Become a teacher" → teacher row with new status **`pending`** (migration: status CHECK gains
+     'pending') → fills in profile + prices, not shown to students → an admin **activates**.
+   - **Admin page:** teachers with status, a teacher's full profile, Activate / Deactivate, open invitations
+     (cancel); each admin action logged with who did it.
+   - **Deactivating** hides the teacher from new bookings (slots, unbooked classes) and is **refused while he has
+     booked upcoming classes** (the admin page lists them; they're cancelled first, with full refunds).
+   Steps: [ ] 7f admin flag + `api admin` + admin page (list, profile, activate/deactivate); [ ] 7g invitations.
+   After this, teachers/profiles/prices/classes/availability are data, managed in the app (no deploys); still no
+   screens for credit packs, `credit_policy`, the payments switch.
    **Setup path:** first-run setup that creates the teacher account and profile (bio, buffer,
    offered durations, price tiers). Until then, `scripts/seed.sql` creates the dev teacher.
 
-Deliberately **not** building yet: roles/permissions system, teacher payouts/splits, topics or
+Deliberately **not** building yet: a roles/permissions system (admins are one flag, see step 7), teacher payouts/splits, topics or
 levels on sessions, reviews, a message broker (the outbox table is the queue).
