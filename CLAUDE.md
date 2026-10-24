@@ -479,7 +479,7 @@ For what's already built, read the code and `git log`. Next, in order:
    `docs/deploy.md`): [x] applied + destination verified + test mail received (2026-10-24).
    Credit expiry (see Business rules) and a bilingual **policies page** (cancellation, refunds,
    credit expiry period, children) that reads its numbers from the same config the code uses.
-7. **Setup path** (done except **7e, the rollout**; then turn prod `payments = true` for good). Before announcing the site: Stripe
+7. **← resume here: 7e, the rollout** (all else in step 7, and steps 8 and 9, done 2026-10-24; then turn prod `payments = true` for good). Before announcing the site: Stripe
    public details (support email hola@; consider a PO box instead of the home address), accountant/lawyer on credit
    expiry and taxes. Design (agreed 2026-10-24): the **teacher manages his own profile, prices and classes on his
    page**; he becomes a teacher only by a command (`api teacher -email … [-name …] [-timezone …]`, `cmd/api/setup.go`)
@@ -566,7 +566,7 @@ For what's already built, read the code and `git log`. Next, in order:
    learner (the one still carrying the account's old name), same transaction; [x] 8b "My Account" dialog (header name is
    a button; name form; people list with Edit / Remove (browser `confirm()`); one add/edit form; every change reloads
    `/me`; checked in headless Chrome: rename, add a child, edit, "Who's attending?", remove). Step 8 done.
-9. **← resume here: Friends in private classes** (design agreed 2026-10-24). A private booking holds **seats** (1–4,
+9. **Friends in private classes** (done 2026-10-24; design agreed the same day). A private booking holds **seats** (1–4,
    `booking.party_size`), all **paid by the payer when added**, at the per-person price for that party size. A seat
    is filled by one of the payer's own learners or **open with an invite link**; a friend opens it, signs in (free
    account), picks one of *their* learners, and the seat is theirs (`booking_attendee` status invited → joined).
@@ -605,8 +605,12 @@ For what's already built, read the code and `git log`. Next, in order:
    (options built once; party = max(seats, people ticked); price and "N seats for friends" hint live; sends `seats`) +
    My bookings seat list for a payer's private booking (name or "Open seat"; Copy invite link = a fresh link to the
    clipboard, `prompt()` if refused; Remove while > 1 seat; + Add a seat up to 4; toasts say what was paid or given
-   back); checked in headless Chrome (3 seats $51 → add $9 → remove $9 back); [ ] 9e-2 `join.html` (preview, sign-in
-   round trip, pick a person, join).
+   back); checked in headless Chrome (3 seats $51 → add $9 → remove $9 back); [x] 9e-2 `web/join.html` + `join.js`
+   (preview without signing in; signed out → token saved in localStorage `pendingJoin` (24 h; shared by tabs, since the
+   login email opens a new one) → `/#signin`; after sign-in `loadMe` sends them back to `join.html`; "Who's coming?"
+   → Join → `/#joined` toast; token dropped after joining or when the link is no good). Checked end to end in two
+   headless browser sessions (payer books 2 seats, copies the link; friend opens it signed out, signs in, comes back,
+   joins, sees "Paid by …" + Leave). **Step 9 done.**
 
 Deliberately **not** building yet: a roles/permissions system (admins are one flag, see step 7), teacher payouts/splits, topics or
 levels on sessions, reviews, a message broker (the outbox table is the queue).

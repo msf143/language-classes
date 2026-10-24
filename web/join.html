@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <!-- Don't send this page's address (with the invitation token) to other sites. -->
+  <meta name="referrer" content="no-referrer">
+  <title data-i18n="joinPageTitle">Join a class</title>
+  <link rel="stylesheet" href="styles.css">
+  <script src="i18n.js" defer></script>
+  <script src="common.js" defer></script>
+  <script src="join.js" defer></script>
+</head>
+<body>
+  <header class="site-header">
+    <div class="wrap header-row">
+      <a class="brand" href="/">Hablemos</a>
+      <div class="lang-switch" role="group" aria-label="Interface language">
+        <button type="button" data-ui-lang="en">EN</button>
+        <button type="button" data-ui-lang="es">ES</button>
+      </div>
+    </div>
+  </header>
+
+  <main class="wrap">
+    <section class="signin-card">
+      <h1 data-i18n="joinPageTitle"></h1>
+      <!-- Built by join.js: the class, then sign in / pick who's coming / join. -->
+      <div id="join-body" aria-live="polite"></div>
+    </section>
+  </main>
+</body>
+</html>

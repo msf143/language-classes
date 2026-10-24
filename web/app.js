@@ -114,6 +114,15 @@ async function loadSessions() {
 async function loadMe() {
   const res = await api("GET", "/me");
   if (res.ok) {
+    // Signed in with a friend's invitation waiting (join.js saved it before
+    // sending us to sign in): back to it.
+    try {
+      const pending = JSON.parse(localStorage.getItem("pendingJoin") || "null");
+      if (pending && Date.now() - pending.savedAt < 86400000) {
+        location.replace("join.html");
+        return;
+      }
+    } catch { /* storage blocked: nothing waiting */ }
     state.me = { ...res.data.account, balanceCents: res.data.balance_cents, learners: res.data.learners };
     loadMyBookings();   // signed in: fetch the "My bookings" list too
   } else {
@@ -1303,11 +1312,16 @@ window.addEventListener("pageshow", (e) => {
   }
 });
 
-// signin.html links here as /#signin ("Request a new link"): open the dialog,
-// then drop the #signin so a reload doesn't reopen it.
+// signin.html (and join.html) link here as /#signin: open the dialog, then
+// drop the #signin so a reload doesn't reopen it. join.html sends /#joined
+// after a friend joins a class.
 if (location.hash === "#signin") {
   history.replaceState(null, "", location.pathname);
   state.signin.open = true;
+}
+if (location.hash === "#joined") {
+  history.replaceState(null, "", location.pathname);
+  setTimeout(() => showToast(t("joinedToast")), 0);   // after the first render
 }
 
 // Back from Stripe: read ?paid=..., then drop it from the address bar, so a
