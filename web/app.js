@@ -40,6 +40,12 @@ const state = {
     status: "idle",                // "idle" | "sending"
     error: null,                   // { key, requestId? } when the last attempt failed
   },
+  account: {
+    open: false,                   // is the My Account dialog showing?
+    editingId: null,               // the person being edited, or null (the form adds a new one)
+    sending: false,                // a request is on its way
+    error: null,                   // { key, requestId? } when the last request failed
+  },
   buy: {
     open: false,                   // is the Buy credit dialog showing?
     status: "idle",                // "loading" | "ready" | "error" | "sending" | "redirecting"
@@ -71,6 +77,9 @@ const bookFormEl = document.querySelector("#book-form");
 const cancelDialogEl = document.querySelector("#cancel-dialog");
 const cancelFormEl = document.querySelector("#cancel-form");
 const buyDialogEl = document.querySelector("#buy-dialog");
+const accountDialogEl = document.querySelector("#account-dialog");
+const nameFormEl = document.querySelector("#name-form");
+const personFormEl = document.querySelector("#person-form");
 const buyFormEl = document.querySelector("#buy-form");
 
 // The visitor's time zone, e.g. "America/New_York". The API sends UTC; we convert here.
@@ -240,6 +249,7 @@ function render() {
   renderBook();
   renderCancel();
   renderBuy();
+  renderAccountDialog();
   renderFilters();
   renderStatus();
   renderMyBookings();
@@ -350,7 +360,9 @@ function renderAccount() {
     accountEl.append(h("button", { type: "button", class: "btn-primary btn-small", "data-action": "open-signin" }, t("signIn")));
     return;
   }
-  accountEl.append(h("span", { class: "account-name", title: state.me.email }, state.me.display_name));
+  // Your name opens My Account (a button: clickable and reachable by keyboard).
+  accountEl.append(h("button", { type: "button", class: "account-name link-button", title: state.me.email,
+    "data-action": "open-account" }, state.me.display_name));
   accountEl.append(h("span", { class: "account-credit" }, t("yourCredit", money(state.me.balanceCents))));
   if (state.payments) {
     accountEl.append(h("button", { type: "button", class: "btn-secondary btn-small", "data-action": "open-buy" }, t("buyCredit")));
@@ -779,6 +791,107 @@ async function submitCancel() {
   if (key) loadMe();   // the list is out of date: refresh it
 }
 
+// ---------- My Account dialog ----------
+
+// Open the dialog with your current name in its form, and the person form
+// empty (ready to add someone).
+function openAccount() {
+  state.account = { open: true, editingId: null, sending: false, error: null };
+  nameFormEl.elements.display_name.value = state.me.display_name;
+  fillPersonForm(null);
+  render();
+}
+
+// The person form adds (l = null) or edits l: fill it accordingly. Called on
+// open and on Edit, never from render(), so typing is never overwritten.
+function fillPersonForm(l) {
+  state.account.editingId = l ? l.id : null;
+  const f = personFormEl.elements;
+  f.display_name.value = l ? l.display_name : "";
+  f.native_language.value = l ? l.native_language : state.me.preferred_language || "en";
+  f.is_minor.checked = l ? l.is_minor : false;
+}
+
+const accountErrorKeys = {
+  invalid_name: "errNameInvalid",
+  invalid_learner: "errNameInvalid",
+  too_many_learners: "errTooManyPeople",
+  learner_booked: "errPersonBooked",
+  learner_not_found: "errPersonGone",
+};
+
+// Every change goes through here: send it, then reload /me so the header, the
+// list and the Book dialog's "Who's attending?" all show the new data.
+async function accountRequest(method, path, body, okKey) {
+  const a = state.account;
+  a.sending = true;
+  a.error = null;
+  render();
+  const res = await api(method, path, body);
+  a.sending = false;
+  if (!res.ok) {
+    const key = accountErrorKeys[res.data.code];
+    a.error = key ? { key } : { key: "somethingWrong", requestId: res.requestId };
+    render();
+    return false;
+  }
+  showToast(t(okKey));
+  await loadMe();
+  return true;
+}
+
+async function saveName() {
+  const name = String(new FormData(nameFormEl).get("display_name")).trim();
+  if (!name) { state.account.error = { key: "errNameInvalid" }; return render(); }
+  await accountRequest("PUT", "/me", { display_name: name }, "nameSaved");
+}
+
+async function savePerson() {
+  const form = new FormData(personFormEl);
+  const body = {
+    display_name: String(form.get("display_name")).trim(),
+    native_language: form.get("native_language"),
+    is_minor: form.get("is_minor") === "on",   // a ticked checkbox sends "on"; an unticked one sends nothing
+  };
+  if (!body.display_name) { state.account.error = { key: "errNameInvalid" }; return render(); }
+  const id = state.account.editingId;
+  const ok = id
+    ? await accountRequest("PUT", `/me/learners/${id}`, body, "personSaved")
+    : await accountRequest("POST", "/me/learners", body, "personAdded");
+  if (ok) fillPersonForm(null);
+  render();
+}
+
+async function removePerson(id) {
+  const l = state.me.learners.find((x) => x.id === id);
+  if (!l || !confirm(t("confirmRemovePerson", l.display_name))) return;
+  if (await accountRequest("POST", `/me/learners/${id}/archive`, undefined, "personRemoved") &&
+      state.account.editingId === id) fillPersonForm(null);
+  render();
+}
+
+function renderAccountDialog() {
+  const a = state.account;
+  if (a.open && !accountDialogEl.open) accountDialogEl.showModal();
+  if (!a.open && accountDialogEl.open) accountDialogEl.close();
+  if (!a.open || !state.me) return;
+  document.querySelector("#people-list").replaceChildren(...state.me.learners.map((l) =>
+    h("li", { class: "person", "data-person-id": l.id },
+      h("span", { class: "person-name" }, l.is_minor ? `${l.display_name} (${t("child")})` : l.display_name),
+      h("span", { class: "muted small" }, l.native_language === "es" ? t("speaksSpanish") : t("speaksEnglish")),
+      h("button", { type: "button", class: "btn-secondary btn-small", "data-action": "edit-person" }, t("edit")),
+      h("button", { type: "button", class: "btn-secondary btn-small", "data-action": "remove-person" }, t("remove")),
+    )));
+  const editing = a.editingId !== null;
+  document.querySelector("#person-form-title").textContent = editing ? t("editPerson") : t("addPerson");
+  document.querySelector("#person-cancel-edit").hidden = !editing;
+  const submit = document.querySelector("#person-submit");
+  submit.textContent = editing ? t("savePerson") : t("addPersonButton");
+  submit.disabled = a.sending;
+  document.querySelector("#account-error").textContent =
+    a.error ? t(a.error.key) + (a.error.requestId ? ` ${t("reference")}: ${a.error.requestId}` : "") : "";
+}
+
 // ---------- buy credit dialog ----------
 
 // Open the dialog and fetch the packs (they're data on the server, so the page
@@ -981,6 +1094,14 @@ document.addEventListener("click", (e) => {
     openBuy();
   }
   if (action === "close-buy") { state.buy.open = false; render(); }
+  if (action === "open-account" && state.me) openAccount();
+  if (action === "close-account") { state.account.open = false; render(); }
+  if (action === "edit-person") {
+    const l = state.me.learners.find((x) => x.id === e.target.closest("[data-person-id]").dataset.personId);
+    if (l) { fillPersonForm(l); state.account.error = null; render(); }
+  }
+  if (action === "cancel-edit-person") { fillPersonForm(null); render(); }
+  if (action === "remove-person" && !state.account.sending) removePerson(e.target.closest("[data-person-id]").dataset.personId);
   if (action === "dismiss-paid") { state.paid = null; render(); }
   if (action === "logout") logout();
   if (action === "test-credit" && !state.addingCredit) addTestCredit();
@@ -999,6 +1120,16 @@ document.addEventListener("submit", (e) => {
   if (e.target === cancelFormEl) {
     e.preventDefault();
     if (state.cancel.status !== "sending") submitCancel();
+    return;
+  }
+  if (e.target === nameFormEl) {
+    e.preventDefault();
+    if (!state.account.sending) saveName();
+    return;
+  }
+  if (e.target === personFormEl) {
+    e.preventDefault();
+    if (!state.account.sending) savePerson();
     return;
   }
   if (e.target === buyFormEl) {
@@ -1042,6 +1173,7 @@ dialogEl.addEventListener("close", () => { state.signin.open = false; });
 bookDialogEl.addEventListener("close", () => { state.book.open = false; });
 cancelDialogEl.addEventListener("close", () => { state.cancel.open = false; });
 buyDialogEl.addEventListener("close", () => { state.buy.open = false; });
+accountDialogEl.addEventListener("close", () => { state.account.open = false; });
 
 // Back from Stripe's page without paying: the browser may show this page from
 // its memory (the "back-forward cache"), frozen as it was when we left, with

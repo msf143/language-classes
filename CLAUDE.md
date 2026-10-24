@@ -542,8 +542,10 @@ For what's already built, read the code and `git log`. Next, in order:
    (name, under 18, native language; account `FOR UPDATE` for the ≤ 10 limit → 409 `too_many_learners`),
    `PUT /me/learners/{id}` (mine only, else 404), `POST /me/learners/{id}/archive` (status `archived`, never deleted;
    409 `learner_booked` while in a confirmed class not yet ended; account `FOR UPDATE` first, like booking: gated race
-   test fails without it); `/me` learners now include `native_language`; [ ] 8b "My Account" dialog
-   from the header name (new learners appear under "Who's attending?").
+   test fails without it); `/me` learners now include `native_language`; renaming yourself also renames your own
+   learner (the one still carrying the account's old name), same transaction; [x] 8b "My Account" dialog (header name is
+   a button; name form; people list with Edit / Remove (browser `confirm()`); one add/edit form; every change reloads
+   `/me`; checked in headless Chrome: rename, add a child, edit, "Who's attending?", remove). Step 8 done.
 9. **Friends in private classes** (business rule: one payer, friends join via invite link with their own free
    accounts): the payer books for a party, gets invite links; a friend signs in and joins with one of their learners;
    price per person follows the party size until the 24 h lock (then 50% back per dropped person). Schema is ready:

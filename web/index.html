@@ -212,6 +212,45 @@
     </form>
   </dialog>
 
+  <!-- My Account: your name, and the people on your account (app.js fills the list).
+       The two forms own their inputs; app.js fills them only when the dialog opens
+       or Edit is clicked. -->
+  <dialog id="account-dialog" class="dialog" aria-labelledby="account-title">
+    <h2 id="account-title" data-i18n="accountTitle"></h2>
+    <form id="name-form" class="account-form" novalidate>
+      <label class="field"><span data-i18n="yourName"></span>
+        <input type="text" name="display_name" maxlength="60" required></label>
+      <button type="submit" class="btn-secondary btn-small" data-i18n="saveName"></button>
+    </form>
+
+    <h3 data-i18n="peopleTitle"></h3>
+    <p class="muted small" data-i18n="peopleHint"></p>
+    <ul id="people-list" class="people-list"></ul>
+
+    <form id="person-form" class="account-form person-form" novalidate>
+      <h3 id="person-form-title"></h3>
+      <label class="field"><span data-i18n="personName"></span>
+        <input type="text" name="display_name" maxlength="60" required></label>
+      <div class="add-block-fields">
+        <label class="field"><span data-i18n="personLanguage"></span>
+          <select name="native_language">
+            <option value="en" data-i18n="speaksEnglish"></option>
+            <option value="es" data-i18n="speaksSpanish"></option>
+          </select></label>
+        <label class="attendee"><input type="checkbox" name="is_minor"> <span data-i18n="under18"></span></label>
+      </div>
+      <div class="dialog-actions">
+        <button type="button" class="btn-secondary" id="person-cancel-edit" data-action="cancel-edit-person" data-i18n="cancel" hidden></button>
+        <button type="submit" class="btn-primary" id="person-submit"></button>
+      </div>
+    </form>
+
+    <p id="account-error" class="form-error" aria-live="polite"></p>
+    <div class="dialog-actions">
+      <button type="button" class="btn-secondary" data-action="close-account" data-i18n="close"></button>
+    </div>
+  </dialog>
+
   <div id="toast" class="toast" role="status" hidden></div>
 </body>
 </html>

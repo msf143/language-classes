@@ -35,9 +35,15 @@ func TestMyAccount(t *testing.T) {
 		return m.Learners
 	}
 
-	t.Run("my name", func(t *testing.T) {
+	t.Run("my name, and my own learner with it", func(t *testing.T) {
+		// newStudent's account and learner start with different names; give
+		// the learner the account's, as a first sign-in does.
+		pool.Exec(context.Background(), `UPDATE learner SET display_name = 'Test' WHERE account_id = $1`, s.accountID)
 		if rec := me(s, wrap(putMe(pool)), "PUT", `{"display_name": "  Mike  "}`, ""); rec.Code != 200 || !strings.Contains(rec.Body.String(), `"Mike"`) {
 			t.Errorf("%d %s", rec.Code, rec.Body)
+		}
+		if l := learners(); len(l) != 1 || l[0].DisplayName != "Mike" {
+			t.Errorf("my learner wasn't renamed with me: %+v", l)
 		}
 		for _, body := range []string{`{"display_name": " "}`, `{"display_name": "` + strings.Repeat("x", 61) + `"}`, `{"name": "Mike"}`} {
 			if rec := me(s, wrap(putMe(pool)), "PUT", body, ""); rec.Code != 400 {

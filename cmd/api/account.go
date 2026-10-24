@@ -29,6 +29,10 @@ func cleanName(name, field string) (string, string) {
 }
 
 // putMe handles PUT /me {"display_name": "Mike"} (wrapped in requireSignIn).
+// Your own learner (the one made at your first sign-in, with your name back
+// then) is renamed with you, in the same transaction: otherwise "Who's
+// attending?" would keep showing the old name. It's recognised by still
+// having the account's old name; one you renamed yourself is left alone.
 func putMe(pool *pgxpool.Pool) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		me, _ := accountFrom(r)
@@ -46,7 +50,16 @@ func putMe(pool *pgxpool.Pool) http.HandlerFunc {
 			writeErrorCode(w, r, http.StatusBadRequest, "invalid_name", msg)
 			return
 		}
-		if _, err := pool.Exec(r.Context(), `UPDATE account SET display_name = $2 WHERE id = $1`, me.ID, name); err != nil {
+		err := pgx.BeginFunc(r.Context(), pool, func(tx pgx.Tx) error {
+			if _, err := tx.Exec(r.Context(), `
+				UPDATE learner SET display_name = $3
+				WHERE account_id = $1 AND status = 'active' AND display_name = $2`, me.ID, me.DisplayName, name); err != nil {
+				return err
+			}
+			_, err := tx.Exec(r.Context(), `UPDATE account SET display_name = $2 WHERE id = $1`, me.ID, name)
+			return err
+		})
+		if err != nil {
 			logFrom(r).Error("put me failed", "err", err)
 			writeError(w, r, http.StatusInternalServerError, "could not save your name")
 			return
