@@ -601,8 +601,12 @@ For what's already built, read the code and `git log`. Next, in order:
    "Ana joined (Tomás)"; friend: "You're in", booked by …, nothing to pay; skipped if they've left again meanwhile),
    `seat_left` (payer: the seat is open again), `seats_changed` (payer: seats now + what it cost or gave back; a friend
    whose seat the payer removed: "… removed Tomás"); written in the same transaction as each change; names that
-   won't be in the database afterwards travel in the payload; [ ] 9e pages (Book dialog seats, My bookings
-   seat management, `join.html` with sign-in round trip).
+   won't be in the database afterwards travel in the payload; 9e pages: [x] 9e-1 the payer's: Book dialog "Seats (you + friends)" for private classes
+   (options built once; party = max(seats, people ticked); price and "N seats for friends" hint live; sends `seats`) +
+   My bookings seat list for a payer's private booking (name or "Open seat"; Copy invite link = a fresh link to the
+   clipboard, `prompt()` if refused; Remove while > 1 seat; + Add a seat up to 4; toasts say what was paid or given
+   back); checked in headless Chrome (3 seats $51 → add $9 → remove $9 back); [ ] 9e-2 `join.html` (preview, sign-in
+   round trip, pick a person, join).
 
 Deliberately **not** building yet: a roles/permissions system (admins are one flag, see step 7), teacher payouts/splits, topics or
 levels on sessions, reviews, a message broker (the outbox table is the queue).

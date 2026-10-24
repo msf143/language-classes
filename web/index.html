@@ -160,6 +160,10 @@
         <legend data-i18n="whoAttends"></legend>
         <div id="book-learners"></div>
         <p id="book-audience-note" class="muted small"></p>
+        <!-- Private classes: how many seats (you + friends); app.js fills the options. -->
+        <label class="field book-seats" id="book-seats-field" hidden><span data-i18n="seatsLabel"></span>
+          <select name="seats" id="book-seats"></select></label>
+        <p id="book-seats-hint" class="muted small"></p>
       </fieldset>
 
       <p id="book-price" class="book-price"></p>

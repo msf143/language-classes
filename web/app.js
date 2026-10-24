@@ -337,8 +337,71 @@ function renderMyBookings() {
             "data-seat-id": b.my_seats[0] }, t("leaveClass"))
         : h("button", { type: "button", class: "btn-secondary btn-small", "data-action": "cancel-booking" },
             t("cancelBooking")),
+      b.role === "payer" && b.session.kind === "private" ? seatList(b) : "",
     );
   }));
+}
+
+// A payer's private booking: each seat (a name, or open with Copy link), Remove
+// on any seat while there's more than one, and Add a seat up to 4.
+function seatList(b) {
+  const several = b.seats.length > 1;
+  return h("ul", { class: "seat-list" },
+    ...b.seats.map((seat) => h("li", { class: "seat", "data-seat-id": seat.id },
+      h("span", { class: seat.status === "invited" ? "seat-name muted" : "seat-name" },
+        seat.status === "invited" ? t("openSeat") : seat.display_name),
+      seat.status === "invited"
+        ? h("button", { type: "button", class: "btn-secondary btn-small", "data-action": "copy-seat-link" }, t("copyInviteLink"))
+        : "",
+      several ? h("button", { type: "button", class: "btn-secondary btn-small", "data-action": "remove-seat" }, t("removeSeat")) : "",
+    )),
+    b.party_size < 4
+      ? h("li", {}, h("button", { type: "button", class: "link-button", "data-action": "add-seat" }, t("addSeat")))
+      : "",
+  );
+}
+
+// Which message for an error code from the seat endpoints.
+const seatErrorKeys = {
+  seats_locked: "errSeatsLocked",
+  party_full: "errPartyFull",
+  insufficient_credit: "errInsufficientCredit",
+  last_seat: "errLastSeat",
+  seat_not_open: "errSeatGone",
+  seat_not_found: "errSeatGone",
+  class_started: "errTooLate",
+  not_changeable: "errNotCancellable",
+};
+
+function seatError(res) {
+  const key = seatErrorKeys[res.data.code];
+  showToast(key ? t(key) : `${t("somethingWrong")} ${t("reference")}: ${res.requestId}`);
+}
+
+// A fresh link for an open seat (the old one stops working), to the clipboard.
+async function copySeatLink(bookingId, seatId) {
+  const res = await api("POST", `/bookings/${bookingId}/seats/${seatId}/link`);
+  if (!res.ok) return seatError(res);
+  try {
+    await navigator.clipboard.writeText(res.data.link);
+    showToast(t("inviteLinkCopied"));
+  } catch {
+    prompt(t("inviteLinkCopyByHand"), res.data.link);   // the browser refused: show it to copy by hand
+  }
+}
+
+// Add or remove a seat; the server reprices (or, within 24 h, gives 50% of a
+// removed seat back) and says what it cost: delta_cents > 0 paid, < 0 back.
+async function changeSeat(bookingId, seatId) {
+  if (seatId && !confirm(t("confirmRemoveSeat"))) return;
+  if (!seatId && !confirm(t("confirmAddSeat"))) return;
+  const res = seatId
+    ? await api("POST", `/bookings/${bookingId}/seats/${seatId}/remove`)
+    : await api("POST", `/bookings/${bookingId}/seats`);
+  if (!res.ok) return seatError(res);
+  const d = res.data.delta_cents;
+  showToast(d > 0 ? t("seatPaid", money(d)) : d < 0 ? t("seatBack", money(-d)) : t("seatsSaved"));
+  loadMe();   // the new balance and the booking's seats
 }
 
 // The test-site strip: hidden on production; the buttons only when someone is
@@ -578,11 +641,25 @@ function openBook(target) {
     );
   }));
 
+  // Private classes: seats for friends too (1–4). The options are built once
+  // here, like the checkboxes; render() only disables and selects.
+  document.querySelector("#book-seats").replaceChildren(...[1, 2, 3, 4].map((n) =>
+    h("option", { value: n }, String(n))));
+
   state.book = {
     open: true, target, learnerIds: preselect ? [preselect] : [],
+    seats: 1,   // private only: seats booked (at least one per person ticked)
     key: crypto.randomUUID(), status: "idle", error: null,
   };
   render();
+}
+
+// How many places this booking is for: the people ticked, or (private) the
+// seats chosen if that's more. 0 while nobody is ticked.
+function partySize(b) {
+  const n = b.learnerIds.length;
+  if (n === 0) return 0;
+  return b.target?.kind === "private" ? Math.max(b.seats, n) : n;
 }
 
 // Which message to show for an error code from POST /bookings.
@@ -618,6 +695,7 @@ async function submitBooking() {
           duration_minutes: tg.duration_minutes, target_language: tg.target_language,
         },
         learner_ids: b.learnerIds,
+        seats: partySize(b),   // open seats for friends: the server sends no links, My bookings makes them
       };
   const res = await api("POST", "/bookings", body, { "Idempotency-Key": b.key });
   b.status = "idle";
@@ -681,7 +759,18 @@ function renderBook() {
   document.querySelector("#book-audience-note").textContent =
     !someoneExcluded ? "" : s.audience === "adults" ? t("adultsOnlyNote") : t("kidsOnlyNote");
 
-  const q = quote(s, b.learnerIds.length);
+  // Seats (private): never fewer than the people ticked.
+  const party = partySize(b);
+  const seatsField = document.querySelector("#book-seats-field");
+  seatsField.hidden = b.target.kind !== "private";
+  const seatsEl = document.querySelector("#book-seats");
+  for (const opt of seatsEl.options) opt.disabled = Number(opt.value) < b.learnerIds.length;
+  seatsEl.value = String(Math.max(party, 1));
+  const open = party - b.learnerIds.length;
+  document.querySelector("#book-seats-hint").textContent =
+    b.target.kind === "private" && open > 0 ? t("seatsHint", open) : "";
+
+  const q = quote(s, party);
   const priceEl = document.querySelector("#book-price");
   const balanceEl = document.querySelector("#book-balance");
   const submit = document.querySelector("#book-submit");
@@ -697,7 +786,7 @@ function renderBook() {
     return;
   }
   const short = q.total > balance;
-  priceEl.textContent = t("priceLine", b.learnerIds.length, money(q.each, q.currency), money(q.total, q.currency));
+  priceEl.textContent = t("priceLine", party, money(q.each, q.currency), money(q.total, q.currency));
   balanceEl.textContent = short
     ? t("balanceShort", money(balance))
     : t("balanceAfter", money(balance), money(balance - q.total));
@@ -1103,6 +1192,13 @@ document.addEventListener("click", (e) => {
     else if (state.me) openBookPrivate(chip.dataset.teacherId, chip.dataset.startsAt);
   }
   if (action === "leave-class") leaveClass(e.target.closest("[data-seat-id]").dataset.seatId);
+  if (action === "copy-seat-link") {
+    copySeatLink(e.target.closest("[data-booking-id]").dataset.bookingId, e.target.closest("[data-seat-id]").dataset.seatId);
+  }
+  if (action === "remove-seat") {
+    changeSeat(e.target.closest("[data-booking-id]").dataset.bookingId, e.target.closest("[data-seat-id]").dataset.seatId);
+  }
+  if (action === "add-seat") changeSeat(e.target.closest("[data-booking-id]").dataset.bookingId, null);
   if (action === "cancel-booking") {
     openCancel(e.target.closest("[data-booking-id]").dataset.bookingId);
   }
@@ -1182,6 +1278,7 @@ document.addEventListener("change", (e) => {
   }
   if (e.target.form !== bookFormEl) return;
   state.book.learnerIds = new FormData(bookFormEl).getAll("learner");
+  if (e.target.name === "seats") state.book.seats = Number(e.target.value);
   state.book.key = crypto.randomUUID();   // different people = a different booking attempt
   state.book.error = null;
   render();
