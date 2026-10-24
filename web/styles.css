@@ -51,7 +51,7 @@ body {
 
 /* ---------- header ---------- */
 .site-header { border-bottom: 1px solid var(--border); background: var(--surface); }
-.header-row { display: flex; align-items: center; justify-content: space-between; height: 60px; }
+.header-row { display: flex; align-items: center; justify-content: space-between; min-height: 60px; }
 .brand { font-weight: 700; font-size: 1.25rem; letter-spacing: -0.01em; color: var(--accent); }
 
 .lang-switch { display: flex; border: 1px solid var(--border); border-radius: 999px; overflow: hidden; }
@@ -62,6 +62,15 @@ body {
 .lang-switch button[aria-pressed="true"] { background: var(--accent); color: var(--accent-text); }
 
 .header-actions { display: flex; align-items: center; gap: 12px; }
+/* Phones: row 1 = Hablemos … EN/ES; row 2 = name, credit and buttons (wrapping).
+   display: contents lets .header-actions' children (the account area and the
+   language switch) join .header-row directly, so `order` can place them. */
+@media (max-width: 640px) {
+  .header-row { flex-wrap: wrap; row-gap: 8px; padding-block: 10px; }
+  .header-actions { display: contents; }
+  .lang-switch { order: 2; flex-shrink: 0; }
+  .account-area { order: 3; flex: 1 1 100%; }
+}
 .account-area { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; font-size: 0.9rem; }
 .account-credit { color: var(--muted); white-space: nowrap; }
 .account-name { font-weight: 600; max-width: 14em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
