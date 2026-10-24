@@ -229,6 +229,13 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .my-booking-title { font-weight: 600; flex: 1 1 100%; }
 .my-booking-detail { color: var(--muted); font-size: 0.9rem; }
 .tag-booked { background: var(--accent-soft); color: var(--accent); }
+/* Admin page: teacher status badges, and the activate/deactivate row. */
+.tag-status-pending { background: var(--es-soft); color: var(--es); }
+.tag-status-active { background: var(--en-soft); color: var(--en); }
+.tag-status-inactive { background: var(--danger-soft); color: var(--danger); }
+.admin { padding-block: 24px 48px; }
+.admin-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; margin: 8px 0 16px; }
+.link-button { background: none; border: 0; padding: 0; font: inherit; font-weight: 600; color: var(--accent); cursor: pointer; }
 .my-booking .btn-secondary { margin-left: auto; }
 
 /* ---------- teacher page ---------- */

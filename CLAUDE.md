@@ -81,7 +81,8 @@ scripts/seed.sql    dev seed data (idempotent; times relative to now()); never o
 scripts/prod-db.sh  migrate/psql against the prod database through the Cloud SQL Auth Proxy
 web/                index.html + app.js (catalog, booking/cancel dialogs, my bookings), signin.html + signin.js
                     (emailed link lands here), teacher.html + teacher.js (teacher dashboard), policies.html + policies.js
-                    (public rules, numbers from GET /policies), common.js (shared
+                    (public rules, numbers from GET /policies), admin.html + admin.js (teachers: list, profile,
+                    activate/deactivate), common.js (shared
                     t/h/api helpers), i18n.js (all UI strings), styles.css
 ```
 
@@ -523,7 +524,11 @@ For what's already built, read the code and `git log`. Next, in order:
    deactivate refused 409 `has_booked_classes` + the classes; idempotent; log line "admin: teacher status changed" with
    the admin). Both booking paths take the teacher row **`FOR SHARE`** (`teacherActiveShared`; lock order account →
    session → teacher), so a booking can't slip past a deactivation (gated race test: without it, $15 charged). The
-   catalog shows group classes of active teachers only (hidden, not cancelled; back on reactivation); [ ] 7f-3 `web/admin.html`;
+   catalog shows group classes of active teachers only (hidden, not cancelled; back on reactivation); [x] 7f-3
+   `web/admin.html` + `admin.js` (list: pending + active, inactive behind a toggle; one teacher: profile, prices, upcoming
+   classes, Activate / Deactivate; a refusal lists the booked classes in the way) + "Admin" link in the main page's
+   header for admins; checked in headless Chrome (refused on the seed teacher; activate → deactivate on a retired one).
+   Possible later: an `admin_action` table (permanent audit trail; logs keep 30 days);
    [ ] 7g invitations.
    After this, teachers/profiles/prices/classes/availability are data, managed in the app (no deploys); still no
    screens for credit packs, `credit_policy`, the payments switch.

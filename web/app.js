@@ -356,6 +356,7 @@ function renderAccount() {
     accountEl.append(h("button", { type: "button", class: "btn-secondary btn-small", "data-action": "open-buy" }, t("buyCredit")));
   }
   if (state.me.is_teacher) accountEl.append(h("a", { class: "link", href: "teacher.html" }, t("teacherLink")));
+  if (state.me.is_admin) accountEl.append(h("a", { class: "link", href: "admin.html" }, t("adminLink")));
   accountEl.append(h("button", { type: "button", class: "btn-secondary btn-small", "data-action": "logout" }, t("signOut")));
 }
 

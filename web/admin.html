@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Hablemos · Admin</title>
+  <link rel="stylesheet" href="styles.css">
+  <script src="i18n.js" defer></script>
+  <script src="common.js" defer></script>
+  <script src="admin.js" defer></script>
+</head>
+<body>
+  <header class="site-header">
+    <div class="wrap header-row">
+      <a class="brand" href="/">Hablemos</a>
+      <div class="header-actions">
+        <a class="link" href="/" data-i18n="backToClasses"></a>
+        <div class="lang-switch" role="group" aria-label="Interface language">
+          <button type="button" data-ui-lang="en">EN</button>
+          <button type="button" data-ui-lang="es">ES</button>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <main class="wrap admin">
+    <h1 data-i18n="adminTitle"></h1>
+    <!-- Loading / not signed in / not an admin / error -->
+    <div id="status" class="status" aria-live="polite" hidden></div>
+
+    <!-- The list of teachers, or one teacher in full (admin.js shows one or the other). -->
+    <section id="teacher-list-view" hidden>
+      <h2 data-i18n="teachersTitle"></h2>
+      <ul id="teacher-list" class="block-list"></ul>
+    </section>
+    <section id="teacher-view" hidden></section>
+  </main>
+
+  <div id="toast" class="toast" role="status" hidden></div>
+</body>
+</html>
