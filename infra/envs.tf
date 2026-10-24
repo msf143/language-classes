@@ -23,7 +23,7 @@ locals {
       worker_job_name     = "worker"                # Cloud Run job for `api worker` (worker.tf)
       stripe_key_secret   = "stripe-secret-key"     # Stripe secrets, this env's own (stripe.tf)
       stripe_hook_secret  = "stripe-webhook-secret"
-      payments            = false # true once both Stripe secrets have a value (docs/deploy.md)
+      payments            = true # live secrets added 2026-10-24; ON only for Mike's test purchase, then false until step 7
     }
 
     # https://dev.hablemos.live: a full copy for testing with fake money.
