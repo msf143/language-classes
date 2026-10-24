@@ -32,6 +32,18 @@
     <section id="teacher-list-view" hidden>
       <h2 data-i18n="teachersTitle"></h2>
       <ul id="teacher-list" class="block-list"></ul>
+
+      <!-- Invitations: the form owns its input; the result (with the link,
+           shown only this once) and the open invitations are built in admin.js. -->
+      <h2 data-i18n="invitationsTitle"></h2>
+      <form id="invite-form" class="add-block account-form" novalidate>
+        <label class="field"><span data-i18n="inviteEmailLabel"></span>
+          <input type="email" name="email" autocomplete="off" required></label>
+        <button type="submit" class="btn-primary" id="invite-submit"></button>
+      </form>
+      <p id="invite-error" class="form-error" aria-live="polite"></p>
+      <div id="invite-result" class="notice invite-result" role="status" hidden></div>
+      <ul id="invite-list" class="block-list"></ul>
     </section>
     <section id="teacher-view" hidden></section>
   </main>

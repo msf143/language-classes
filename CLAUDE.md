@@ -544,7 +544,10 @@ For what's already built, read the code and `git log`. Next, in order:
    teacher page (`requireTeacher` and `is_teacher` accept pending; students still see only active teachers);
    `GET /teacher/profile` has `status` → "waiting for activation" note. `web/invite.html` + `invite.js` (button, token
    cleared from the address bar, never in a server log) → teacher page; checked in headless Chrome incl. a reused link;
-   [ ] 7g-3 admin page: Invitations section, pending teachers.
+   [x] 7g-3 admin page: Invitations section (invite by email → "emailed" or "couldn't send" + the link shown once with
+   Copy; open invitations with who invited, expiry, an Expired tag, Cancel); pending teachers lead the teacher list as
+   "Waiting for approval". Checked in headless Chrome: invite → cancel → invite → the invitee joins → pending at the top.
+   Step 7 done except 7e (the rollout).
    **Order decided 2026-10-24: 8 (My account), then 7g, then 9.** (Found: no screen yet to add family members or friends;
    a new account's name is the part of the email before @, unchangeable.)
    After this, teachers/profiles/prices/classes/availability are data, managed in the app (no deploys); still no

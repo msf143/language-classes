@@ -12,6 +12,10 @@ const state = {
   busy: false,         // an activate/deactivate request is on its way
   refusal: null,       // { classes } when deactivating was refused (has_booked_classes)
   showInactive: false, // the list shows pending and active teachers; inactive ones on request
+  invites: [],         // GET /admin/invites (open ones)
+  inviting: false,     // a POST /admin/invites is on its way
+  inviteError: null,   // { key, requestId? }
+  inviteResult: null,  // { email, link, sent } right after inviting: the link is shown this once
 };
 
 // ---------- data ----------
@@ -25,11 +29,93 @@ async function load() {
 }
 
 async function loadTeachers() {
-  const res = await api("GET", "/admin/teachers");
-  if (!res.ok) { state.status = "error"; state.error = { requestId: res.requestId }; return render(); }
+  const [res, invites] = await Promise.all([api("GET", "/admin/teachers"), api("GET", "/admin/invites")]);
+  const failed = [res, invites].find((r) => !r.ok);
+  if (failed) { state.status = "error"; state.error = { requestId: failed.requestId }; return render(); }
   state.teachers = res.data;
+  state.invites = invites.data;
   state.status = "ready";
   render();
+}
+
+// ---------- invitations ----------
+
+const inviteFormEl = document.querySelector("#invite-form");
+
+async function invite() {
+  const email = String(new FormData(inviteFormEl).get("email")).trim();
+  if (!email) { state.inviteError = { key: "invalidEmail" }; return render(); }
+  state.inviting = true;
+  state.inviteError = null;
+  state.inviteResult = null;
+  render();
+  const res = await api("POST", "/admin/invites", { email });
+  state.inviting = false;
+  if (res.ok) {
+    state.inviteResult = { email: res.data.invite.email, link: res.data.link, sent: res.data.email_sent };
+    inviteFormEl.reset();
+    await loadTeachers();   // the new invitation in the list
+    return;
+  }
+  state.inviteError =
+    res.data.code === "already_teacher" ? { key: "errAlreadyTeacher" } :
+    res.data.code === "invalid_email" ? { key: "invalidEmail" } :
+    { key: "somethingWrong", requestId: res.requestId };
+  render();
+}
+
+async function cancelInvite(id) {
+  const res = await api("POST", `/admin/invites/${id}/cancel`);
+  if (!res.ok) { showToast(`${t("somethingWrong")} ${t("reference")}: ${res.requestId}`); return; }
+  showToast(t("invitationCancelled"));
+  await loadTeachers();
+}
+
+// Copy the link to the clipboard (works on https and localhost); if the
+// browser refuses, the link is selected so it can be copied by hand.
+async function copyLink() {
+  const input = document.querySelector("#invite-link");
+  try {
+    await navigator.clipboard.writeText(input.value);
+    showToast(t("linkCopied"));
+  } catch {
+    input.select();
+  }
+}
+
+function renderInvites() {
+  const submit = document.querySelector("#invite-submit");
+  submit.textContent = state.inviting ? t("sending") : t("inviteButton");
+  submit.disabled = state.inviting;
+  const err = state.inviteError;
+  document.querySelector("#invite-error").textContent =
+    err ? t(err.key) + (err.requestId ? ` ${t("reference")}: ${err.requestId}` : "") : "";
+
+  const r = state.inviteResult;
+  const resultEl = document.querySelector("#invite-result");
+  resultEl.hidden = !r;
+  if (r) {
+    resultEl.replaceChildren(
+      h("p", {}, r.sent ? t("inviteSent", r.email) : t("inviteNotSent", r.email)),
+      h("p", { class: "small" }, t("inviteLinkOnce")),
+      h("div", { class: "invite-link-row" },
+        h("input", { type: "text", id: "invite-link", readonly: "", value: r.link, "aria-label": t("inviteLinkOnce") }),
+        h("button", { type: "button", class: "btn-secondary btn-small", "data-action": "copy-link" }, t("copyLink"))),
+    );
+  }
+
+  const list = document.querySelector("#invite-list");
+  if (state.invites.length === 0) {
+    list.replaceChildren(h("li", { class: "muted" }, t("noInvites")));
+    return;
+  }
+  list.replaceChildren(...state.invites.map((i) =>
+    h("li", { class: "my-booking", "data-invite-id": i.id },
+      h("span", { class: "my-booking-title" }, i.email, " ",
+        i.expired ? h("span", { class: "tag tag-status-inactive" }, t("inviteExpiredTag")) : ""),
+      h("span", { class: "my-booking-detail" }, t("invitedBy", i.invited_by, fmt(i.expires_at, { month: "short", day: "numeric" }))),
+      h("button", { type: "button", class: "btn-secondary btn-small", "data-action": "cancel-invite" }, t("cancelInvite")),
+    )));
 }
 
 async function openTeacher(id) {
@@ -92,7 +178,7 @@ function render() {
   document.querySelector("#teacher-list-view").hidden = !ready || state.selected !== null;
   document.querySelector("#teacher-view").hidden = !ready || state.selected === null;
   if (!ready) return;
-  if (state.selected) renderTeacher(); else renderList();
+  if (state.selected) renderTeacher(); else { renderList(); renderInvites(); }
 }
 
 // One row per teacher: name, email, status, and what he has set up. Inactive
@@ -177,8 +263,16 @@ document.addEventListener("click", (e) => {
   if (action === "open-teacher") openTeacher(e.target.closest("[data-teacher-id]").dataset.teacherId);
   if (action === "back-to-list") { state.selected = null; state.refusal = null; render(); }
   if (action === "toggle-inactive") { state.showInactive = !state.showInactive; render(); }
+  if (action === "copy-link") copyLink();
+  if (action === "cancel-invite") cancelInvite(e.target.closest("[data-invite-id]").dataset.inviteId);
   if (action === "activate" && !state.busy) setStatus(true);
   if (action === "deactivate" && !state.busy) setStatus(false);
+});
+
+document.addEventListener("submit", (e) => {
+  if (e.target !== inviteFormEl) return;
+  e.preventDefault();
+  if (!state.inviting) invite();
 });
 
 render();
