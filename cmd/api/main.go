@@ -61,6 +61,17 @@ func main() {
 		return
 	}
 
+	// `api teacher -email ...`: make an account a teacher, then exit (setup.go).
+	// On production: a one-off execution of the migrate job with these arguments.
+	if len(os.Args) > 1 && os.Args[1] == "teacher" {
+		if err := runMakeTeacher(ctx, pool, os.Args[2:]); err != nil {
+			slog.Error("teacher command failed", "err", err)
+			pool.Close()
+			os.Exit(1)
+		}
+		return
+	}
+
 	// `api worker`: process due outbox events (emails), then exit. The Cloud Run
 	// worker job runs this every minute.
 	if len(os.Args) > 1 && os.Args[1] == "worker" {

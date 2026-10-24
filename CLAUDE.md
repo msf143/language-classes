@@ -69,6 +69,7 @@ cmd/api/            main.go    server wiring, middleware, shared helpers (writeJ
                     stripe.go  minimal Stripe REST client (Checkout sessions), net/http only
                     webhooks.go POST /webhooks/stripe: signature check, creditPayment, failPayment
                     checks.go  worker's clock-driven checks: group minimum, reminders, purge
+                    setup.go   `api teacher`: make an account a teacher (run as a one-off migrate-job execution)
                     expiry.go  credit expiry: reminder before, then the expiry entry (credit_policy)
                     one file per resource as the API grows (bookings.go, ...); *_test.go beside it
 migrations/         000NNN_description.up.sql / .down.sql  (numbered, append-only)
@@ -470,7 +471,15 @@ For what's already built, read the code and `git log`. Next, in order:
    credit expiry period, children) that reads its numbers from the same config the code uses.
 7. **← resume here: Setup path** (then turn prod `payments = true` for good). Before announcing the site: Stripe
    public details (support email hola@; consider a PO box instead of the home address), accountant/lawyer on credit
-   expiry and taxes. **Setup path:** first-run setup that creates the teacher account and profile (bio, buffer,
+   expiry and taxes. Design (agreed 2026-10-24): the **teacher manages his own profile, prices and classes on his
+   page**; he becomes a teacher only by a command (`api teacher -email … [-name …] [-timezone …]`, `cmd/api/setup.go`)
+   run on prod as a one-off execution of the `migrate` job with `--args` (no web path to becoming a teacher).
+   Steps: [x] 7a the command (one transaction: find/create account by lower(email), teacher row with lengths
+   30/45/60 or reactivate; idempotent; tests; procedure in `docs/deploy.md`); [ ] 7b profile on the teacher page
+   (bio EN/ES, break, lengths); [ ] 7c prices (versioned: close the old tier's `valid`, insert new; the EXCLUDE
+   constraint forbids overlaps); [ ] 7d create group classes + teacher cancels one (full refunds, reuse the
+   group-minimum code); [ ] 7e rollout: run 7a for the real teacher, he sets everything up, prod payments on.
+   **Setup path:** first-run setup that creates the teacher account and profile (bio, buffer,
    offered durations, price tiers). Until then, `scripts/seed.sql` creates the dev teacher.
 
 Deliberately **not** building yet: roles/permissions system, teacher payouts/splits, topics or

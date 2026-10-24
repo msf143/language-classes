@@ -561,6 +561,45 @@ same IDs. Pull requests and other branches can run tests but never get Google cr
 jobs (`roles/run.developer`), and act as `hablemos-api` (needed to deploy a revision that runs as
 it). It cannot touch IAM, the database instance, DNS, or Terraform state.
 
+## Making someone a teacher
+
+No web page can make anyone a teacher. Our binary has a command for it, `api teacher`, and on Cloud Run it
+runs as a **one-off execution of the migration job** with different arguments: the job already has the
+image, the database connection and the right service account, so nothing new is needed, and only people
+with Google Cloud permissions can run it.
+
+```mermaid
+flowchart LR
+    M["Mike: gcloud run jobs execute migrate --args=teacher,..."] --> J["Cloud Run job 'migrate'<br/>(this execution only: api teacher ...)"]
+    J -->|"one transaction"| DB[("account (found or created)<br/>teacher (created or reactivated)")]
+```
+
+What it does, in one transaction: finds the account by email (any capitals) or creates it; optionally sets
+the display name and time zone; creates the teacher row (private lengths 30/45/60) or makes an existing one
+active again. Running it twice changes nothing more.
+
+**Try it on staging first** (job `migrate-staging`), then production (job `migrate`). Replace the
+placeholders `TEACHER_EMAIL` and `TEACHER NAME` (no commas in the name: `--args` is comma-separated):
+
+```bash
+gcloud run jobs execute migrate --region=us-east1 --wait \
+  --args="teacher,-email,TEACHER_EMAIL,-name,TEACHER NAME,-timezone,America/Bogota"
+```
+
+`--args` replaces the job's usual arguments (`migrate`) for **this execution only**; the job itself is
+unchanged. `--wait` waits until it finishes. Expected: `Execution [migrate-xxxxx] has successfully
+completed.` Then the result line from the logs:
+
+```bash
+gcloud logging read 'resource.type="cloud_run_job" AND resource.labels.job_name="migrate" AND jsonPayload.msg=~"teacher"' \
+  --freshness=10m --limit=1 --format='value(jsonPayload.msg, jsonPayload.email, jsonPayload.new_account, jsonPayload.new_teacher)'
+```
+
+Expected: `teacher ready  <email>  True  True` the first time (`False False` if they already were one). The
+teacher then signs in with that email (a login link, like everyone) and sees the "Teacher page" link.
+
+Locally: `go run ./cmd/api teacher -email TEACHER_EMAIL -name "TEACHER NAME" -timezone America/Bogota`.
+
 ## Running migrations on prod
 
 Prod migrations run in the cloud as the Cloud Run **job** `migrate` (`infra/run.tf`): the app's own
