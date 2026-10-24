@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Hablemos · Policies</title>
+  <link rel="stylesheet" href="styles.css">
+  <script src="i18n.js" defer></script>
+  <script src="common.js" defer></script>
+  <script src="policies.js" defer></script>
+</head>
+<body>
+  <header class="site-header">
+    <div class="wrap header-row">
+      <a class="brand" href="/">Hablemos</a>
+      <div class="header-actions">
+        <a class="link" href="/" data-i18n="backToClasses"></a>
+        <div class="lang-switch" role="group" aria-label="Interface language">
+          <button type="button" data-ui-lang="en">EN</button>
+          <button type="button" data-ui-lang="es">ES</button>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <main class="wrap policies">
+    <h1 data-i18n="policiesTitle"></h1>
+    <p class="muted" data-i18n="policiesIntro"></p>
+    <!-- Loading / error -->
+    <div id="status" class="status" aria-live="polite"></div>
+    <!-- The sections, built by policies.js from GET /policies and GET /credit-packs -->
+    <div id="policies"></div>
+  </main>
+
+  <footer class="site-footer">
+    <div class="wrap footer-row">
+      <a class="link" href="mailto:hola@hablemos.live">hola@hablemos.live</a>
+    </div>
+  </footer>
+</body>
+</html>

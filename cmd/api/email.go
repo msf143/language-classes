@@ -15,6 +15,9 @@ const (
 	resendEndpoint   = "https://api.resend.com/emails"
 	loginEmailFrom   = "Hablemos <login@hablemos.live>"   // the domain verified in Resend
 	classesEmailFrom = "Hablemos <classes@hablemos.live>" // booking confirmations, cancellations, reminders
+	// Where replies go: the From addresses above only send. hola@ is forwarded
+	// to a person by Cloudflare Email Routing (infra/inbox.tf).
+	replyToAddress = "Hablemos <hola@hablemos.live>"
 )
 
 // email is one message to send. Plain text, both languages, everywhere: every
@@ -40,10 +43,11 @@ func resendMailer(apiKey, endpoint, subjectPrefix string) mailer {
 
 	return func(ctx context.Context, m email) (string, error) {
 		body, err := json.Marshal(map[string]any{
-			"from":    m.From,
-			"to":      []string{m.To},
-			"subject": subjectPrefix + m.Subject,
-			"text":    m.Text,
+			"from":     m.From,
+			"to":       []string{m.To},
+			"reply_to": replyToAddress, // every email: pressing Reply reaches a person
+			"subject":  subjectPrefix + m.Subject,
+			"text":     m.Text,
 		})
 		if err != nil {
 			return "", err

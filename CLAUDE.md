@@ -75,7 +75,8 @@ migrations/         000NNN_description.up.sql / .down.sql  (numbered, append-onl
 scripts/seed.sql    dev seed data (idempotent; times relative to now()); never on prod
 scripts/prod-db.sh  migrate/psql against the prod database through the Cloud SQL Auth Proxy
 web/                index.html + app.js (catalog, booking/cancel dialogs, my bookings), signin.html + signin.js
-                    (emailed link lands here), teacher.html + teacher.js (teacher dashboard), common.js (shared
+                    (emailed link lands here), teacher.html + teacher.js (teacher dashboard), policies.html + policies.js
+                    (public rules, numbers from GET /policies), common.js (shared
                     t/h/api helpers), i18n.js (all UI strings), styles.css
 ```
 
@@ -235,7 +236,7 @@ For what's already built, read the code and `git log`. Next, in order:
      alert, no organization.
    - Domain `hablemos.live`, registered at Cloudflare. Cloudflare zone ID
      `0a909059c691a0ff1b1f2f1eca481b2e` (DNS records managed by Terraform in `infra/domain.tf`).
-   - Cloudflare API token (DNS edit + zone read, this zone only) is the Codespaces secret
+   - Cloudflare API token "Edit zone DNS" (DNS edit, zone read, Email Routing, zone settings; this zone + account) is the Codespaces secret
      `CLOUDFLARE_API_TOKEN`, so it's an env var in the Codespace. Never print or commit it.
    - Terraform state bucket `gs://hablemos-live-tfstate` (us-east1, versioned).
    - **Resuming after a break or rebuild** (credentials expire or live in the home dir). Mike runs:
@@ -452,10 +453,12 @@ For what's already built, read the code and `git log`. Next, in order:
    accounts (`expiry-demo-1/2@example.com`); 6f-4 policies: [x] 6f-4a `GET /policies` (`cmd/api/policies.go`, public: refund 24 h / 50 %, group minimum 2 decided
    24 h ahead, private notice 60 min, party ≤ 4, break = longest active teacher's buffer, credit 24 months / 30 days;
    new constants `maxPartySize`, `groupMinStudents`; a test checks them against the schema's CHECKs);
-   [ ] 6f-4b the bilingual page `web/policies.html` (+ links from the site and the emails, contact hola@hablemos.live,
-   Reply-To: hola@ on our emails). Contact address (decided 2026-10-24): `hola@hablemos.live`, forwarded by Cloudflare
+   [x] 6f-4b `web/policies.html` + `policies.js` (bilingual; every number from `GET /policies` and `GET /credit-packs`;
+   footer on index with Policies + hola@; policies link in the expiry emails; `reply_to: hola@` on every email in
+   `resendMailer`). Deliberately not on the page until built: teacher no-show goodwill, party-size lock/repricing. Contact address (decided 2026-10-24): `hola@hablemos.live`, forwarded by Cloudflare
    Email Routing to Mike's inbox (`infra/inbox.tf`; destination = Codespaces secret `TF_VAR_HOLA_FORWARD_TO`; token
-   needs Email Routing permissions; procedure in `docs/deploy.md`): [ ] applied + destination verified.
+   needs Email Routing Addresses: Edit (account), Email Routing Rules: Edit + Zone Settings: Edit (zone); procedure in
+   `docs/deploy.md`): [x] applied + destination verified + test mail received (2026-10-24).
    Credit expiry (see Business rules) and a bilingual **policies page** (cancellation, refunds,
    credit expiry period, children) that reads its numbers from the same config the code uses.
 7. **Setup path:** first-run setup that creates the teacher account and profile (bio, buffer,

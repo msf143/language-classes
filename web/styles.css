@@ -179,6 +179,15 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .book-price { font-weight: 600; font-size: 1.05rem; margin-bottom: 4px !important; }
 .is-short { color: var(--danger) !important; }
 
+/* ---------- policies page + footer ---------- */
+.policies { padding-block: 32px 48px; max-width: 46rem; }
+.policies h1 { margin: 0 0 8px; }
+.policy { margin-top: 28px; }
+.policy h2 { font-size: 1.15rem; margin: 0 0 8px; }
+.policy ul { margin: 0; padding-left: 1.2em; display: flex; flex-direction: column; gap: 6px; }
+.site-footer { border-top: 1px solid var(--border); margin-top: 48px; padding-block: 20px; font-size: 0.9rem; }
+.footer-row { display: flex; flex-wrap: wrap; gap: 8px 24px; }
+
 /* ---------- buy credit dialog ---------- */
 /* The notice after coming back from Stripe. */
 .notice {

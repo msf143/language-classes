@@ -199,6 +199,7 @@ func notifyExpiryReminder(ctx context.Context, pool *pgxpool.Pool, send mailer, 
   used on %[4]s, so it expires on %[5]s.
 
 To keep it, book any class or buy credit before then: %[6]s
+Our policies: %[6]s/policies.html
 
 —
 
@@ -209,6 +210,7 @@ Hola, %[1]s:
   última vez el %[8]s, así que vence el %[9]s.
 
 Para conservarlo, reserva cualquier clase o compra crédito antes de esa fecha: %[6]s
+Nuestras políticas: %[6]s/policies.html
 `, name, moneyEN(s.balanceCents, s.currency), months, dateEN(s.lastActivity, loc), dateEN(s.expiresAt, loc), siteURL,
 			moneyES(s.balanceCents, s.currency), dateES(s.lastActivity, loc), dateES(s.expiresAt, loc)),
 	})
@@ -247,6 +249,7 @@ func notifyCreditExpired(ctx context.Context, pool *pgxpool.Pool, send mailer, s
   (last activity on %[4]s).
 
 You're welcome back any time: %[5]s
+Our policies: %[5]s/policies.html
 
 —
 
@@ -256,6 +259,7 @@ Hola, %[1]s:
   (última actividad el %[7]s).
 
 Te esperamos cuando quieras: %[5]s
+Nuestras políticas: %[5]s/policies.html
 `, name, moneyEN(p.ExpiredCents, p.Currency), months, dateEN(p.LastActivity, loc), siteURL,
 			moneyES(p.ExpiredCents, p.Currency), dateES(p.LastActivity, loc)),
 	})

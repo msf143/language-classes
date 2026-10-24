@@ -65,6 +65,9 @@ func TestResendSender(t *testing.T) {
 			if got.body["from"] != loginEmailFrom {
 				t.Errorf("from = %v", got.body["from"])
 			}
+			if got.body["reply_to"] != "Hablemos <hola@hablemos.live>" {
+				t.Errorf("reply_to = %v, want hola@ (replies must reach a person)", got.body["reply_to"])
+			}
 			text, _ := got.body["text"].(string)
 			for _, want := range []string{link, "15 minutes", "15 minutos"} {
 				if !strings.Contains(text, want) {
