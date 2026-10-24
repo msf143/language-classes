@@ -414,7 +414,7 @@ For what's already built, read the code and `git log`. Next, in order:
    (args `worker`, Resend key, `APP_BASE_URL`), SA `scheduler-invoker` with `run.invoker` on those jobs only,
    Cloud Scheduler `* * * * *` → Run Admin API `jobs:run`. Pipeline updates both worker images after the
    service. Each email logs `email sent` with event, role and provider ID. Step 5 done.
-6. **← resume here: Payments:** buy credit packs; processor webhooks (Stripe Checkout; no payouts needed, see Business rules).
+6. **Payments** (done 2026-10-24): buy credit packs; processor webhooks (Stripe Checkout; no payouts needed, see Business rules).
    Steps: [x] 6a migration 000006 (`credit_pack` with the three packs, in the migration so prod gets them;
    `payment.credit_pack_id` + `payment.bonus_cents` snapshot) + `GET /credit-packs` (`cmd/api/payments.go`);
    [x] 6b `POST /payments/checkout` (`cmd/api/payments.go` + `cmd/api/stripe.go`: pending
@@ -442,7 +442,9 @@ For what's already built, read the code and `git log`. Next, in order:
    email next worker run). Also fixed: `[hidden] { display: none !important; }` (a `display` rule had kept the
    empty paid notice visible). Possible follow-up: `Cache-Control: no-cache` on web files (browsers keep old CSS/JS
    after a deploy);
-   [ ] 6e-4 production with live keys. Decided 2026-10-24: **test, then off**: prod has no teacher/classes until
+   [x] 6e-4 production with live keys (done 2026-10-24: Stripe live account active, payments + payouts; restricted live key
+   `hablemos-prod-checkout` + event destination `hablemos-prod`; Mike's real $25 purchase went through; prod `payments` back
+   to false until step 7). Decided: **test, then off**: prod has no teacher/classes until
    step 7, so payments go on only for one real $25 purchase by Mike, then `payments = false` again until step 7.
    Order: deploy the latest release to prod (Stripe's review may look at the site and the policies page) → Mike
    finishes Stripe verification (live mode) → live key `hablemos-prod-checkout` + event destination `hablemos-prod`
@@ -466,7 +468,9 @@ For what's already built, read the code and `git log`. Next, in order:
    `docs/deploy.md`): [x] applied + destination verified + test mail received (2026-10-24).
    Credit expiry (see Business rules) and a bilingual **policies page** (cancellation, refunds,
    credit expiry period, children) that reads its numbers from the same config the code uses.
-7. **Setup path:** first-run setup that creates the teacher account and profile (bio, buffer,
+7. **← resume here: Setup path** (then turn prod `payments = true` for good). Before announcing the site: Stripe
+   public details (support email hola@; consider a PO box instead of the home address), accountant/lawyer on credit
+   expiry and taxes. **Setup path:** first-run setup that creates the teacher account and profile (bio, buffer,
    offered durations, price tiers). Until then, `scripts/seed.sql` creates the dev teacher.
 
 Deliberately **not** building yet: roles/permissions system, teacher payouts/splits, topics or
