@@ -290,5 +290,5 @@ a.link { color: var(--accent); font-weight: 600; text-decoration: none; }
   border: 1px solid var(--border); background: var(--surface); color: var(--text);
 }
 .slot-chip:hover { border-color: var(--accent); color: var(--accent); }
-.teacher-name { color: var(--muted); font-size: 0.85rem; }
+.teacher-name { color: var(--accent); font-weight: 600; } /* as big as the price line, in the accent orange */
 .private-teacher { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 16px; padding-top: 8px; }

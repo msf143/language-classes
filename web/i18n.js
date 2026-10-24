@@ -2,9 +2,9 @@
 // Values can be plain strings or functions (for text that includes numbers).
 const STRINGS = {
   en: {
-    heroTitle: "Live language classes from Bogotá",
+    heroTitle: "Live Language Classes",
     heroSubtitle: "Friendly, affordable classes in Spanish and English, taught live over video.",
-    upcoming: "Upcoming group classes",
+    upcoming: "Upcoming Group Classes",
     timesShown: (tz) => `Times are shown in your time zone (${tz}).`,
     filterLanguage: "Language",
     filterAudience: "For",
@@ -68,15 +68,15 @@ const STRINGS = {
     errNotCancellable: "This booking can no longer be cancelled.",
 
     // Private classes (browsing free times)
-    privateTitle: "Private classes",
+    privateTitle: "Private Classes",
     privateIntro: "Just you, or you and up to 3 friends or family. Pick a time that suits you.",
     lengthLabel: "Length",
-    pricePerPerson: (amounts) => `Per person: ${amounts}`,
+    pricePerPerson: (amounts) => `Per Person: ${amounts}`,
     pricePeople: (n, amount) => (n === 1 ? `1 person ${amount}` : `${n} people ${amount} each`),
     breakNote: (min) => `Classes may end up to ${min} minutes early, so the teacher can take a short break between classes. It keeps every class fresh.`,
     loadingTimes: "Loading available times…",
     noTimes: "No times available for this length in the next two weeks.",
-    withTeacher: (name) => `with ${name}`,
+    withTeacher: (name) => `With ${name}`,
 
     // Teacher page (teacher.html) and the way there
     teacherLink: "Teacher page",
@@ -265,7 +265,7 @@ const STRINGS = {
     requestNewLink: "Request a new link",
   },
   es: {
-    heroTitle: "Clases de idiomas en vivo desde Bogotá",
+    heroTitle: "Clases de idiomas en vivo",
     heroSubtitle: "Clases amenas y económicas de español e inglés, en vivo por video.",
     upcoming: "Próximas clases grupales",
     timesShown: (tz) => `Los horarios se muestran en tu zona horaria (${tz}).`,
@@ -336,7 +336,7 @@ const STRINGS = {
     breakNote: (min) => `Las clases pueden terminar hasta ${min} minutos antes, para que el profesor tome un breve descanso entre clases. Así cada clase empieza con energía.`,
     loadingTimes: "Cargando horarios disponibles…",
     noTimes: "No hay horarios disponibles para esta duración en las próximas dos semanas.",
-    withTeacher: (name) => `con ${name}`,
+    withTeacher: (name) => `Con ${name}`,
 
     teacherLink: "Página del profesor",
     becomeTestTeacher: "Ser el profesor de prueba",
