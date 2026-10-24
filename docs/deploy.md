@@ -439,14 +439,22 @@ DNS. Cloudflare dashboard → **My Profile → API Tokens** → the token → **
 | Scope | Permission | Why |
 |---|---|---|
 | Account | **Email Routing Addresses: Edit** | the destination address (kept per account) |
-| Zone | **Email Routing Rules: Edit** | the `hola@` rule, and turning routing on |
+| Zone | **Email Routing Rules: Edit** | the `hola@` rule |
+| Zone | **Zone Settings: Edit** | turning Email Routing on (`POST /zones/…/email/routing/dns` accepts only "Zone Settings Write") |
 
 For the Account permission, also set **Account Resources** to include your account. Keep the zone limited to
-`hablemos.live`. Save; the token's value doesn't change, so the Codespaces secret stays as it is. If `apply`
-still answers `403`/`Authentication error` for one resource, the error names the API call; add the matching
-Email Routing permission.
+`hablemos.live`. Save; the token's value doesn't change, so the Codespaces secret stays as it is. (The token is
+the one named "Edit zone DNS", after the template it was made from.) If `apply` answers `403`/`Authentication
+error`, the error names the refused API call; Cloudflare's API docs for that call list the permission it accepts.
 
-**3. Apply.**
+"Zone Settings: Edit" is broad (it could also change SSL or caching on this zone). Turning routing on is a
+one-time action, so after it's applied the row can be lowered to **Read**, which `plan` needs; raise it again
+only to turn routing off or on.
+
+**3. Apply.** If a lock error appears (`Error acquiring the state lock`, `Error 412`), another run holds
+the state, or a cancelled one left its lock behind. Check the lock's **Who** and **Created**, make sure no
+`terraform` process is still running (`ps -eo pid,args | grep [t]erraform`; `terraform-ls` is only the editor's
+language server), then `terraform force-unlock <ID from the message>`.
 
 ```bash
 cd /workspaces/language-classes/infra && terraform apply
