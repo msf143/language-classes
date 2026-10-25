@@ -387,7 +387,7 @@ function fmt(iso, options) {
 }
 const dayText = (iso) => fmt(iso, { weekday: "long", month: "long", day: "numeric" })
   .replace(/^./, (c) => c.toUpperCase());
-const timeText = (iso) => fmt(iso, { hour: "numeric", minute: "2-digit" });
+const timeText = (iso) => fmt(iso, { hour: "numeric", minute: "2-digit", hour12: true });
 
 // "2026-10-27" for a moment, in the teacher's zone (the en-CA format happens to be year-month-day).
 function dayKey(iso) {

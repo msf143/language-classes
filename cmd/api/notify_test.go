@@ -18,8 +18,11 @@ func TestWhenAndMoney(t *testing.T) {
 	end := start.Add(time.Hour)
 	tests := []struct{ got, want string }{
 		{whenEN(start, end, ny), "Tuesday, October 27, 8:00 PM – 9:00 PM (America/New_York)"},
-		{whenES(start, end, ny), "martes 27 de octubre, 20:00 – 21:00 (America/New_York)"},
-		{shortWhen(start, ny), "Tue Oct 27 20:00"},
+		{whenES(start, end, ny), "martes 27 de octubre, 8:00 p. m. – 9:00 p. m. (America/New_York)"},
+		{shortWhen(start, ny), "Tue Oct 27 8:00 PM"},
+		{clockES(time.Date(2026, 10, 27, 9, 30, 0, 0, time.UTC)), "9:30 a. m."},
+		{clockES(time.Date(2026, 10, 27, 12, 0, 0, 0, time.UTC)), "12:00 p. m."}, // noon
+		{clockES(time.Date(2026, 10, 27, 0, 15, 0, 0, time.UTC)), "12:15 a. m."}, // just after midnight
 		{moneyEN(2400, "USD"), "$24.00"},
 		{moneyES(2400, "USD"), "24,00 US$"},
 		{moneyEN(5, "USD"), "$0.05"},

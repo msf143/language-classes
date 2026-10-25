@@ -429,6 +429,23 @@ function renderBanner() {
   teacherBtn.textContent = t("becomeTestTeacher");
 }
 
+// A small person icon, drawn (SVG), so it looks the same on every device
+// (an emoji depends on each device's fonts). SVG elements need
+// createElementNS, the DOM's way to make elements in the SVG namespace.
+function personIcon() {
+  const ns = "http://www.w3.org/2000/svg";
+  const svg = document.createElementNS(ns, "svg");
+  svg.setAttribute("viewBox", "0 0 16 16");
+  svg.setAttribute("class", "person-icon");
+  svg.setAttribute("aria-hidden", "true");
+  const head = document.createElementNS(ns, "circle");
+  head.setAttribute("cx", "8"); head.setAttribute("cy", "5"); head.setAttribute("r", "3");
+  const body = document.createElementNS(ns, "path");
+  body.setAttribute("d", "M2 15c0-3.3 2.7-5.5 6-5.5s6 2.2 6 5.5z");
+  svg.append(head, body);
+  return svg;
+}
+
 // Header: nothing until we know, then "Sign in", or name, credit, "Buy credit"
 // and "Sign out".
 function renderAccount() {
@@ -438,9 +455,11 @@ function renderAccount() {
     accountEl.append(h("button", { type: "button", class: "btn-primary btn-small", "data-action": "open-signin" }, t("signIn")));
     return;
   }
-  // Your name opens My Account (a button: clickable and reachable by keyboard).
-  accountEl.append(h("button", { type: "button", class: "account-name link-button", title: state.me.email,
-    "data-action": "open-account" }, state.me.display_name));
+  // Your name opens My Account: an outlined button with a person icon, so it
+  // looks clickable (it's where you set your name and add family members).
+  accountEl.append(h("button", { type: "button", class: "btn-secondary btn-small account-button",
+    title: t("myAccountTooltip"), "data-action": "open-account" },
+    personIcon(), state.me.display_name));
   accountEl.append(h("span", { class: "account-credit" }, t("yourCredit", money(state.me.balanceCents))));
   if (state.payments) {
     accountEl.append(h("button", { type: "button", class: "btn-secondary btn-small", "data-action": "open-buy" }, t("buyCredit")));
@@ -562,7 +581,7 @@ function formatWhen(s) {
     weekday: "long", month: "long", day: "numeric",
   }).format(start).replace(/^./, (c) => c.toUpperCase());   // "sábado…" → "Sábado…"
   const timeText = new Intl.DateTimeFormat(state.uiLang, {
-    hour: "numeric", minute: "2-digit",
+    hour: "numeric", minute: "2-digit", hour12: true,   // "7:15 PM" / "7:15 p. m.", as said in Colombia too
   }).format(start);
   return { dateText, timeText };
 }
@@ -921,6 +940,7 @@ const accountErrorKeys = {
   invalid_learner: "errNameInvalid",
   too_many_learners: "errTooManyPeople",
   learner_booked: "errPersonBooked",
+  learner_is_you: "errPersonIsYou",
   learner_not_found: "errPersonGone",
 };
 
@@ -981,10 +1001,14 @@ function renderAccountDialog() {
   if (!a.open || !state.me) return;
   document.querySelector("#people-list").replaceChildren(...state.me.learners.map((l) =>
     h("li", { class: "person", "data-person-id": l.id },
-      h("span", { class: "person-name" }, l.is_minor ? `${l.display_name} (${t("child")})` : l.display_name),
+      // You're on the list too (you can book for yourself), marked by the
+      // server (is_account_holder), and you stay: no Remove on your own row.
+      h("span", { class: "person-name" }, l.is_minor ? `${l.display_name} (${t("child")})`
+        : l.is_account_holder ? `${l.display_name} (${t("you")})` : l.display_name),
       h("span", { class: "muted small" }, l.native_language === "es" ? t("speaksSpanish") : t("speaksEnglish")),
       h("button", { type: "button", class: "btn-secondary btn-small", "data-action": "edit-person" }, t("edit")),
-      h("button", { type: "button", class: "btn-secondary btn-small", "data-action": "remove-person" }, t("remove")),
+      l.is_account_holder ? h("span", {})   // keeps the columns lined up
+        : h("button", { type: "button", class: "btn-secondary btn-small", "data-action": "remove-person" }, t("remove")),
     )));
   const editing = a.editingId !== null;
   document.querySelector("#person-form-title").textContent = editing ? t("editPerson") : t("addPerson");

@@ -225,8 +225,8 @@ func verifyLoginToken(pool *pgxpool.Pool) http.HandlerFunc {
 		// transaction, so there's never an account without one.
 		if newAccountID != "" {
 			_, err = tx.Exec(ctx, `
-				INSERT INTO learner (id, account_id, display_name, native_language)
-				SELECT $1, a.id, a.display_name, a.preferred_language FROM account a WHERE a.id = $2`,
+				INSERT INTO learner (id, account_id, display_name, native_language, is_account_holder)
+				SELECT $1, a.id, a.display_name, a.preferred_language, true FROM account a WHERE a.id = $2`,
 				newUUIDv7(), newAccountID)
 			if err != nil {
 				logFrom(r).Error("verify: create learner failed", "err", err)
@@ -364,10 +364,11 @@ func accountFrom(r *http.Request) (*account, bool) {
 
 // learnerDTO is one of an account's learner profiles (who can attend a class).
 type learnerDTO struct {
-	ID             string `json:"id"`
-	DisplayName    string `json:"display_name"`
-	IsMinor        bool   `json:"is_minor"`
-	NativeLanguage string `json:"native_language"` // "en" or "es"
+	ID              string `json:"id"`
+	DisplayName     string `json:"display_name"`
+	IsMinor         bool   `json:"is_minor"`
+	NativeLanguage  string `json:"native_language"`   // "en" or "es"
+	IsAccountHolder bool   `json:"is_account_holder"` // the account holder themselves ("you"); can't be removed
 }
 
 // getMe handles GET /me (wrapped in requireSignIn): the signed-in account,
@@ -389,7 +390,7 @@ func getMe(pool *pgxpool.Pool) http.HandlerFunc {
 		}
 
 		rows, err := pool.Query(ctx, `
-			SELECT id::text, display_name, is_minor, native_language FROM learner
+			SELECT id::text, display_name, is_minor, native_language, is_account_holder FROM learner
 			WHERE account_id = $1 AND status = 'active'
 			ORDER BY created_at`, a.ID)
 		if err != nil {
@@ -401,7 +402,7 @@ func getMe(pool *pgxpool.Pool) http.HandlerFunc {
 		learners := []learnerDTO{} // [] rather than null in the JSON when there are none
 		for rows.Next() {
 			var l learnerDTO
-			if err := rows.Scan(&l.ID, &l.DisplayName, &l.IsMinor, &l.NativeLanguage); err != nil {
+			if err := rows.Scan(&l.ID, &l.DisplayName, &l.IsMinor, &l.NativeLanguage, &l.IsAccountHolder); err != nil {
 				logFrom(r).Error("me: learners scan failed", "err", err)
 				writeError(w, r, http.StatusInternalServerError, "could not load your account")
 				return

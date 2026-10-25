@@ -119,11 +119,13 @@ func newStudent(t *testing.T, pool *pgxpool.Pool, creditCents int, minors ...boo
 	ctx := context.Background()
 	id, email := newAccount(t, pool)
 	s := student{accountID: id, cookie: signIn(t, pool, email)}
+	holder := true // the first adult is the account holder, as at a real first sign-in
 	for _, minor := range minors {
 		lid := newUUIDv7()
 		_, err := pool.Exec(ctx, `
-			INSERT INTO learner (id, account_id, display_name, native_language, is_minor)
-			VALUES ($1, $2, 'Learner', 'en', $3)`, lid, id, minor)
+			INSERT INTO learner (id, account_id, display_name, native_language, is_minor, is_account_holder)
+			VALUES ($1, $2, 'Learner', 'en', $3, $4)`, lid, id, minor, holder && !minor)
+		holder = holder && minor
 		if err != nil {
 			t.Fatal(err)
 		}

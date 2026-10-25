@@ -17,9 +17,10 @@ INSERT INTO teacher (id, account_id, bio_en, bio_es) VALUES
    'Native Spanish speaker from Bogotá.', 'Hablante nativo de español de Bogotá.')
 ON CONFLICT (id) DO NOTHING;
 
-INSERT INTO learner (id, account_id, display_name, native_language) VALUES
-  ('01900000-0000-7000-8000-0000000000c1', '01900000-0000-7000-8000-000000000002', 'Ana',  'en'),
-  ('01900000-0000-7000-8000-0000000000c2', '01900000-0000-7000-8000-000000000003', 'Luis', 'es')
+-- Ana and Luis themselves: each the account holder of their own account.
+INSERT INTO learner (id, account_id, display_name, native_language, is_account_holder) VALUES
+  ('01900000-0000-7000-8000-0000000000c1', '01900000-0000-7000-8000-000000000002', 'Ana',  'en', true),
+  ('01900000-0000-7000-8000-0000000000c2', '01900000-0000-7000-8000-000000000003', 'Luis', 'es', true)
 ON CONFLICT (id) DO NOTHING;
 
 -- Ana's daughter: a child learner, so audience rules (adults / kids / all) show up in dev.
@@ -51,6 +52,16 @@ FROM (VALUES
 CROSS JOIN LATERAL (
   SELECT date_trunc('day', now()) + v.day * interval '1 day' + v.hr * interval '1 hour' AS starts
 ) AS t
+-- Real bookings win over demo data: if someone booked the seed teacher (on staging,
+-- say a private class) at a time this seed class would move to, leave the seed
+-- class where it is this run. Otherwise the no-double-booking constraint would fail
+-- the whole seed, and with it staging's deploy (migrate --seed runs on every deploy).
+WHERE NOT EXISTS (
+  SELECT 1 FROM session o
+  WHERE o.teacher_id = '01900000-0000-7000-8000-0000000000a1' AND o.id <> v.id::uuid
+    AND o.status <> 'cancelled'
+    AND o.occupied && tstzrange(t.starts, t.starts + v.mins * interval '1 minute')
+)
 ON CONFLICT (id) DO UPDATE SET   -- EXCLUDED = the row this INSERT tried to add
   starts_at     = EXCLUDED.starts_at,
   ends_at       = EXCLUDED.ends_at,

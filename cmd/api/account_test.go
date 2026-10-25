@@ -36,13 +36,10 @@ func TestMyAccount(t *testing.T) {
 	}
 
 	t.Run("my name, and my own learner with it", func(t *testing.T) {
-		// newStudent's account and learner start with different names; give
-		// the learner the account's, as a first sign-in does.
-		pool.Exec(context.Background(), `UPDATE learner SET display_name = 'Test' WHERE account_id = $1`, s.accountID)
 		if rec := me(s, wrap(putMe(pool)), "PUT", `{"display_name": "  Mike  "}`, ""); rec.Code != 200 || !strings.Contains(rec.Body.String(), `"Mike"`) {
 			t.Errorf("%d %s", rec.Code, rec.Body)
 		}
-		if l := learners(); len(l) != 1 || l[0].DisplayName != "Mike" {
+		if l := learners(); len(l) != 1 || l[0].DisplayName != "Mike" || !l[0].IsAccountHolder {
 			t.Errorf("my learner wasn't renamed with me: %+v", l)
 		}
 		for _, body := range []string{`{"display_name": " "}`, `{"display_name": "` + strings.Repeat("x", 61) + `"}`, `{"name": "Mike"}`} {
@@ -100,6 +97,15 @@ func TestMyAccount(t *testing.T) {
 		}
 		if rec := book(pool, s.cookie, newUUIDv7(), class, sofia.ID); errorCode(t, rec) != "unknown_learner" {
 			t.Errorf("booking an archived learner: %d %s", rec.Code, rec.Body)
+		}
+	})
+
+	t.Run("you can't remove yourself", func(t *testing.T) {
+		if rec := me(s, wrap(archiveLearner(pool)), "POST", "", s.learners[0]); rec.Code != 409 || errorCode(t, rec) != "learner_is_you" {
+			t.Errorf("%d %s", rec.Code, rec.Body)
+		}
+		if l := learners(); len(l) == 0 || !l[0].IsAccountHolder {
+			t.Errorf("you're gone from your own account: %+v", l)
 		}
 	})
 

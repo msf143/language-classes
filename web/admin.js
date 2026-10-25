@@ -153,7 +153,7 @@ async function setStatus(active) {
 
 const fmt = (iso, options) => new Intl.DateTimeFormat(state.uiLang, options).format(new Date(iso));
 const whenText = (c) =>
-  `${fmt(c.starts_at, { weekday: "short", month: "short", day: "numeric" })} · ${fmt(c.starts_at, { hour: "numeric", minute: "2-digit" })}`;
+  `${fmt(c.starts_at, { weekday: "short", month: "short", day: "numeric" })} · ${fmt(c.starts_at, { hour: "numeric", minute: "2-digit", hour12: true })}`;
 const money = (cents) => new Intl.NumberFormat(state.uiLang, { style: "currency", currency: "USD" }).format(cents / 100);
 const statusTag = (status) => h("span", { class: `tag tag-status-${status}` }, t(`status_${status}`));
 const classTitle = (c) => (c.kind === "private" ? t("privateClass") : c.title ?? t("groupClass"));

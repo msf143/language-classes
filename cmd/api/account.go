@@ -29,10 +29,9 @@ func cleanName(name, field string) (string, string) {
 }
 
 // putMe handles PUT /me {"display_name": "Mike"} (wrapped in requireSignIn).
-// Your own learner (the one made at your first sign-in, with your name back
-// then) is renamed with you, in the same transaction: otherwise "Who's
-// attending?" would keep showing the old name. It's recognised by still
-// having the account's old name; one you renamed yourself is left alone.
+// Your own learner (is_account_holder, made at your first sign-in) is renamed
+// with you, in the same transaction: otherwise "Who's attending?" would keep
+// showing the old name.
 func putMe(pool *pgxpool.Pool) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		me, _ := accountFrom(r)
@@ -52,8 +51,8 @@ func putMe(pool *pgxpool.Pool) http.HandlerFunc {
 		}
 		err := pgx.BeginFunc(r.Context(), pool, func(tx pgx.Tx) error {
 			if _, err := tx.Exec(r.Context(), `
-				UPDATE learner SET display_name = $3
-				WHERE account_id = $1 AND status = 'active' AND display_name = $2`, me.ID, me.DisplayName, name); err != nil {
+				UPDATE learner SET display_name = $2
+				WHERE account_id = $1 AND is_account_holder`, me.ID, name); err != nil {
 				return err
 			}
 			_, err := tx.Exec(r.Context(), `UPDATE account SET display_name = $2 WHERE id = $1`, me.ID, name)
@@ -164,8 +163,10 @@ func updateLearner(pool *pgxpool.Pool) http.HandlerFunc {
 }
 
 // archiveLearner handles POST /me/learners/{id}/archive (wrapped in
-// requireSignIn): the person no longer appears for booking. Refused while
-// they're booked into a class that hasn't ended (cancel that first). The
+// requireSignIn): the person no longer appears for booking. Refused for the
+// account holder themselves (409 learner_is_you: you stay on your own
+// account; untick yourself when booking only for others), and while they're
+// booked into a class that hasn't ended (cancel that first). The
 // account row is locked first, as booking does: a booking for this person
 // can't commit between the "booked?" check and the archive.
 func archiveLearner(pool *pgxpool.Pool) http.HandlerFunc {
@@ -181,20 +182,22 @@ func archiveLearner(pool *pgxpool.Pool) http.HandlerFunc {
 				return err
 			}
 			var status string
-			var booked bool
+			var booked, holder bool
 			err := tx.QueryRow(r.Context(), `
-				SELECT l.status, EXISTS (
+				SELECT l.status, l.is_account_holder, EXISTS (
 				         SELECT 1 FROM booking_attendee a
 				         JOIN booking b ON b.id = a.booking_id
 				         JOIN session s ON s.id = b.session_id
 				         WHERE a.learner_id = l.id AND a.status = 'joined'
 				           AND b.status = 'confirmed' AND s.ends_at > now())
-				FROM learner l WHERE l.id = $1 AND l.account_id = $2`, id, me.ID).Scan(&status, &booked)
+				FROM learner l WHERE l.id = $1 AND l.account_id = $2`, id, me.ID).Scan(&status, &holder, &booked)
 			switch {
 			case errors.Is(err, pgx.ErrNoRows):
 				return &bookingError{http.StatusNotFound, "learner_not_found", "no such person on your account"}
 			case err != nil:
 				return err
+			case holder:
+				return notBookable("learner_is_you", "you stay on your own account; just don't tick yourself when booking for others")
 			case status == "archived":
 				return nil // already removed: nothing to do
 			case booked:

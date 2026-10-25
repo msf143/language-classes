@@ -74,9 +74,9 @@ body {
 .account-area { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; font-size: 0.9rem; }
 .account-credit { color: var(--muted); white-space: nowrap; }
 .account-name { font-weight: 600; max-width: 14em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-/* Your name in the header opens My Account: a button that looks like the name. */
-.account-name.link-button { color: var(--text); }
-.account-name.link-button:hover { text-decoration: underline; }
+/* Your name in the header opens My Account: an outlined button, long names cut with "…". */
+.account-button { max-width: 14em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.person-icon { width: 1em; height: 1em; vertical-align: -0.12em; margin-right: 0.35em; fill: currentColor; }
 /* A payer's seats in a private booking (My bookings). */
 .seat-list { list-style: none; margin: 6px 0 0; padding: 0; flex: 1 1 100%; display: flex; flex-direction: column; gap: 4px; }
 .seat { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; }
@@ -88,9 +88,10 @@ body {
 .person-form { flex-direction: column; align-items: stretch; border-top: 1px solid var(--border); padding-top: 12px; }
 .person-form h3, .dialog h3 { margin: 12px 0 6px; font-size: 1rem; }
 .people-list { list-style: none; margin: 0 0 12px; padding: 0; display: flex; flex-direction: column; gap: 6px; }
-/* One row per person: name (takes the room left) | language | Edit | Remove. */
-.person { display: grid; grid-template-columns: 1fr auto auto auto; align-items: center; gap: 6px 8px; }
-.person-name { font-weight: 600; min-width: 0; overflow-wrap: anywhere; }
+/* Each person: the name on its own line (long names don't squeeze into a
+   sliver on a phone), then language | Edit | Remove. */
+.person { display: grid; grid-template-columns: 1fr auto auto; align-items: center; gap: 4px 8px; padding-block: 4px; }
+.person-name { grid-column: 1 / -1; font-weight: 600; overflow-wrap: anywhere; }
 .person .muted { white-space: nowrap; }
 /* Stacked fields don't grow: in a column, "grow" would mean taller, not wider. */
 .person-form .field { flex: none; }

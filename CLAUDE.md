@@ -217,6 +217,9 @@ then find the link in the log.
   Shown to students wherever they book (and on the policies page): "Classes may end up to 5 minutes
   early, so the teacher can take a short break between classes."
 - **Pricing** varies by kind × duration × party size only (`price_tier`, versioned by validity window).
+- **The account holder is always on their own account (decided 2026-10-25):** their own learner
+  (`learner.is_account_holder`, migration 000010, one per account) can be renamed but not removed; to book only
+  for others, they just don't tick themselves. "(you)" and "renamed with you" use the marker, never name matching.
 - **Children:** a parent's account holds learner profiles; kids never log in. Kids' group
   sessions use `audience = 'kids'`. Policy: a parent nearby for minors on video.
 - **Audience values:** `adults` (adults only), `kids` (minors only), and `all` ("All ages" in
@@ -566,6 +569,11 @@ For what's already built, read the code and `git log`. Next, in order:
    learner (the one still carrying the account's old name), same transaction; [x] 8b "My Account" dialog (header name is
    a button; name form; people list with Edit / Remove (browser `confirm()`); one add/edit form; every change reloads
    `/me`; checked in headless Chrome: rename, add a child, edit, "Who's attending?", remove). Step 8 done.
+   Touch-ups 2026-10-25: "(you)" on your own row, no Remove there (server: 409 `learner_is_you`), names on their own line;
+   migration 000010 `learner.is_account_holder` (backfill: the adult with the account's name, else the earliest adult;
+   archived holders brought back; unique per account); 12-hour times in both languages (pages + emails, `clockES`);
+   the header name is an outlined button with an SVG person icon; the seed skips moving a demo class onto a time a
+   real booking holds. Next: a one-time welcome message after the first sign-in (remembered on the server).
 9. **Friends in private classes** (done 2026-10-24; design agreed the same day). A private booking holds **seats** (1–4,
    `booking.party_size`), all **paid by the payer when added**, at the per-person price for that party size. A seat
    is filled by one of the payer's own learners or **open with an invite link**; a friend opens it, signs in (free

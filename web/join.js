@@ -87,7 +87,7 @@ function render() {
   if (p) {
     const start = new Date(p.starts_at);
     const date = new Intl.DateTimeFormat(state.uiLang, { weekday: "long", month: "long", day: "numeric" }).format(start);
-    const time = new Intl.DateTimeFormat(state.uiLang, { hour: "numeric", minute: "2-digit" }).format(start);
+    const time = new Intl.DateTimeFormat(state.uiLang, { hour: "numeric", minute: "2-digit", hour12: true }).format(start);
     body.append(
       h("p", {}, t("joinInvitedBy", p.invited_by)),
       h("p", { class: "book-price" },

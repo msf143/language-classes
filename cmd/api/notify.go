@@ -465,11 +465,21 @@ func whenEN(start, end time.Time, loc *time.Location) string {
 	return fmt.Sprintf("%s, %s – %s (%s)", s.Format("Monday, January 2"), s.Format("3:04 PM"), e.Format("3:04 PM"), loc)
 }
 
-// whenES: "martes 27 de octubre, 19:00 – 20:00 (America/New_York)".
+// whenES: "martes 27 de octubre, 8:00 p. m. – 9:00 p. m. (America/New_York)".
+// 12-hour times, as people say them in Colombia (and as the web page shows them).
 func whenES(start, end time.Time, loc *time.Location) string {
 	s, e := start.In(loc), end.In(loc)
 	return fmt.Sprintf("%s %d de %s, %s – %s (%s)", weekdaysES[s.Weekday()], s.Day(), monthsES[s.Month()-1],
-		s.Format("15:04"), e.Format("15:04"), loc)
+		clockES(s), clockES(e), loc)
+}
+
+// clockES: "8:00 p. m.", "9:30 a. m.", "12:00 p. m." (noon). Go's "3" gives 12
+// for noon and midnight, and Spanish writes the suffix "a. m." / "p. m.".
+func clockES(t time.Time) string {
+	if t.Hour() < 12 {
+		return t.Format("3:04") + " a. m."
+	}
+	return t.Format("3:04") + " p. m."
 }
 
 // dateEN: "March 3, 2028"; dateES: "3 de marzo de 2028" (in the reader's zone).
@@ -482,9 +492,9 @@ func dateES(t time.Time, loc *time.Location) string {
 	return fmt.Sprintf("%d de %s de %d", d.Day(), monthsES[d.Month()-1], d.Year())
 }
 
-// shortWhen for subjects: "Tue Oct 27 19:00".
+// shortWhen for subjects: "Tue Oct 27 7:00 PM".
 func shortWhen(t time.Time, loc *time.Location) string {
-	return t.In(loc).Format("Mon Jan 2 15:04")
+	return t.In(loc).Format("Mon Jan 2 3:04 PM")
 }
 
 // moneyEN: "$24.00"; moneyES: "24,00 US$" (like the web page shows them).
