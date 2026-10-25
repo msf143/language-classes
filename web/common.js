@@ -76,3 +76,34 @@ function h(tag, attrs, ...children) {
   el.append(...children);
   return el;
 }
+
+// ---------- passkeys (WebAuthn) ----------
+// The browser's passkey functions speak raw bytes (ArrayBuffer); our server
+// speaks base64url text (base64 with - and _ instead of + and /, no padding).
+// These two convert between them.
+function toB64(buffer) {
+  const text = String.fromCharCode(...new Uint8Array(buffer));
+  return btoa(text).replaceAll("+", "-").replaceAll("/", "_").replace(/=+$/, "");
+}
+function fromB64(text) {
+  const b64 = text.replaceAll("-", "+").replaceAll("_", "/");
+  return Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
+}
+
+// Can this browser make passkeys the way our server reads them? getPublicKey()
+// hands over the public key ready to use (Safari 16+, Chrome 85+, Firefox 119+).
+const passkeysSupported = typeof window.PublicKeyCredential === "function" &&
+  typeof AuthenticatorAttestationResponse === "function" &&
+  "getPublicKey" in AuthenticatorAttestationResponse.prototype;
+
+// A name for a new passkey, so the list in My Account can tell them apart:
+// "iPhone · Safari", "Windows · Edge". Only a label; nothing depends on it.
+function deviceName() {
+  const ua = navigator.userAgent;
+  const device = /iPhone/.test(ua) ? "iPhone" : /iPad/.test(ua) ? "iPad" : /Android/.test(ua) ? "Android" :
+    /Macintosh/.test(ua) ? "Mac" : /Windows/.test(ua) ? "Windows" : /CrOS/.test(ua) ? "Chromebook" :
+    /Linux/.test(ua) ? "Linux" : "";
+  const browser = /Edg\//.test(ua) ? "Edge" : /Firefox\/|FxiOS/.test(ua) ? "Firefox" :
+    /Chrome\/|CriOS/.test(ua) ? "Chrome" : /Safari\//.test(ua) ? "Safari" : "";
+  return [device, browser].filter(Boolean).join(" · ") || "Passkey";
+}

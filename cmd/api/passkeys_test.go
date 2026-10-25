@@ -244,3 +244,39 @@ func TestPasskeyRegisterChallengeAndLimits(t *testing.T) {
 		}
 	})
 }
+
+// GET /me/passkeys lists mine (newest first, not removed ones); removing is
+// mine only, and a removed passkey can't be removed again.
+func TestListAndRemovePasskeys(t *testing.T) {
+	pool := testPool(t)
+	s := newStudent(t, pool, 0, false)
+	other := newStudent(t, pool, 0, false)
+	for range 2 {
+		c, _ := startRegistration(t, pool, s)
+		finishRegistration(t, s, newFakeAuthenticator(t).registration(c))
+	}
+	list := func() []passkeyDTO {
+		var l []passkeyDTO
+		json.Unmarshal(me(s, requireSignIn(pool, listPasskeys(pool)), "GET", "", "").Body.Bytes(), &l)
+		return l
+	}
+	l := list()
+	if len(l) != 2 || !l[0].CreatedAt.After(l[1].CreatedAt) || l[0].Name != "iPhone · Safari" || l[0].LastUsedAt != nil {
+		t.Fatalf("list %+v", l)
+	}
+	remove := func(who student, id string) int {
+		return me(who, requireSignIn(pool, removePasskey(pool)), "POST", "", id).Code
+	}
+	if got := remove(other, l[0].ID); got != 404 {
+		t.Errorf("someone else removing it: %d", got)
+	}
+	if got := remove(s, l[0].ID); got != 200 {
+		t.Errorf("remove: %d", got)
+	}
+	if got := remove(s, l[0].ID); got != 404 {
+		t.Errorf("again: %d", got)
+	}
+	if after := list(); len(after) != 1 || after[0].ID != l[1].ID {
+		t.Errorf("after removing %s: %+v, want only %s", l[0].ID, after, l[1].ID)
+	}
+}

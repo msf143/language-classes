@@ -263,6 +263,15 @@
       </div>
     </form>
 
+    <!-- Passkeys: app.js fills the list (GET /me/passkeys) when the dialog opens. -->
+    <h3 data-i18n="passkeysTitle"></h3>
+    <p class="muted small" data-i18n="passkeysHint"></p>
+    <ul id="passkey-list" class="people-list"></ul>
+    <p>
+      <button type="button" class="btn-secondary btn-small" id="add-passkey" data-action="add-passkey"></button>
+      <span id="passkeys-unsupported" class="muted small" data-i18n="passkeysUnsupported" hidden></span>
+    </p>
+
     <p id="account-error" class="form-error" aria-live="polite"></p>
     <div class="dialog-actions">
       <button type="button" class="btn-secondary" data-action="close-account" data-i18n="close"></button>

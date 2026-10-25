@@ -199,6 +199,8 @@ func main() {
 	mux.HandleFunc("POST /auth/passkey", passkeySignin(pool, rp))
 	mux.HandleFunc("POST /me/passkeys/start", requireSignIn(pool, passkeyRegisterStart(pool, rp)))
 	mux.HandleFunc("POST /me/passkeys", requireSignIn(pool, passkeyRegisterFinish(pool, rp)))
+	mux.HandleFunc("GET /me/passkeys", requireSignIn(pool, listPasskeys(pool)))
+	mux.HandleFunc("POST /me/passkeys/{id}/remove", requireSignIn(pool, removePasskey(pool)))
 	mux.HandleFunc("POST /me/learners", requireSignIn(pool, addLearner(pool)))
 	mux.HandleFunc("PUT /me/learners/{id}", requireSignIn(pool, updateLearner(pool)))
 	mux.HandleFunc("POST /me/learners/{id}/archive", requireSignIn(pool, archiveLearner(pool)))

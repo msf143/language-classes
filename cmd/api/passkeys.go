@@ -362,3 +362,48 @@ func passkeyRegisterFinish(pool *pgxpool.Pool, rp relyingParty) http.HandlerFunc
 		}
 	}
 }
+
+// listPasskeys handles GET /me/passkeys (wrapped in requireSignIn): my active
+// passkeys, newest first, for the list in My Account.
+func listPasskeys(pool *pgxpool.Pool) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		me, _ := accountFrom(r)
+		rows, _ := pool.Query(r.Context(), `
+			SELECT id::text, name, created_at, last_used_at FROM passkey
+			WHERE account_id = $1 AND status = 'active' ORDER BY created_at DESC`, me.ID)
+		list, err := pgx.CollectRows(rows, pgx.RowToStructByPos[passkeyDTO])
+		if err != nil {
+			logFrom(r).Error("list passkeys failed", "err", err)
+			writeError(w, r, http.StatusInternalServerError, "could not load your passkeys")
+			return
+		}
+		writeJSON(w, http.StatusOK, list)
+	}
+}
+
+// removePasskey handles POST /me/passkeys/{id}/remove (wrapped in
+// requireSignIn): status 'removed' (never deleted); it can't sign in any more.
+// The phone still holds its half; the person can delete it there too. Mine
+// only, else 404.
+func removePasskey(pool *pgxpool.Pool) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		me, _ := accountFrom(r)
+		id := r.PathValue("id")
+		if !isUUID(id) {
+			writeError(w, r, http.StatusBadRequest, "the passkey ID in the path is not valid")
+			return
+		}
+		tag, err := pool.Exec(r.Context(), `
+			UPDATE passkey SET status = 'removed' WHERE id = $1 AND account_id = $2 AND status = 'active'`, id, me.ID)
+		switch {
+		case err != nil:
+			logFrom(r).Error("remove passkey failed", "err", err)
+			writeError(w, r, http.StatusInternalServerError, "could not remove the passkey")
+		case tag.RowsAffected() == 0:
+			writeErrorCode(w, r, http.StatusNotFound, "passkey_not_found", "no such passkey on your account")
+		default:
+			logFrom(r).Info("passkey removed", "account_id", me.ID, "passkey_id", id)
+			writeJSON(w, http.StatusOK, map[string]string{"id": id, "status": "removed"})
+		}
+	}
+}

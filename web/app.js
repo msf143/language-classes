@@ -44,6 +44,11 @@ const state = {
     open: false,                   // is the one-time welcome showing? (opened by loadMe)
     done: false,                   // seen in this page already: never reopen it, even before /me catches up
   },
+  passkeys: {                      // the Passkeys list in My Account (GET /me/passkeys)
+    status: "idle",                // "idle" | "loading" | "ready" | "error"
+    list: [],                      // [{ id, name, created_at, last_used_at }]
+    adding: false,                 // waiting for the device (Face ID) or the server
+  },
   account: {
     open: false,                   // is the My Account dialog showing?
     editingId: null,               // the person being edited, or null (the form adds a new one)
@@ -964,6 +969,99 @@ function openAccount() {
   nameFormEl.elements.display_name.value = state.me.display_name;
   fillPersonForm(null);
   render();
+  loadPasskeys();
+}
+
+// ---------- passkeys (in My Account) ----------
+
+async function loadPasskeys() {
+  state.passkeys.status = "loading";
+  const res = await api("GET", "/me/passkeys");
+  state.passkeys.status = res.ok ? "ready" : "error";
+  state.passkeys.list = res.ok ? res.data : [];
+  if (!res.ok) console.error("load passkeys failed", res);
+  render();
+}
+
+// Add a passkey: ask the server for options, hand them to the device (Face ID
+// etc.), send back what it made. The options' byte fields arrive as base64url
+// text and must become bytes for navigator.credentials.create(); the answer's
+// bytes become text again for the server.
+async function addPasskey() {
+  const p = state.passkeys;
+  const fail = (key, requestId) => {
+    p.adding = false;
+    state.account.error = { key, requestId };
+    render();
+  };
+  p.adding = true;
+  state.account.error = null;
+  render();
+  const start = await api("POST", "/me/passkeys/start");
+  if (!start.ok) return fail("errPasskeyFailed", start.requestId);
+  const o = start.data;
+  const publicKey = {
+    ...o,
+    challenge: fromB64(o.challenge),
+    user: { ...o.user, id: fromB64(o.user.id) },
+    excludeCredentials: o.excludeCredentials.map((c) => ({ ...c, id: fromB64(c.id) })),
+  };
+  let cred;
+  try {
+    cred = await navigator.credentials.create({ publicKey });
+  } catch (err) {
+    // NotAllowedError: they cancelled, or let it time out. Nothing to say.
+    // InvalidStateError: this device already holds one of theirs (excludeCredentials).
+    if (err.name === "NotAllowedError") { p.adding = false; return render(); }
+    console.error("credentials.create failed", err);
+    return fail(err.name === "InvalidStateError" ? "errPasskeyExists" : "errPasskeyFailed");
+  }
+  const r = cred.response;
+  const res = await api("POST", "/me/passkeys", {
+    id: toB64(cred.rawId),
+    client_data_json: toB64(r.clientDataJSON),
+    authenticator_data: toB64(r.getAuthenticatorData()),
+    public_key: toB64(r.getPublicKey()),
+    public_key_algorithm: r.getPublicKeyAlgorithm(),
+    name: deviceName(),
+  });
+  if (!res.ok) {
+    return fail(res.data.code === "passkey_exists" ? "errPasskeyExists" :
+      res.data.code === "too_many_passkeys" ? "errTooManyPasskeys" : "errPasskeyFailed", res.requestId);
+  }
+  p.adding = false;
+  showToast(t("passkeyAdded"));
+  await loadPasskeys();
+}
+
+async function removePasskeyById(id) {
+  const k = state.passkeys.list.find((x) => x.id === id);
+  if (!k || !confirm(t("confirmRemovePasskey", k.name))) return;
+  const res = await api("POST", `/me/passkeys/${id}/remove`);
+  if (!res.ok && res.status !== 404) {   // 404: already gone (another tab)
+    state.account.error = { key: "somethingWrong", requestId: res.requestId };
+    return render();
+  }
+  showToast(t("passkeyRemoved"));
+  await loadPasskeys();
+}
+
+function renderPasskeys() {
+  const p = state.passkeys;
+  const day = (iso) => new Intl.DateTimeFormat(state.uiLang, { dateStyle: "medium" }).format(new Date(iso));
+  const items = p.list.map((k) =>
+    h("li", { class: "person", "data-passkey-id": k.id },
+      h("span", { class: "person-name" }, k.name),
+      h("span", { class: "muted small" }, t("passkeyInfo", day(k.created_at), k.last_used_at ? day(k.last_used_at) : null)),
+      h("span", {}),   // keeps the columns lined up with the people list
+      h("button", { type: "button", class: "btn-secondary btn-small", "data-action": "remove-passkey" }, t("remove"))));
+  if (p.status === "ready" && items.length === 0) items.push(h("li", { class: "muted small" }, t("noPasskeys")));
+  document.querySelector("#passkey-list").replaceChildren(...items);
+  const add = document.querySelector("#add-passkey");
+  add.hidden = !passkeysSupported;
+  add.disabled = p.adding;
+  add.textContent = p.adding ? t("addingPasskey") : t("addPasskey");
+  document.querySelector("#passkeys-unsupported").hidden = passkeysSupported;
 }
 
 // The person form adds (l = null) or edits l: fill it accordingly. Called on
@@ -1077,6 +1175,7 @@ function renderAccountDialog() {
   submit.disabled = a.sending;
   document.querySelector("#account-error").textContent =
     a.error ? t(a.error.key) + (a.error.requestId ? ` ${t("reference")}: ${a.error.requestId}` : "") : "";
+  renderPasskeys();
 }
 
 // ---------- buy credit dialog ----------
@@ -1318,6 +1417,8 @@ document.addEventListener("click", (e) => {
     if (l) { fillPersonForm(l); state.account.error = null; render(); }
   }
   if (action === "cancel-edit-person") { fillPersonForm(null); render(); }
+  if (action === "add-passkey" && !state.passkeys.adding) addPasskey();
+  if (action === "remove-passkey") removePasskeyById(e.target.closest("[data-passkey-id]").dataset.passkeyId);
   if (action === "remove-person" && !state.account.sending) removePerson(e.target.closest("[data-person-id]").dataset.personId);
   if (action === "dismiss-paid") { state.paid = null; render(); }
   if (action === "logout") logout();

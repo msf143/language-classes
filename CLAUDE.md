@@ -608,8 +608,11 @@ For what's already built, read the code and `git log`. Next, in order:
    account → signature over authData ‖ SHA-256(clientData) (`ecdsa.VerifyASN1` / `rsa.VerifyPKCS1v15`) → counter must
    go up when the device keeps one (else refused + Warn log) → `signInEmail`; mutation-checked (no signature check: a
    wrong key signs in; no lock: both of two same-counter sign-ins pass); worker `purgePasskeyChallenges` (a day past
-   expiry)); [ ] page (offer after an email sign-in,
-   "Sign in with a passkey", My Account list). Relying party ID = the site's own host (hablemos.live, dev.hablemos.live,
+   expiry)); page: [x] 4a My Account "Passkeys" (`GET /me/passkeys`,
+   `POST /me/passkeys/{id}/remove` → status removed, mine only; list with added / last used, Add a passkey (hidden where
+   `getPublicKey` is missing), Remove with `confirm()`; `toB64` / `fromB64` / `passkeysSupported` / `deviceName` in
+   `common.js`; checked in headless Chrome with a virtual authenticator: add, same device again → "already", remove);
+   [ ] 4b "Sign in with a passkey" in the sign-in dialog + the one-time offer after an email sign-in. Relying party ID = the site's own host (hablemos.live, dev.hablemos.live,
    localhost), so each environment's passkeys are its own. Then: the wife's oddities.
 9. **Friends in private classes** (done 2026-10-24; design agreed the same day). A private booking holds **seats** (1–4,
    `booking.party_size`), all **paid by the payer when added**, at the per-person price for that party size. A seat
