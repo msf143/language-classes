@@ -69,6 +69,7 @@ cmd/api/            main.go    server wiring, middleware, shared helpers (writeJ
                     teacher_prices.go GET/PUT /teacher/prices (versioned price_tier rows)
                     teacher_classes.go POST /teacher/sessions (new group class), POST /teacher/sessions/{id}/cancel
                     account.go PUT /me (name), /me/learners (add, edit, archive family members)
+                    passkeys.go WebAuthn: add a passkey (start + finish; checks without CBOR or a library)
                     admin.go   requireAdmin; admin routes (teachers: list, profile, activate/deactivate)
                     invites.go teacher invitations: create (email sent at once), list, cancel; accept (7g-2)
                     slots.go   bookableStarts: blocks minus busy sessions → slot start times (pure)
@@ -592,7 +593,14 @@ For what's already built, read the code and `git log`. Next, in order:
    (a waiting friend's invitation still wins); checked in headless Chrome, phone + Spanish: wrong code, then right); passkeys (WebAuthn, standard library only; checked
    with Chrome's virtual authenticator): [x] migration 000013 (`passkey`: credential_id, SPKI public key, COSE alg -7/-257,
    sign_count, name, status active/removed; `passkey_challenge`: 32 random bytes, single-use, purpose register (with the
-   account) / signin (none)); [ ] register (server); [ ] sign in (server); [ ] page (offer after an email sign-in,
+   account) / signin (none)); [x] register (server, `cmd/api/passkeys.go`:
+   `POST /me/passkeys/start` → creation options (challenge, rp, user.id = account ID, ES256/RS256, resident key +
+   user verification required, attestation none, excludeCredentials); `POST /me/passkeys` {id, client_data_json,
+   authenticator_data, public_key (DER from getPublicKey()), public_key_algorithm, name}: client data type + origin →
+   challenge claimed (conditional UPDATE, own statement) → authenticator data (rpID hash, UP + UV flags, credential ID)
+   → key (P-256 / RSA ≥ 2048) → insert under the account lock (≤ 10); codes `challenge_invalid`, `passkey_invalid`
+   (reason logged), `passkey_exists`, `too_many_passkeys`; tests use a Go `fakeAuthenticator`, checked to fail with the
+   UV or origin check off); [ ] sign in (server); [ ] page (offer after an email sign-in,
    "Sign in with a passkey", My Account list). Relying party ID = the site's own host (hablemos.live, dev.hablemos.live,
    localhost), so each environment's passkeys are its own. Then: the wife's oddities.
 9. **Friends in private classes** (done 2026-10-24; design agreed the same day). A private booking holds **seats** (1–4,

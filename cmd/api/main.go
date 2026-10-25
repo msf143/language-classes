@@ -194,6 +194,9 @@ func main() {
 	mux.HandleFunc("GET /me", requireSignIn(pool, getMe(pool)))
 	mux.HandleFunc("PUT /me", requireSignIn(pool, putMe(pool)))
 	mux.HandleFunc("POST /me/welcomed", requireSignIn(pool, markWelcomed(pool)))
+	rp := relyingPartyFor(baseURL()) // passkeys belong to this site's host name
+	mux.HandleFunc("POST /me/passkeys/start", requireSignIn(pool, passkeyRegisterStart(pool, rp)))
+	mux.HandleFunc("POST /me/passkeys", requireSignIn(pool, passkeyRegisterFinish(pool, rp)))
 	mux.HandleFunc("POST /me/learners", requireSignIn(pool, addLearner(pool)))
 	mux.HandleFunc("PUT /me/learners/{id}", requireSignIn(pool, updateLearner(pool)))
 	mux.HandleFunc("POST /me/learners/{id}/archive", requireSignIn(pool, archiveLearner(pool)))
