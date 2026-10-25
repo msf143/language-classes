@@ -91,4 +91,16 @@ document.addEventListener("click", (e) => {
   if (e.target.closest("[data-action]")?.dataset.action === "verify") verify();
 });
 
+// A newer link opened in this same tab (mail apps on phones often reuse an
+// open tab): only the part after "#" differs, so the browser doesn't reload
+// the page, it just fires "hashchange". Pick up the new token and start over.
+window.addEventListener("hashchange", () => {
+  const token = tokenFromLink();
+  if (!token) return;
+  state.token = token;
+  state.status = "ready";
+  state.error = null;
+  render();
+});
+
 render();

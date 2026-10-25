@@ -146,5 +146,16 @@ document.addEventListener("change", (e) => {
   if (e.target.name === "learner") { state.learnerId = e.target.value; render(); }
 });
 
+// A newer link opened in this same tab (mail apps on phones often reuse an
+// open tab): only the part after "#" differs, so the browser doesn't reload
+// the page, it just fires "hashchange". Pick up the new token and start over.
+window.addEventListener("hashchange", () => {
+  if (!new URLSearchParams(location.hash.slice(1)).get("token")) return;
+  state.token = takeToken();
+  Object.assign(state, { status: "loading", preview: null, learnerId: null, error: null });
+  render();
+  load();
+});
+
 render();
 load();
