@@ -106,47 +106,14 @@ func requestLoginLink(pool *pgxpool.Pool, send loginSender, baseURL string) http
 			writeError(w, r, http.StatusBadRequest, "please enter a valid email address")
 			return
 		}
-		ctx := r.Context()
-
-		var recent int
-		err := pool.QueryRow(ctx, `
-			SELECT count(*) FROM login_token
-			WHERE lower(email) = $1 AND created_at > now() - $2::int * interval '1 second'`,
-			email, int(loginTokenTTL.Seconds())).Scan(&recent)
-		if err != nil {
-			logFrom(r).Error("login: rate-limit query failed", "err", err)
-			writeError(w, r, http.StatusInternalServerError, "could not send a login link")
-			return
-		}
-		if recent >= loginLinksPerTTL {
+		switch err := issueLoginLink(r, pool, send, baseURL, email); {
+		case errors.Is(err, errTooManyLinks):
 			writeError(w, r, http.StatusTooManyRequests, "too many login links requested; try again in a few minutes")
 			return
-		}
-
-		// A disabled account gets the same answer, but no link.
-		var status string
-		err = pool.QueryRow(ctx, `SELECT status FROM account WHERE lower(email) = $1`, email).Scan(&status)
-		if err != nil && !errors.Is(err, pgx.ErrNoRows) {
-			logFrom(r).Error("login: account lookup failed", "err", err)
+		case err != nil:
+			logFrom(r).Error("login: issuing a link failed", "err", err)
 			writeError(w, r, http.StatusInternalServerError, "could not send a login link")
 			return
-		}
-		if status != "disabled" {
-			secret := newSecret()
-			_, err = pool.Exec(ctx, `
-				INSERT INTO login_token (id, email, token_hash, expires_at)
-				VALUES ($1, $2, $3, now() + $4::int * interval '1 second')`,
-				newUUIDv7(), email, hashSecret(secret), int(loginTokenTTL.Seconds()))
-			if err != nil {
-				logFrom(r).Error("login: insert token failed", "err", err)
-				writeError(w, r, http.StatusInternalServerError, "could not send a login link")
-				return
-			}
-			if err := send(r, email, baseURL+"/signin.html#token="+secret); err != nil {
-				logFrom(r).Error("login: sending link failed", "err", err)
-				writeError(w, r, http.StatusInternalServerError, "could not send a login link")
-				return
-			}
 		}
 
 		writeJSON(w, http.StatusOK, map[string]any{
@@ -154,6 +121,94 @@ func requestLoginLink(pool *pgxpool.Pool, send loginSender, baseURL string) http
 			"expires_in_minutes": int(loginTokenTTL.Minutes()), // so the UI doesn't hard-code it
 		})
 	}
+}
+
+var errTooManyLinks = errors.New("too many login links requested")
+
+// issueLoginLink sends email a fresh sign-in link: at most loginLinksPerTTL
+// per address per loginTokenTTL (else errTooManyLinks), and none for a
+// disabled account (silently: the caller answers the same either way). Only
+// the secret's hash is stored. Used by POST /auth/login and POST /auth/relink.
+func issueLoginLink(r *http.Request, pool *pgxpool.Pool, send loginSender, baseURL, email string) error {
+	ctx := r.Context()
+	var recent int
+	if err := pool.QueryRow(ctx, `
+		SELECT count(*) FROM login_token
+		WHERE lower(email) = $1 AND created_at > now() - $2::int * interval '1 second'`,
+		email, int(loginTokenTTL.Seconds())).Scan(&recent); err != nil {
+		return err
+	}
+	if recent >= loginLinksPerTTL {
+		return errTooManyLinks
+	}
+	var status string
+	err := pool.QueryRow(ctx, `SELECT status FROM account WHERE lower(email) = $1`, email).Scan(&status)
+	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		return err
+	}
+	if status == "disabled" {
+		return nil
+	}
+	secret := newSecret()
+	if _, err := pool.Exec(ctx, `
+		INSERT INTO login_token (id, email, token_hash, expires_at)
+		VALUES ($1, $2, $3, now() + $4::int * interval '1 second')`,
+		newUUIDv7(), email, hashSecret(secret), int(loginTokenTTL.Seconds())); err != nil {
+		return err
+	}
+	return send(r, email, baseURL+"/signin.html#token="+secret)
+}
+
+// relinkLogin handles POST /auth/relink {"token": "..."}: an old sign-in link
+// (used or expired) asks for a fresh one, sent to the same address, so nobody
+// has to type their email again. Same rate limit as POST /auth/login. The
+// answer shows the address masked ("m•••@yahoo.com"). A link the worker has
+// already purged (a day after it expired) no longer knows its address:
+// 404 relink_unknown, and the page shows the email box instead.
+func relinkLogin(pool *pgxpool.Pool, send loginSender, baseURL string) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		var body struct {
+			Token string `json:"token"`
+		}
+		if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<10)).Decode(&body); err != nil || body.Token == "" {
+			writeError(w, r, http.StatusBadRequest, `body must be JSON like {"token": "..."}`)
+			return
+		}
+		var email string
+		err := pool.QueryRow(r.Context(), `SELECT email FROM login_token WHERE token_hash = $1`, hashSecret(body.Token)).Scan(&email)
+		if errors.Is(err, pgx.ErrNoRows) {
+			writeErrorCode(w, r, http.StatusNotFound, "relink_unknown", "this link is too old; enter your email instead")
+			return
+		}
+		if err != nil {
+			logFrom(r).Error("relink: lookup failed", "err", err)
+			writeError(w, r, http.StatusInternalServerError, "could not send a login link")
+			return
+		}
+		switch err := issueLoginLink(r, pool, send, baseURL, strings.ToLower(email)); {
+		case errors.Is(err, errTooManyLinks):
+			writeErrorCode(w, r, http.StatusTooManyRequests, "too_many_links", "too many login links requested; try again in a few minutes")
+			return
+		case err != nil:
+			logFrom(r).Error("relink: issuing a link failed", "err", err)
+			writeError(w, r, http.StatusInternalServerError, "could not send a login link")
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{
+			"masked_email":       maskEmail(email),
+			"expires_in_minutes": int(loginTokenTTL.Minutes()),
+		})
+	}
+}
+
+// maskEmail: "mike@yahoo.com" → "m•••@yahoo.com": enough to recognise your
+// own address, not enough to learn someone else's.
+func maskEmail(email string) string {
+	at := strings.LastIndex(email, "@")
+	if at < 1 {
+		return "•••"
+	}
+	return email[:1] + "•••" + email[at:]
 }
 
 // verifyLoginToken handles POST /auth/verify with body {"token": "..."}.

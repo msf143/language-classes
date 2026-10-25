@@ -456,3 +456,51 @@ func TestVerifySavesTimezone(t *testing.T) {
 		})
 	}
 }
+
+// POST /auth/relink: an old link (unused, or used) gets a fresh one sent to
+// the same address without typing it; the answer masks the address; the rate
+// limit still applies; an unknown link says so.
+func TestRelinkLogin(t *testing.T) {
+	pool := testPool(t)
+	var c captureSender
+	email := "Mike-" + newUUIDv7()[:8] + "@Example.com"
+	if rec := postLogin(t, requestLoginLink(pool, c.send, "https://site.test"), `{"email": "`+email+`"}`); rec.Code != 200 {
+		t.Fatalf("login: %d %s", rec.Code, rec.Body)
+	}
+	tokenOf := func(link string) string { return link[strings.Index(link, "token=")+6:] }
+	relink := func(token string) *httptest.ResponseRecorder {
+		return postLogin(t, relinkLogin(pool, c.send, "https://site.test"), `{"token": "`+token+`"}`)
+	}
+
+	old := tokenOf(c.links[0])
+	rec := relink(old)
+	if rec.Code != 200 || !strings.Contains(rec.Body.String(), `"masked_email":"m•••@example.com"`) || len(c.links) != 2 {
+		t.Fatalf("relink: %d %s, %d links", rec.Code, rec.Body, len(c.links))
+	}
+	if tokenOf(c.links[1]) == old {
+		t.Error("the new link has the old token")
+	}
+
+	t.Run("a used link works too", func(t *testing.T) {
+		pool.Exec(context.Background(), `UPDATE login_token SET used_at = now() WHERE token_hash = $1`, hashSecret(old))
+		if rec := relink(old); rec.Code != 200 {
+			t.Errorf("%d %s", rec.Code, rec.Body)
+		}
+	})
+
+	t.Run("the rate limit still applies", func(t *testing.T) {
+		var last *httptest.ResponseRecorder
+		for range loginLinksPerTTL {
+			last = relink(old)
+		}
+		if last.Code != 429 || errorCode(t, last) != "too_many_links" {
+			t.Errorf("%d %s", last.Code, last.Body)
+		}
+	})
+
+	t.Run("an unknown link", func(t *testing.T) {
+		if rec := relink(newSecret()); rec.Code != 404 || errorCode(t, rec) != "relink_unknown" {
+			t.Errorf("%d %s", rec.Code, rec.Body)
+		}
+	})
+}

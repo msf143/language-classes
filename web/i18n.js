@@ -341,6 +341,11 @@ const STRINGS = {
 
     // Sign-in page (opened from the emailed link)
     signinPageTitle: "Sign In to Hablemos",
+    sendNewLink: "Send me a new link",
+    newLinkSent: (masked) => `Done! We sent a new sign-in link to ${masked}. Open it from that email.`,
+    newLinkHint: "It can take a minute to arrive; check your spam folder too.",
+    alreadySignedIn: "You're already signed in on this device.",
+    goToSite: "Go to Hablemos",
     signinPageIntro: "Click the button to finish signing in on this device.",
     signingIn: "Signing in…",
     linkMissing: "This page needs the sign-in link from your email. Open the link again, or request a new one.",
@@ -683,6 +688,11 @@ const STRINGS = {
 
     // Página de entrada (abierta desde el enlace del correo)
     signinPageTitle: "Entrar a Hablemos",
+    sendNewLink: "Enviarme un enlace nuevo",
+    newLinkSent: (masked) => `¡Listo! Enviamos un enlace nuevo para iniciar sesión a ${masked}. Ábrelo desde ese correo.`,
+    newLinkHint: "Puede tardar un minuto en llegar; revisa también la carpeta de spam.",
+    alreadySignedIn: "Ya iniciaste sesión en este dispositivo.",
+    goToSite: "Ir a Hablemos",
     signinPageIntro: "Haz clic en el botón para terminar de entrar en este dispositivo.",
     signingIn: "Entrando…",
     linkMissing: "Esta página necesita el enlace de tu correo. Ábrelo de nuevo o pide uno nuevo.",

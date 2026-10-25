@@ -8,7 +8,9 @@
 const state = {
   uiLang: initialUiLang(),
   token: tokenFromLink(),
-  status: "ready",           // "ready" | "verifying" | "missing" | "invalid" | "error"
+  status: "ready",           // "ready" | "verifying" | "missing" | "invalid" | "signedIn"
+                             // | "relinking" | "relinked" | "error"
+  maskedEmail: "",           // where a fresh link went ("m•••@yahoo.com")
   error: null,               // { key, requestId? } when status is "error"
 };
 if (!state.token) state.status = "missing";
@@ -39,11 +41,32 @@ async function verify() {
     return;
   }
   if (res.status === 400) {
-    state.status = "invalid";
+    // A dead link. Already signed in on this browser? Then nothing's wrong.
+    const me = await api("GET", "/me");
+    state.status = me.ok ? "signedIn" : "invalid";
   } else {
     state.status = "error";
     state.error = res.status === 403
       ? { key: "accountDisabled" }
+      : { key: "somethingWrong", requestId: res.requestId };
+  }
+  render();
+}
+
+// "Send me a new link": the old link knows its address, so nobody types it again.
+async function relink() {
+  state.status = "relinking";
+  render();
+  const res = await api("POST", "/auth/relink", { token: state.token });
+  if (res.ok) {
+    state.status = "relinked";
+    state.maskedEmail = res.data.masked_email;
+  } else if (res.data.code === "relink_unknown") {
+    state.status = "missing";   // too old to know its address: the email box on the main page
+  } else {
+    state.status = "error";
+    state.error = res.data.code === "too_many_links"
+      ? { key: "tooManyLinks" }
       : { key: "somethingWrong", requestId: res.requestId };
   }
   render();
@@ -69,7 +92,19 @@ function render() {
       bodyEl.append(h("p", {}, t("linkMissing")), newLink());
       break;
     case "invalid":
-      bodyEl.append(h("p", { class: "form-error" }, t("linkInvalid")), newLink());
+    case "relinking":
+      bodyEl.append(
+        h("p", { class: "form-error" }, t("linkInvalid")),
+        h("button", { type: "button", class: "btn-primary", "data-action": "relink",
+          disabled: state.status === "relinking" ? "" : null }, state.status === "relinking" ? t("sending") : t("sendNewLink")),
+      );
+      break;
+    case "relinked":
+      bodyEl.append(h("p", {}, t("newLinkSent", state.maskedEmail)), h("p", { class: "muted small" }, t("newLinkHint")));
+      break;
+    case "signedIn":
+      bodyEl.append(h("p", {}, t("alreadySignedIn")),
+        h("a", { class: "btn-primary", href: "/" }, t("goToSite")));
       break;
     case "error": {
       const ref = state.error.requestId ? ` ${t("reference")}: ${state.error.requestId}` : "";
@@ -88,7 +123,9 @@ document.addEventListener("click", (e) => {
     render();
     return;
   }
-  if (e.target.closest("[data-action]")?.dataset.action === "verify") verify();
+  const action = e.target.closest("[data-action]")?.dataset.action;
+  if (action === "verify") verify();
+  if (action === "relink" && state.status !== "relinking") relink();
 });
 
 // A newer link opened in this same tab (mail apps on phones often reuse an

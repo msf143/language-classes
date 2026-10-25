@@ -573,7 +573,12 @@ For what's already built, read the code and `git log`. Next, in order:
    migration 000010 `learner.is_account_holder` (backfill: the adult with the account's name, else the earliest adult;
    archived holders brought back; unique per account); 12-hour times in both languages (pages + emails, `clockES`);
    the header name is an outlined button with an SVG person icon; the seed skips moving a demo class onto a time a
-   real booking holds. Next: a one-time welcome message after the first sign-in (remembered on the server).
+   real booking holds. Link pages (`signin.js`, `invite.js`, `join.js`) pick up a newer link opened in the same tab
+   (`hashchange`: a "#"-only change doesn't reload; phones' mail apps reuse tabs; reproduced, then fixed). A dead
+   sign-in link: already signed in → "You're already signed in"; else "Send me a new link" → `POST /auth/relink {token}`
+   (the old token's address, found by hash; same rate limit via the shared `issueLoginLink`; answer masked
+   `m•••@yahoo.com`; purged token → 404 `relink_unknown` → the email box). Next: a one-time welcome message after the
+   first sign-in (remembered on the server).
 9. **Friends in private classes** (done 2026-10-24; design agreed the same day). A private booking holds **seats** (1–4,
    `booking.party_size`), all **paid by the payer when added**, at the per-person price for that party size. A seat
    is filled by one of the payer's own learners or **open with an invite link**; a friend opens it, signs in (free

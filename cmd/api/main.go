@@ -188,6 +188,7 @@ func main() {
 	mux.HandleFunc("POST /admin/invites/{id}/cancel", requireAdmin(pool, cancelInvite(pool)))
 	mux.HandleFunc("POST /invites/accept", acceptInvite(pool)) // public: the link is the proof
 	mux.HandleFunc("POST /auth/verify", verifyLoginToken(pool))
+	mux.HandleFunc("POST /auth/relink", relinkLogin(pool, sendLoginLink, baseURL())) // an old link asks for a fresh one
 	mux.HandleFunc("POST /auth/logout", logout(pool))
 	mux.HandleFunc("GET /me", requireSignIn(pool, getMe(pool)))
 	mux.HandleFunc("PUT /me", requireSignIn(pool, putMe(pool)))
