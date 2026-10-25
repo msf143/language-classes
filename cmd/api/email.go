@@ -94,20 +94,28 @@ func logMailer(_ context.Context, m email) (string, error) {
 // Resend (see resendMailer).
 func resendSender(apiKey, endpoint, subjectPrefix string) loginSender {
 	send := resendMailer(apiKey, endpoint, subjectPrefix)
-	return func(r *http.Request, to, link string) error {
+	return func(r *http.Request, to, link, code string) error {
 		minutes := int(loginTokenTTL.Minutes())
 		id, err := send(r.Context(), email{
 			From:    loginEmailFrom,
 			To:      to,
-			Subject: "Your sign-in link · Tu enlace para entrar",
-			Text: fmt.Sprintf(`Hello! Use this link to sign in to Hablemos. It works once, for %[1]d minutes.
-¡Hola! Usa este enlace para entrar a Hablemos. Funciona una sola vez, durante %[1]d minutos.
+			Subject: code + " is your Hablemos code · es tu código de Hablemos",
+			Text: fmt.Sprintf(`Hello! Your sign-in code for Hablemos:
+¡Hola! Tu código para entrar a Hablemos:
+
+    %[3]s
+
+Type it on the page where you asked for it. Or tap this link instead:
+Escríbelo en la página donde lo pediste. O toca este enlace:
 
 %[2]s
 
+Both work once, for %[1]d minutes.
+Ambos funcionan una sola vez, durante %[1]d minutos.
+
 If you didn't ask for this, you can ignore this email.
 Si no lo pediste, puedes ignorar este correo.
-`, minutes, link),
+`, minutes, link, code),
 		})
 		if err != nil {
 			return err

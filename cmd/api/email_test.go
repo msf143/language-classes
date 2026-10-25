@@ -42,7 +42,7 @@ func TestResendSender(t *testing.T) {
 			defer fake.Close()
 
 			send := resendSender(key, fake.URL+"/emails", "[TEST] ")
-			err := send(httptest.NewRequest("POST", "/auth/login", nil), "ana@example.com", link)
+			err := send(httptest.NewRequest("POST", "/auth/login", nil), "ana@example.com", link, "042917")
 
 			if (err != nil) != tt.wantError {
 				t.Fatalf("error = %v, wantError %v", err, tt.wantError)
@@ -59,8 +59,8 @@ func TestResendSender(t *testing.T) {
 			if to, _ := got.body["to"].([]any); len(to) != 1 || to[0] != "ana@example.com" {
 				t.Errorf("to = %v", got.body["to"])
 			}
-			if subject, _ := got.body["subject"].(string); !strings.HasPrefix(subject, "[TEST] ") {
-				t.Errorf("subject = %q, want the [TEST] prefix", subject)
+			if subject, _ := got.body["subject"].(string); !strings.HasPrefix(subject, "[TEST] 042917 ") {
+				t.Errorf("subject = %q, want the [TEST] prefix, then the code", subject)
 			}
 			if got.body["from"] != loginEmailFrom {
 				t.Errorf("from = %v", got.body["from"])
@@ -69,7 +69,7 @@ func TestResendSender(t *testing.T) {
 				t.Errorf("reply_to = %v, want hola@ (replies must reach a person)", got.body["reply_to"])
 			}
 			text, _ := got.body["text"].(string)
-			for _, want := range []string{link, "15 minutes", "15 minutos"} {
+			for _, want := range []string{link, "042917", "15 minutes", "15 minutos"} {
 				if !strings.Contains(text, want) {
 					t.Errorf("email text lacks %q:\n%s", want, text)
 				}

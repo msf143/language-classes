@@ -2,11 +2,14 @@ package main
 
 import (
 	"context"
+	"crypto/hmac"
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"math/big"
 	"net/http"
 	"net/mail"
 	"strings"
@@ -19,6 +22,8 @@ import (
 const (
 	loginTokenTTL    = 15 * time.Minute    // how long an emailed link works
 	loginLinksPerTTL = 5                   // max links per email address within that window
+	loginCodeTries   = 5                   // guesses per emailed code (right or wrong); then it stops working
+	loginCodeDayCap  = 20                  // guesses per email address per day, across all its codes
 	webSessionTTL    = 30 * 24 * time.Hour // how long a browser stays signed in
 	sessionCookie    = "session"           // cookie holding the web_session secret
 )
@@ -42,19 +47,19 @@ const accountColumns = `a.id::text, a.email, a.display_name, a.preferred_languag
 	EXISTS (SELECT 1 FROM teacher t WHERE t.account_id = a.id AND t.status IN ('active', 'pending')), a.is_admin,
 	a.welcomed_at IS NOT NULL`
 
-// loginSender delivers a login link. In dev it writes the link to the log;
-// in production it will call the email provider.
-type loginSender func(r *http.Request, email, link string) error
+// loginSender delivers a login link and its 6-digit code. In dev it writes
+// them to the log; in production it calls the email provider.
+type loginSender func(r *http.Request, email, link, code string) error
 
-// logLoginLink is the dev sender: the link goes to the log instead of an inbox.
-func logLoginLink(r *http.Request, email, link string) error {
-	logFrom(r).Info("login link (dev only, not emailed)", "email", email, "link", link)
+// logLoginLink is the dev sender: the link and code go to the log instead of an inbox.
+func logLoginLink(r *http.Request, email, link, code string) error {
+	logFrom(r).Info("login link (dev only, not emailed)", "email", email, "link", link, "code", code)
 	return nil
 }
 
 // noLoginSender is used when no email provider is configured outside dev,
 // so a misconfigured server fails loudly instead of logging live links.
-func noLoginSender(r *http.Request, email, link string) error {
+func noLoginSender(r *http.Request, email, link, code string) error {
 	return errors.New("no email sender configured (set APP_ENV=dev to log links instead)")
 }
 
@@ -71,6 +76,17 @@ func hashSecret(secret string) []byte {
 	sum := sha256.Sum256([]byte(secret)) // a [32]byte array
 	return sum[:]                        // as a slice, which pgx sends as bytea
 }
+
+// newLoginCode returns 6 random digits ("042917"). crypto/rand, like every
+// secret here: math/rand would be predictable.
+func newLoginCode() string {
+	n, _ := rand.Int(rand.Reader, big.NewInt(1_000_000))
+	return fmt.Sprintf("%06d", n)
+}
+
+// loginCodeHash is what login_token.code_hash stores for a code. The row's ID
+// goes in too, so the same code in two emails never has the same hash.
+func loginCodeHash(tokenID, code string) []byte { return hashSecret(tokenID + ":" + code) }
 
 // normalizeEmail trims and lower-cases an address and rejects anything that
 // isn't a plain address (no "Name <a@b>" forms, no spaces, sane length).
@@ -151,14 +167,14 @@ func issueLoginLink(r *http.Request, pool *pgxpool.Pool, send loginSender, baseU
 	if status == "disabled" {
 		return nil
 	}
-	secret := newSecret()
+	id, secret, code := newUUIDv7(), newSecret(), newLoginCode()
 	if _, err := pool.Exec(ctx, `
-		INSERT INTO login_token (id, email, token_hash, expires_at)
-		VALUES ($1, $2, $3, now() + $4::int * interval '1 second')`,
-		newUUIDv7(), email, hashSecret(secret), int(loginTokenTTL.Seconds())); err != nil {
+		INSERT INTO login_token (id, email, token_hash, code_hash, expires_at)
+		VALUES ($1, $2, $3, $4, now() + $5::int * interval '1 second')`,
+		id, email, hashSecret(secret), loginCodeHash(id, code), int(loginTokenTTL.Seconds())); err != nil {
 		return err
 	}
-	return send(r, email, baseURL+"/signin.html#token="+secret)
+	return send(r, email, baseURL+"/signin.html#token="+secret, code)
 }
 
 // relinkLogin handles POST /auth/relink {"token": "..."}: an old sign-in link
@@ -260,68 +276,13 @@ func verifyLoginToken(pool *pgxpool.Pool) http.HandlerFunc {
 			return
 		}
 
-		// First sign-in creates the account. ON CONFLICT targets the unique
-		// index on lower(email), so an existing account is left alone. The
-		// display name starts as the part before "@"; the student can change it.
-		// RETURNING gives a row only when a row was inserted, so newAccountID
-		// is set exactly when this is a brand-new account.
-		name := email[:strings.Index(email, "@")]
-		var newAccountID string
-		err = tx.QueryRow(ctx, `
-			INSERT INTO account (id, email, display_name) VALUES ($1, $2, $3)
-			ON CONFLICT ((lower(email))) DO NOTHING
-			RETURNING id::text`,
-			newUUIDv7(), email, name).Scan(&newAccountID)
-		if err != nil && !errors.Is(err, pgx.ErrNoRows) {
-			logFrom(r).Error("verify: create account failed", "err", err)
-			writeError(w, r, http.StatusInternalServerError, "could not sign you in")
-			return
-		}
-		// A new account holder can book classes for themselves right away: give
-		// them a learner profile (an adult; children are added later). Same
-		// transaction, so there's never an account without one.
-		if newAccountID != "" {
-			_, err = tx.Exec(ctx, `
-				INSERT INTO learner (id, account_id, display_name, native_language, is_account_holder)
-				SELECT $1, a.id, a.display_name, a.preferred_language, true FROM account a WHERE a.id = $2`,
-				newUUIDv7(), newAccountID)
-			if err != nil {
-				logFrom(r).Error("verify: create learner failed", "err", err)
-				writeError(w, r, http.StatusInternalServerError, "could not sign you in")
-				return
-			}
-		}
-		var acct account
-		var status string
-		err = tx.QueryRow(ctx, `
-			SELECT `+accountColumns+`, a.status FROM account a WHERE lower(a.email) = $1`,
-			email).Scan(&acct.ID, &acct.Email, &acct.DisplayName, &acct.PreferredLanguage, &acct.Timezone, &acct.IsTeacher, &acct.IsAdmin, &acct.Welcomed, &status)
-		if err != nil {
-			logFrom(r).Error("verify: load account failed", "err", err)
-			writeError(w, r, http.StatusInternalServerError, "could not sign you in")
-			return
-		}
-		if status == "disabled" {
+		acct, secret, err := signInEmail(ctx, tx, email, body.Timezone)
+		if errors.Is(err, errAccountDisabled) {
 			writeError(w, r, http.StatusForbidden, "this account is disabled")
 			return
 		}
-
-		// Remember the person's time zone, so emails can show class times in it.
-		// Only while the account still has the default (UTC): a zone that's set is
-		// never overridden by whatever zone a browser happens to be in (a teacher
-		// signing in while travelling mustn't move his availability).
-		if acct.Timezone == "UTC" && validTimezone(body.Timezone) {
-			if _, err := tx.Exec(ctx, `UPDATE account SET timezone = $2 WHERE id = $1`, acct.ID, body.Timezone); err != nil {
-				logFrom(r).Error("verify: save timezone failed", "err", err)
-				writeError(w, r, http.StatusInternalServerError, "could not sign you in")
-				return
-			}
-			acct.Timezone = body.Timezone
-		}
-
-		secret, err := startWebSession(ctx, tx, acct.ID)
 		if err != nil {
-			logFrom(r).Error("verify: create web session failed", "err", err)
+			logFrom(r).Error("verify: sign-in failed", "err", err)
 			writeError(w, r, http.StatusInternalServerError, "could not sign you in")
 			return
 		}
@@ -333,6 +294,181 @@ func verifyLoginToken(pool *pgxpool.Pool) http.HandlerFunc {
 
 		setSessionCookie(w, secret)
 		writeJSON(w, http.StatusOK, map[string]any{"account": acct})
+	}
+}
+
+var errAccountDisabled = errors.New("account disabled")
+
+// signInEmail is what a used-up link or code leads to, in the caller's
+// transaction: find or create the account for email, save the browser's time
+// zone, open a web session. Returns the account and the cookie's secret.
+func signInEmail(ctx context.Context, tx pgx.Tx, email, timezone string) (account, string, error) {
+	var acct account
+	// First sign-in creates the account. ON CONFLICT targets the unique
+	// index on lower(email), so an existing account is left alone. The
+	// display name starts as the part before "@"; the student can change it.
+	// RETURNING gives a row only when a row was inserted, so newAccountID
+	// is set exactly when this is a brand-new account.
+	name := email[:strings.Index(email, "@")]
+	var newAccountID string
+	err := tx.QueryRow(ctx, `
+		INSERT INTO account (id, email, display_name) VALUES ($1, $2, $3)
+		ON CONFLICT ((lower(email))) DO NOTHING
+		RETURNING id::text`,
+		newUUIDv7(), email, name).Scan(&newAccountID)
+	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		return acct, "", fmt.Errorf("create account: %w", err)
+	}
+	// A new account holder can book classes for themselves right away: give
+	// them a learner profile (an adult; children are added later). Same
+	// transaction, so there's never an account without one.
+	if newAccountID != "" {
+		if _, err := tx.Exec(ctx, `
+			INSERT INTO learner (id, account_id, display_name, native_language, is_account_holder)
+			SELECT $1, a.id, a.display_name, a.preferred_language, true FROM account a WHERE a.id = $2`,
+			newUUIDv7(), newAccountID); err != nil {
+			return acct, "", fmt.Errorf("create learner: %w", err)
+		}
+	}
+	var status string
+	if err := tx.QueryRow(ctx, `
+		SELECT `+accountColumns+`, a.status FROM account a WHERE lower(a.email) = $1`,
+		email).Scan(&acct.ID, &acct.Email, &acct.DisplayName, &acct.PreferredLanguage, &acct.Timezone, &acct.IsTeacher, &acct.IsAdmin, &acct.Welcomed, &status); err != nil {
+		return acct, "", fmt.Errorf("load account: %w", err)
+	}
+	if status == "disabled" {
+		return acct, "", errAccountDisabled
+	}
+
+	// Remember the person's time zone, so emails can show class times in it.
+	// Only while the account still has the default (UTC): a zone that's set is
+	// never overridden by whatever zone a browser happens to be in (a teacher
+	// signing in while travelling mustn't move his availability).
+	if acct.Timezone == "UTC" && validTimezone(timezone) {
+		if _, err := tx.Exec(ctx, `UPDATE account SET timezone = $2 WHERE id = $1`, acct.ID, timezone); err != nil {
+			return acct, "", fmt.Errorf("save timezone: %w", err)
+		}
+		acct.Timezone = timezone
+	}
+
+	secret, err := startWebSession(ctx, tx, acct.ID)
+	if err != nil {
+		return acct, "", fmt.Errorf("create web session: %w", err)
+	}
+	return acct, secret, nil
+}
+
+// verifyLoginCode handles POST /auth/verify-code {"email", "code", "timezone"}:
+// the 6 digits from the email, typed into the page that asked for them.
+//
+// Guessing is what to guard against (a million codes): every try counts
+// against the newest code for that address, right or wrong, and at
+// loginCodeTries it stops working; loginCodeDayCap bounds the tries per
+// address per day across new codes. The count goes up in one conditional
+// UPDATE before the code is compared, so tries sent at the same moment can't
+// all slip past the limit (each waits for the row lock, then re-checks).
+// Codes: code_wrong (400), code_expired (400: none current, or the link was
+// used), too_many_tries (429: ask for a new code, or use the link).
+func verifyLoginCode(pool *pgxpool.Pool) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		var body struct {
+			Email    string `json:"email"`
+			Code     string `json:"code"`
+			Timezone string `json:"timezone"`
+		}
+		if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<10)).Decode(&body); err != nil {
+			writeError(w, r, http.StatusBadRequest, `body must be JSON like {"email": "...", "code": "123456"}`)
+			return
+		}
+		email, ok := normalizeEmail(body.Email)
+		code := strings.ReplaceAll(body.Code, " ", "") // "042 917" as some people type it
+		if !ok || len(code) != 6 || strings.Trim(code, "0123456789") != "" {
+			writeErrorCode(w, r, http.StatusBadRequest, "code_wrong", "enter your email and the 6 digits from the email")
+			return
+		}
+		ctx := r.Context()
+		fail := func(err error) {
+			logFrom(r).Error("verify code failed", "err", err)
+			writeError(w, r, http.StatusInternalServerError, "could not sign you in")
+		}
+
+		var today int
+		if err := pool.QueryRow(ctx, `
+			SELECT COALESCE(SUM(code_attempts), 0) FROM login_token
+			WHERE lower(email) = $1 AND created_at > now() - interval '1 day'`, email).Scan(&today); err != nil {
+			fail(err)
+			return
+		}
+		if today >= loginCodeDayCap {
+			writeErrorCode(w, r, http.StatusTooManyRequests, "too_many_tries", "too many tries today; use the link in the email")
+			return
+		}
+
+		// Count this try against the newest current code (its own statement, so
+		// it stays counted even when the code is wrong).
+		var tokenID string
+		var storedHash []byte
+		err := pool.QueryRow(ctx, `
+			UPDATE login_token SET code_attempts = code_attempts + 1
+			WHERE id = (SELECT id FROM login_token
+			            WHERE lower(email) = $1 AND used_at IS NULL AND expires_at > now() AND code_hash IS NOT NULL
+			            ORDER BY created_at DESC LIMIT 1)
+			  AND code_attempts < $2
+			RETURNING id::text, code_hash`, email, loginCodeTries).Scan(&tokenID, &storedHash)
+		if errors.Is(err, pgx.ErrNoRows) {
+			// No current code at all, or the newest one has had its tries.
+			var current bool
+			if err := pool.QueryRow(ctx, `
+				SELECT EXISTS (SELECT 1 FROM login_token
+				               WHERE lower(email) = $1 AND used_at IS NULL AND expires_at > now() AND code_hash IS NOT NULL)`,
+				email).Scan(&current); err != nil {
+				fail(err)
+				return
+			}
+			if current {
+				writeErrorCode(w, r, http.StatusTooManyRequests, "too_many_tries", "too many tries; ask for a new code, or use the link in the email")
+			} else {
+				writeErrorCode(w, r, http.StatusBadRequest, "code_expired", "this code has expired or was used; ask for a new one")
+			}
+			return
+		}
+		if err != nil {
+			fail(err)
+			return
+		}
+		// hmac.Equal takes the same time however many bytes match, so timing
+		// tells an attacker nothing.
+		if !hmac.Equal(storedHash, loginCodeHash(tokenID, code)) {
+			writeErrorCode(w, r, http.StatusBadRequest, "code_wrong", "that code isn't right")
+			return
+		}
+
+		var acct account
+		var secret string
+		err = pgx.BeginFunc(ctx, pool, func(tx pgx.Tx) error {
+			// Use up the token, as a link would (the conditional UPDATE: if the
+			// link was used a moment ago, there's nothing left to use).
+			if err := tx.QueryRow(ctx, `
+				UPDATE login_token SET used_at = now()
+				WHERE id = $1 AND used_at IS NULL AND expires_at > now()
+				RETURNING email`, tokenID).Scan(&email); err != nil {
+				return err
+			}
+			var err error
+			acct, secret, err = signInEmail(ctx, tx, email, body.Timezone)
+			return err
+		})
+		switch {
+		case errors.Is(err, pgx.ErrNoRows):
+			writeErrorCode(w, r, http.StatusBadRequest, "code_expired", "this code has expired or was used; ask for a new one")
+		case errors.Is(err, errAccountDisabled):
+			writeError(w, r, http.StatusForbidden, "this account is disabled")
+		case err != nil:
+			fail(err)
+		default:
+			setSessionCookie(w, secret)
+			writeJSON(w, http.StatusOK, map[string]any{"account": acct})
+		}
 	}
 }
 

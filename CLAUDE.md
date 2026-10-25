@@ -580,7 +580,16 @@ For what's already built, read the code and `git log`. Next, in order:
    `m•••@yahoo.com`; purged token → 404 `relink_unknown` → the email box). One-time welcome: migration 000011
    `account.welcomed_at` (NULL = not seen; existing accounts see it once too), `/me` has `welcomed`, `POST /me/welcomed`
    (keeps the first time); `#welcome-dialog` (two steps, + "Buy credit" where payments are on; Set my name → My Account;
-   Got it / Escape); checked in headless Chrome (phone, Spanish; gone after a reload). Next: the wife's oddities.
+   Got it / Escape); checked in headless Chrome (phone, Spanish; gone after a reload).
+   Sign-in without switching tabs (decided 2026-10-25; the mail-app round trip was the main complaint), then passkeys:
+   [x] code server: migration 000012 (`login_token.code_hash` = SHA-256 of "<id>:<code>", `code_attempts`); every
+   sign-in email has a 6-digit code + the link (one use between them; subject starts with the code);
+   `POST /auth/verify-code {email, code, timezone}` (newest current code only; every try counted first in one
+   conditional UPDATE, 5 per code, 20 per address per day; `code_wrong` / `code_expired` / 429 `too_many_tries`; the
+   link still works after the tries); `signInEmail` shared with the link; gated race test (fails with read-then-raise);
+   [ ] code page (the dialog asks for the code, `autocomplete="one-time-code"`); [ ] passkeys (WebAuthn, standard
+   library only: `passkey` + challenge tables, register, sign in, page offer + My Account list; checked with Chrome's
+   virtual authenticator). Then: the wife's oddities.
 9. **Friends in private classes** (done 2026-10-24; design agreed the same day). A private booking holds **seats** (1–4,
    `booking.party_size`), all **paid by the payer when added**, at the per-person price for that party size. A seat
    is filled by one of the payer's own learners or **open with an invite link**; a friend opens it, signs in (free

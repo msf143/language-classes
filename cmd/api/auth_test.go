@@ -34,11 +34,12 @@ func TestNormalizeEmail(t *testing.T) {
 	}
 }
 
-// captureSender records the links that would have been emailed.
-type captureSender struct{ links []string }
+// captureSender records the links and codes that would have been emailed.
+type captureSender struct{ links, codes []string }
 
-func (c *captureSender) send(r *http.Request, email, link string) error {
+func (c *captureSender) send(r *http.Request, email, link, code string) error {
 	c.links = append(c.links, link)
+	c.codes = append(c.codes, code)
 	return nil
 }
 
@@ -503,4 +504,156 @@ func TestRelinkLogin(t *testing.T) {
 			t.Errorf("%d %s", rec.Code, rec.Body)
 		}
 	})
+}
+
+// POST /auth/verify-code: the 6 digits from the email sign you in, once; wrong
+// codes count; after loginCodeTries the code stops working (the link doesn't);
+// only the newest code counts; the link and the code share one use.
+func TestLoginCode(t *testing.T) {
+	pool := testPool(t)
+	var c captureSender
+	ask := func(email string) (link, code string) {
+		t.Helper()
+		if rec := postLogin(t, requestLoginLink(pool, c.send, "https://site.test"), `{"email": "`+email+`"}`); rec.Code != 200 {
+			t.Fatalf("login: %d %s", rec.Code, rec.Body)
+		}
+		return c.links[len(c.links)-1], c.codes[len(c.codes)-1]
+	}
+	try := func(email, code string) *httptest.ResponseRecorder {
+		return postLogin(t, verifyLoginCode(pool), `{"email": "`+email+`", "code": "`+code+`"}`)
+	}
+	useLink := func(link string) int {
+		return postLogin(t, verifyLoginToken(pool), `{"token": "`+link[strings.Index(link, "token=")+6:]+`"}`).Code
+	}
+	wrong := func(code string) string { return string('0'+(code[0]-'0'+1)%10) + code[1:] } // a different code
+
+	t.Run("the right code signs you in, once", func(t *testing.T) {
+		email := testEmail()
+		link, code := ask(email)
+		rec := try(strings.ToUpper(email), code)
+		if rec.Code != 200 || !strings.Contains(rec.Header().Get("Set-Cookie"), sessionCookie+"=") ||
+			!strings.Contains(rec.Body.String(), email) {
+			t.Fatalf("%d %s", rec.Code, rec.Body)
+		}
+		if rec := try(email, code); rec.Code != 400 || errorCode(t, rec) != "code_expired" {
+			t.Errorf("again: %d %s", rec.Code, rec.Body)
+		}
+		if got := useLink(link); got != 400 {
+			t.Errorf("the link after the code: %d, want 400 (one use between them)", got)
+		}
+	})
+
+	t.Run("a wrong code, then the right one with a space", func(t *testing.T) {
+		email := testEmail()
+		_, code := ask(email)
+		if rec := try(email, wrong(code)); rec.Code != 400 || errorCode(t, rec) != "code_wrong" {
+			t.Fatalf("wrong: %d %s", rec.Code, rec.Body)
+		}
+		if rec := try(email, code[:3]+" "+code[3:]); rec.Code != 200 {
+			t.Errorf("right: %d %s", rec.Code, rec.Body)
+		}
+	})
+
+	t.Run("after the tries, not even the right code; the link still works", func(t *testing.T) {
+		email := testEmail()
+		link, code := ask(email)
+		for range loginCodeTries {
+			try(email, wrong(code))
+		}
+		if rec := try(email, code); rec.Code != 429 || errorCode(t, rec) != "too_many_tries" {
+			t.Errorf("right code after %d wrong: %d %s", loginCodeTries, rec.Code, rec.Body)
+		}
+		if got := useLink(link); got != 200 {
+			t.Errorf("the link: %d", got)
+		}
+	})
+
+	t.Run("only the newest code counts", func(t *testing.T) {
+		email := testEmail()
+		_, first := ask(email)
+		_, second := ask(email)
+		if first != second {
+			if rec := try(email, first); errorCode(t, rec) != "code_wrong" {
+				t.Errorf("the older code: %d %s", rec.Code, rec.Body)
+			}
+		}
+		if rec := try(email, second); rec.Code != 200 {
+			t.Errorf("the newest code: %d %s", rec.Code, rec.Body)
+		}
+	})
+
+	t.Run("the link used first", func(t *testing.T) {
+		email := testEmail()
+		link, code := ask(email)
+		useLink(link)
+		if rec := try(email, code); rec.Code != 400 || errorCode(t, rec) != "code_expired" {
+			t.Errorf("%d %s", rec.Code, rec.Body)
+		}
+	})
+
+	t.Run("the daily cap across codes", func(t *testing.T) {
+		email := testEmail()
+		ask(email)
+		pool.Exec(context.Background(), `UPDATE login_token SET code_attempts = $2 WHERE lower(email) = $1`, email, loginCodeDayCap)
+		_, code := ask(email)
+		if rec := try(email, code); rec.Code != 429 || errorCode(t, rec) != "too_many_tries" {
+			t.Errorf("%d %s", rec.Code, rec.Body)
+		}
+	})
+
+	t.Run("not 6 digits", func(t *testing.T) {
+		for _, bad := range []string{"", "12345", "1234567", "12a456"} {
+			if rec := try(testEmail(), bad); rec.Code != 400 || errorCode(t, rec) != "code_wrong" {
+				t.Errorf("%q: %d %s", bad, rec.Code, rec.Body)
+			}
+		}
+	})
+}
+
+// Guesses sent at the same moment can't get past the limit: the code has one
+// try left, the token row is held locked (a gate), 2 wrong guesses wait;
+// released, exactly one is judged and the other refused. If the count were
+// read first and raised later, both would be judged. (Only 2: the test pool
+// has 4 connections, and the gate and the lock watcher hold one each.)
+func TestLoginCodeTriesRace(t *testing.T) {
+	pool := testPool(t)
+	ctx := context.Background()
+	var c captureSender
+	email := testEmail()
+	if rec := postLogin(t, requestLoginLink(pool, c.send, "https://site.test"), `{"email": "`+email+`"}`); rec.Code != 200 {
+		t.Fatalf("login: %d %s", rec.Code, rec.Body)
+	}
+	code := c.codes[0]
+	wrong := string('0'+(code[0]-'0'+1)%10) + code[1:]
+
+	pool.Exec(ctx, `UPDATE login_token SET code_attempts = $2 WHERE lower(email) = $1`, email, loginCodeTries-1)
+
+	gate, err := pool.Begin(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer gate.Rollback(ctx) // also on a failure below, so nothing stays blocked
+	if _, err := gate.Exec(ctx, `SELECT 1 FROM login_token WHERE lower(email) = $1 FOR UPDATE`, email); err != nil {
+		t.Fatal(err)
+	}
+	const n = 2
+	codes := make(chan string, n)
+	for range n {
+		go func() {
+			codes <- errorCode(t, postLogin(t, verifyLoginCode(pool), `{"email": "`+email+`", "code": "`+wrong+`"}`))
+		}()
+	}
+	waitForLockWaiters(t, pool, n)
+	gate.Rollback(ctx)
+
+	got := map[string]int{}
+	for range n {
+		got[<-codes]++
+	}
+	if got["code_wrong"] != 1 || got["too_many_tries"] != n-1 {
+		t.Errorf("answers %v, want 1 code_wrong and %d too_many_tries", got, n-1)
+	}
+	if tries := count(t, pool, `SELECT code_attempts FROM login_token WHERE lower(email) = '`+email+`'`); tries != loginCodeTries {
+		t.Errorf("code_attempts = %d, want %d", tries, loginCodeTries)
+	}
 }
