@@ -380,38 +380,59 @@ function renderMyBookings() {
   document.querySelector("#my-bookings-list").replaceChildren(...bookings.map((b) => {
     const { dateText, timeText } = formatWhen(b.session);
     const names = b.attendees.map((a) => a.display_name).join(", ");
+    const lang = b.session.target_language;
+    const seats = b.role === "payer" && b.session.kind === "private";   // the payer manages a private class's seats
+    // One quiet line of facts. The seat list already says who's coming, so
+    // "For: …" only where there's no seat list.
+    const facts = b.role === "guest" ? [t("forWhom", names), t("paidBy", b.paid_by)]
+      : seats ? [t("seatsCount", b.party_size), t("paid", money(b.total_cents, b.currency))]
+      : [t("forWhom", names), t("paid", money(b.total_cents, b.currency))];
     return h("li", { class: "my-booking", "data-booking-id": b.id },
-      h("span", { class: "my-booking-title" }, b.session.title ?? t("privateClass")),
-      h("span", { class: "my-booking-detail" },
-        `${dateText} · ${timeText} · ${t("minutes", b.session.duration_minutes)}`),
-      h("span", { class: "my-booking-detail" }, t("forWhom", names)),
-      // A friend's class (guest): who paid, and Leave instead of the price and Cancel.
-      b.role === "guest"
-        ? h("span", { class: "my-booking-detail" }, t("paidBy", b.paid_by))
-        : h("span", { class: "my-booking-detail" }, t("paid", money(b.total_cents, b.currency))),
-      b.role === "guest"
-        ? h("button", { type: "button", class: "btn-secondary btn-small", "data-action": "leave-class",
-            "data-seat-id": b.my_seats[0] }, t("leaveClass"))
-        : h("button", { type: "button", class: "btn-secondary btn-small", "data-action": "cancel-booking" },
-            t("cancelBooking")),
-      b.role === "payer" && b.session.kind === "private" ? seatList(b) : "",
+      h("div", { class: "card-tags" },
+        h("span", { class: `tag tag-${lang}` }, lang === "es" ? t("learnSpanish") : t("learnEnglish")),
+        b.session.kind === "private" ? h("span", { class: "tag" }, t("privateTag")) : ""),
+      h("h3", { class: "my-booking-title" }, b.session.title ?? t("privateClass")),
+      h("p", { class: "my-booking-when" }, ...dotted([dateText, timeText, t("minutes", b.session.duration_minutes)])),
+      h("p", { class: "my-booking-detail" }, ...dotted(facts)),
+      seats ? seatList(b) : "",
+      // The rare, undoable action last and quiet (it still asks first). A
+      // friend's class (guest): Leave instead of Cancel.
+      h("div", { class: "my-booking-foot" },
+        b.role === "guest"
+          ? h("button", { type: "button", class: "link-button quiet", "data-action": "leave-class",
+              "data-seat-id": b.my_seats[0] }, t("leaveClass"))
+          : h("button", { type: "button", class: "link-button quiet", "data-action": "cancel-booking" },
+              t("cancelBooking"))),
     );
   }));
 }
 
-// A payer's private booking: each seat (a name, or open with Copy link), Remove
-// on any seat while there's more than one, and Add a seat up to 4.
+// Pieces of a line joined by " · ", each kept whole ("1:00 p. m.", "15,00 US$"),
+// so a narrow screen wraps between pieces, never inside one.
+function dotted(pieces) {
+  return pieces.flatMap((p, i) => [i ? " · " : "", h("span", { class: "nowrap" }, p)]);
+}
+
+// A payer's private booking: one line per seat, the name (or "Open seat") on
+// the left and its actions as small text links on the right: Copy link on an
+// open seat, Remove on any seat while there's more than one. Then Add a seat
+// (up to 4).
 function seatList(b) {
   const several = b.seats.length > 1;
   return h("ul", { class: "seat-list" },
-    ...b.seats.map((seat) => h("li", { class: "seat", "data-seat-id": seat.id },
-      h("span", { class: seat.status === "invited" ? "seat-name muted" : "seat-name" },
-        seat.status === "invited" ? t("openSeat") : seat.display_name),
-      seat.status === "invited"
-        ? h("button", { type: "button", class: "btn-secondary btn-small", "data-action": "copy-seat-link" }, t("copyInviteLink"))
-        : "",
-      several ? h("button", { type: "button", class: "btn-secondary btn-small", "data-action": "remove-seat" }, t("removeSeat")) : "",
-    )),
+    ...b.seats.map((seat) => {
+      const actions = [
+        seat.status === "invited"
+          ? h("button", { type: "button", class: "link-button", "data-action": "copy-seat-link" }, t("seatCopyLink")) : null,
+        several ? h("button", { type: "button", class: "link-button", "data-action": "remove-seat" }, t("removeSeat")) : null,
+      ].filter(Boolean);
+      // "·" between two actions, as in the line above
+      const withDots = actions.flatMap((a, i) => (i ? [h("span", { class: "muted", "aria-hidden": "true" }, "·"), a] : [a]));
+      return h("li", { class: "seat", "data-seat-id": seat.id },
+        h("span", { class: seat.status === "invited" ? "seat-name muted" : "seat-name" },
+          seat.status === "invited" ? t("openSeat") : seat.display_name),
+        h("span", { class: "seat-actions" }, ...withDots));
+    }),
     b.party_size < 4
       ? h("li", {}, h("button", { type: "button", class: "link-button", "data-action": "add-seat" }, t("addSeat")))
       : "",

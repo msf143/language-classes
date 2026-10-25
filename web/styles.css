@@ -77,10 +77,19 @@ body {
 /* Your name in the header opens My Account: an outlined button, long names cut with "…". */
 .account-button { max-width: 14em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .person-icon { width: 1em; height: 1em; vertical-align: -0.12em; margin-right: 0.35em; fill: currentColor; }
-/* A payer's seats in a private booking (My bookings). */
-.seat-list { list-style: none; margin: 6px 0 0; padding: 0; flex: 1 1 100%; display: flex; flex-direction: column; gap: 4px; }
-.seat { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; }
-.seat-name { min-width: 8em; font-weight: 600; }
+/* A payer's seats in a private booking (My bookings): one line each, the
+   name left and small text actions right. At most 32rem wide, so on a monitor
+   the actions stay near the names instead of drifting to the far edge. */
+.seat-list { list-style: none; margin: 10px 0 0; padding: 4px 0 0; max-width: 32rem; border-top: 1px solid var(--border); }
+.seat { display: flex; align-items: center; justify-content: space-between; gap: 4px 12px; min-height: 44px; }
+.seat-name { font-weight: 600; min-width: 0; overflow-wrap: anywhere; }
+.seat-name.muted { white-space: nowrap; }   /* "Open seat" / "Cupo libre": a short label, kept on one line */
+.nowrap { white-space: nowrap; }
+.seat-actions { display: flex; align-items: center; gap: 2px; flex-shrink: 0; }
+/* Text links in a booking: small to look at, 44px tall to tap (Apple's guideline). */
+.seat .link-button, .seat-list .link-button, .my-booking-foot .link-button { min-height: 44px; padding: 0 6px; }
+.seat-list .link-button { margin-left: -6px; }   /* "+ Add a seat" lines up with the names */
+.seat-actions .link-button { margin-left: 0; }
 .book-seats { margin: 4px 0; max-width: 12em; }
 /* My Account dialog */
 .account-form { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 8px 12px; margin-bottom: 12px; }
@@ -257,11 +266,16 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .my-bookings-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
 .my-booking {
   background: var(--surface); border: 1px solid var(--border); border-left: 4px solid var(--accent);
-  border-radius: var(--radius); padding: 12px 16px;
-  display: flex; flex-wrap: wrap; align-items: center; gap: 4px 16px;
+  border-radius: var(--radius); padding: 14px 16px 4px;
 }
-.my-booking-title { font-weight: 600; flex: 1 1 100%; }
-.my-booking-detail { color: var(--muted); font-size: 0.9rem; }
+.my-booking-title { font-size: 1.05rem; margin: 8px 0 2px; }
+.my-booking-when { margin: 0; font-weight: 600; }
+.my-booking-detail { margin: 2px 0 0; color: var(--muted); font-size: 0.9rem; }
+.my-booking-foot { margin-top: 8px; border-top: 1px solid var(--border); }
+.my-booking-foot .link-button { margin-left: -6px; }
+/* A quiet text link: grey until hovered (Cancel booking, Leave class). */
+.link-button.quiet { color: var(--muted); font-weight: 500; }
+.link-button.quiet:hover { color: var(--danger); }
 .tag-booked { background: var(--accent-soft); color: var(--accent); }
 /* Admin page: teacher status badges, and the activate/deactivate row. */
 .tag-status-pending { background: var(--es-soft); color: var(--es); }
@@ -277,7 +291,6 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   flex: 1; min-width: 0; font: inherit; font-size: 0.85rem; padding: 6px 10px; border-radius: 8px;
   border: 1px solid var(--border); background: var(--bg); color: var(--text);
 }
-.my-booking .btn-secondary { margin-left: auto; }
 
 /* ---------- teacher page ---------- */
 .teacher-section { margin-block: 24px 40px; }

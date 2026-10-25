@@ -625,8 +625,10 @@ For what's already built, read the code and `git log`. Next, in order:
    so browser checks switch autofill off where they test something else. **Passkeys done**; try on a phone on dev. Relying party ID = the site's own host (hablemos.live, dev.hablemos.live,
    localhost), so each environment's passkeys are its own. Look and feel (2026-10-25): toasts are a rounded box (not a pill), as wide as the text, at
    most 28rem and the screen minus 16px a side; the booked toast says what and when ("Booked! …, Mon, Oct 26, 12:00 PM").
-   Next: a calmer My Bookings card (language tag, date heading, seat actions as text links on one line, Cancel booking
-   quiet at the bottom). Then: the wife's oddities.
+   My Bookings card: language tag (+ "Private"), title, when, one line of facts (private payer: seats + paid, no
+   "For:"), seats one per line with text-link actions (Copy link · Remove), Cancel / Leave as a quiet link at the bottom;
+   text links 44px tall to tap; seat list ≤ 32rem (actions stay near names on a monitor); `dotted()` keeps "1:00 p. m."
+   and amounts whole when lines wrap. Checked at 390px (es, en) and 1440px. Then: the wife's oddities.
 9. **Friends in private classes** (done 2026-10-24; design agreed the same day). A private booking holds **seats** (1–4,
    `booking.party_size`), all **paid by the payer when added**, at the per-person price for that party size. A seat
    is filled by one of the payer's own learners or **open with an invite link**; a friend opens it, signs in (free
