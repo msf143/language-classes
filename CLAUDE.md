@@ -222,6 +222,9 @@ then find the link in the log.
 - **The account holder is always on their own account (decided 2026-10-25):** their own learner
   (`learner.is_account_holder`, migration 000010, one per account) can be renamed but not removed; to book only
   for others, they just don't tick themselves. "(you)" and "renamed with you" use the marker, never name matching.
+  **One name (decided 2026-10-25):** that learner's name *is* the account name: `PUT /me` and editing your own row
+  (`PUT /me/learners/{id}`) each write both, in one transaction; migration 000014 repaired accounts where they had
+  drifted apart (the account name won). Test helpers follow it too (`newStudent`'s holder carries the account's name).
 - **Children:** a parent's account holds learner profiles; kids never log in. Kids' group
   sessions use `audience = 'kids'`. Policy: a parent nearby for minors on video.
 - **Audience values:** `adults` (adults only), `kids` (minors only), and `all` ("All ages" in

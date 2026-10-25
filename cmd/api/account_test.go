@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -196,5 +197,45 @@ func TestWelcomed(t *testing.T) {
 	pool.QueryRow(context.Background(), `SELECT welcomed_at FROM account WHERE id = $1`, s.accountID).Scan(&second)
 	if !welcomed() || !first.Equal(second) {
 		t.Errorf("welcomed %v; first %v, after again %v", welcomed(), first, second)
+	}
+}
+
+// One name: editing your own row renames the account, renaming the account
+// renames your row, and editing someone else's row leaves your name alone.
+func TestOneName(t *testing.T) {
+	pool := testPool(t)
+	s := newStudent(t, pool, 0, false, true) // themself, and a child
+	names := func() (account, holder, child string) {
+		pool.QueryRow(context.Background(), `
+			SELECT a.display_name,
+			       (SELECT display_name FROM learner WHERE account_id = a.id AND is_account_holder),
+			       (SELECT display_name FROM learner WHERE account_id = a.id AND NOT is_account_holder)
+			FROM account a WHERE a.id = $1`, s.accountID).Scan(&account, &holder, &child)
+		return
+	}
+	var holderID, childID string
+	pool.QueryRow(context.Background(), `SELECT id::text FROM learner WHERE account_id = $1 AND is_account_holder`, s.accountID).Scan(&holderID)
+	pool.QueryRow(context.Background(), `SELECT id::text FROM learner WHERE account_id = $1 AND NOT is_account_holder`, s.accountID).Scan(&childID)
+	edit := func(id, name string, minor bool) {
+		t.Helper()
+		body := fmt.Sprintf(`{"display_name": %q, "is_minor": %v, "native_language": "en"}`, name, minor)
+		if rec := me(s, requireSignIn(pool, updateLearner(pool)), "PUT", body, id); rec.Code != 200 {
+			t.Fatalf("edit %s: %d %s", name, rec.Code, rec.Body)
+		}
+	}
+
+	edit(holderID, "James", false)
+	if a, h, _ := names(); a != "James" || h != "James" {
+		t.Errorf("after editing your own row: account %q, row %q; want both James", a, h)
+	}
+	if rec := me(s, requireSignIn(pool, putMe(pool)), "PUT", `{"display_name": "Michael"}`, ""); rec.Code != 200 {
+		t.Fatalf("PUT /me: %d %s", rec.Code, rec.Body)
+	}
+	if a, h, _ := names(); a != "Michael" || h != "Michael" {
+		t.Errorf("after renaming the account: account %q, row %q; want both Michael", a, h)
+	}
+	edit(childID, "Tomás", true)
+	if a, h, c := names(); a != "Michael" || h != "Michael" || c != "Tomás" {
+		t.Errorf("after editing the child: %q / %q / %q", a, h, c)
 	}
 }

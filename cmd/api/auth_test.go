@@ -464,7 +464,7 @@ func TestVerifySavesTimezone(t *testing.T) {
 func TestRelinkLogin(t *testing.T) {
 	pool := testPool(t)
 	var c captureSender
-	email := "Mike-" + newUUIDv7()[:8] + "@Example.com"
+	email := "Mike-" + newUUIDv7()[28:] + "@Example.com" // the ID's random end: its start is the time, the same for a minute
 	if rec := postLogin(t, requestLoginLink(pool, c.send, "https://site.test"), `{"email": "`+email+`"}`); rec.Code != 200 {
 		t.Fatalf("login: %d %s", rec.Code, rec.Body)
 	}

@@ -8,8 +8,8 @@ BEGIN;
 -- Accounts: one teacher, two students
 INSERT INTO account (id, email, display_name, timezone, preferred_language) VALUES
   ('01900000-0000-7000-8000-000000000001', 'teacher@example.com', 'Profesor',      'America/Bogota',   'es'),
-  ('01900000-0000-7000-8000-000000000002', 'ana@example.com',     'Ana (student)', 'America/New_York', 'en'),
-  ('01900000-0000-7000-8000-000000000003', 'luis@example.com',    'Luis (student)','America/Bogota',   'es')
+  ('01900000-0000-7000-8000-000000000002', 'ana@example.com',     'Ana',           'America/New_York', 'en'),
+  ('01900000-0000-7000-8000-000000000003', 'luis@example.com',    'Luis',          'America/Bogota',   'es')
 ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO teacher (id, account_id, bio_en, bio_es) VALUES

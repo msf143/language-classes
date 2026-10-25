@@ -233,10 +233,11 @@ func TestGuestSide(t *testing.T) {
 	pool := testPool(t)
 	ctx := context.Background()
 	payer, b, seats := privateWithOpenSeats(t, pool, 19)
-	friend := newStudent(t, pool, 0, false)
+	friend := newStudent(t, pool, 0, false, false) // Ana herself, and Tomás on her account
 	pool.Exec(ctx, `UPDATE account SET display_name = 'Ana', timezone = 'America/Bogota' WHERE id = $1`, friend.accountID)
-	pool.Exec(ctx, `UPDATE learner SET display_name = 'Tomás' WHERE id = $1`, friend.learners[0])
-	if rec := join(pool, friend, seatLinkToken(t, pool, payer, b.ID, seats[0]), friend.learners[0]); rec.Code != 200 {
+	pool.Exec(ctx, `UPDATE learner SET display_name = 'Ana' WHERE id = $1`, friend.learners[0]) // one name: Ana's own row too
+	pool.Exec(ctx, `UPDATE learner SET display_name = 'Tomás' WHERE id = $1`, friend.learners[1])
+	if rec := join(pool, friend, seatLinkToken(t, pool, payer, b.ID, seats[0]), friend.learners[1]); rec.Code != 200 {
 		t.Fatalf("join: %d %s", rec.Code, rec.Body)
 	}
 
@@ -313,9 +314,10 @@ func TestSeatEmails(t *testing.T) {
 	payer := newStudent(t, pool, 10000, false)
 	b := decodeBooking(t, bookSeats(pool, payer.cookie, newUUIDv7(), teacher, day.Add(19*time.Hour), 2, payer.learners...)) // 2 × $20
 	cancelWhenDone(t, pool, b.SessionID)
-	friend := newStudent(t, pool, 0, false)
+	friend := newStudent(t, pool, 0, false, false) // Ana herself, and Tomás on her account
 	pool.Exec(ctx, `UPDATE account SET display_name = 'Ana' WHERE id = $1`, friend.accountID)
-	pool.Exec(ctx, `UPDATE learner SET display_name = 'Tomás' WHERE id = $1`, friend.learners[0])
+	pool.Exec(ctx, `UPDATE learner SET display_name = 'Ana' WHERE id = $1`, friend.learners[0]) // one name: Ana's own row too
+	pool.Exec(ctx, `UPDATE learner SET display_name = 'Tomás' WHERE id = $1`, friend.learners[1])
 	handle := func(eventType string) []email {
 		t.Helper()
 		m := &recordingMailer{}
@@ -334,7 +336,7 @@ func TestSeatEmails(t *testing.T) {
 	}
 
 	seat := openSeat(t, pool, b.ID)
-	if rec := join(pool, friend, seatLinkToken(t, pool, payer, b.ID, seat), friend.learners[0]); rec.Code != 200 {
+	if rec := join(pool, friend, seatLinkToken(t, pool, payer, b.ID, seat), friend.learners[1]); rec.Code != 200 {
 		t.Fatalf("join: %d", rec.Code)
 	}
 	if sent := handle("seat_joined"); len(sent) != 2 || !contains(sent[0], "A friend joined", "Ana joined your class (Tomás)") ||
@@ -361,7 +363,7 @@ func TestSeatEmails(t *testing.T) {
 		t.Errorf("a stale 'joined': err %v, sent %+v; want a skip and nothing sent", err, m.sent)
 	}
 
-	if rec := join(pool, friend, seatLinkToken(t, pool, payer, b.ID, seat), friend.learners[0]); rec.Code != 200 {
+	if rec := join(pool, friend, seatLinkToken(t, pool, payer, b.ID, seat), friend.learners[1]); rec.Code != 200 {
 		t.Fatalf("join again: %d", rec.Code)
 	}
 	decodeSeat(t, seatReq(pool, removeSeat(pool), payer.cookie, b.ID, seat)) // 3 → 2 seats: $11 back, friend removed

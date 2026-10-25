@@ -124,7 +124,8 @@ func newStudent(t *testing.T, pool *pgxpool.Pool, creditCents int, minors ...boo
 		lid := newUUIDv7()
 		_, err := pool.Exec(ctx, `
 			INSERT INTO learner (id, account_id, display_name, native_language, is_minor, is_account_holder)
-			VALUES ($1, $2, 'Learner', 'en', $3, $4)`, lid, id, minor, holder && !minor)
+			SELECT $1, $2, CASE WHEN $4 THEN a.display_name ELSE 'Learner' END, 'en', $3, $4
+			FROM account a WHERE a.id = $2`, lid, id, minor, holder && !minor) // you carry the account's name
 		holder = holder && minor
 		if err != nil {
 			t.Fatal(err)

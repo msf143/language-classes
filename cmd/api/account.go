@@ -146,16 +146,30 @@ func updateLearner(pool *pgxpool.Pool) http.HandlerFunc {
 		if !ok {
 			return
 		}
-		tag, err := pool.Exec(r.Context(), `
-			UPDATE learner SET display_name = $3, is_minor = $4, native_language = $5
-			WHERE id = $1 AND account_id = $2 AND status = 'active'`,
-			id, me.ID, in.DisplayName, in.IsMinor, in.NativeLanguage)
+		// You have one name: editing your own row (the account holder's)
+		// renames the account too, in the same transaction, just as PUT /me
+		// renames your row. So the header and the class lists never disagree.
+		err := pgx.BeginFunc(r.Context(), pool, func(tx pgx.Tx) error {
+			var holder bool
+			if err := tx.QueryRow(r.Context(), `
+				UPDATE learner SET display_name = $3, is_minor = $4, native_language = $5
+				WHERE id = $1 AND account_id = $2 AND status = 'active'
+				RETURNING is_account_holder`,
+				id, me.ID, in.DisplayName, in.IsMinor, in.NativeLanguage).Scan(&holder); err != nil {
+				return err
+			}
+			if !holder {
+				return nil
+			}
+			_, err := tx.Exec(r.Context(), `UPDATE account SET display_name = $2 WHERE id = $1`, me.ID, in.DisplayName)
+			return err
+		})
 		switch {
+		case errors.Is(err, pgx.ErrNoRows):
+			writeErrorCode(w, r, http.StatusNotFound, "learner_not_found", "no such person on your account")
 		case err != nil:
 			logFrom(r).Error("update learner failed", "err", err)
 			writeError(w, r, http.StatusInternalServerError, "could not save the person")
-		case tag.RowsAffected() == 0:
-			writeErrorCode(w, r, http.StatusNotFound, "learner_not_found", "no such person on your account")
 		default:
 			writeJSON(w, http.StatusOK, learnerDTO{ID: id, DisplayName: in.DisplayName, IsMinor: in.IsMinor, NativeLanguage: in.NativeLanguage})
 		}
