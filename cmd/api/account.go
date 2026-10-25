@@ -218,3 +218,18 @@ func archiveLearner(pool *pgxpool.Pool) http.HandlerFunc {
 		}
 	}
 }
+
+// markWelcomed handles POST /me/welcomed (wrapped in requireSignIn): the
+// one-time welcome has been seen. Doing it again keeps the first time.
+func markWelcomed(pool *pgxpool.Pool) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		me, _ := accountFrom(r)
+		if _, err := pool.Exec(r.Context(), `
+			UPDATE account SET welcomed_at = COALESCE(welcomed_at, now()) WHERE id = $1`, me.ID); err != nil {
+			logFrom(r).Error("mark welcomed failed", "err", err)
+			writeError(w, r, http.StatusInternalServerError, "could not save that")
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]bool{"welcomed": true})
+	}
+}

@@ -577,8 +577,10 @@ For what's already built, read the code and `git log`. Next, in order:
    (`hashchange`: a "#"-only change doesn't reload; phones' mail apps reuse tabs; reproduced, then fixed). A dead
    sign-in link: already signed in → "You're already signed in"; else "Send me a new link" → `POST /auth/relink {token}`
    (the old token's address, found by hash; same rate limit via the shared `issueLoginLink`; answer masked
-   `m•••@yahoo.com`; purged token → 404 `relink_unknown` → the email box). Next: a one-time welcome message after the
-   first sign-in (remembered on the server).
+   `m•••@yahoo.com`; purged token → 404 `relink_unknown` → the email box). One-time welcome: migration 000011
+   `account.welcomed_at` (NULL = not seen; existing accounts see it once too), `/me` has `welcomed`, `POST /me/welcomed`
+   (keeps the first time); `#welcome-dialog` (two steps, + "Buy credit" where payments are on; Set my name → My Account;
+   Got it / Escape); checked in headless Chrome (phone, Spanish; gone after a reload). Next: the wife's oddities.
 9. **Friends in private classes** (done 2026-10-24; design agreed the same day). A private booking holds **seats** (1–4,
    `booking.party_size`), all **paid by the payer when added**, at the per-person price for that party size. A seat
    is filled by one of the payer's own learners or **open with an invite link**; a friend opens it, signs in (free

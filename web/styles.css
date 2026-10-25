@@ -329,3 +329,7 @@ a.link { color: var(--accent); font-weight: 600; text-decoration: none; }
 .slot-chip:hover { border-color: var(--accent); color: var(--accent); }
 .teacher-name { color: var(--accent); font-weight: 600; } /* as big as the price line, in the accent orange */
 .private-teacher { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 16px; padding-top: 8px; }
+
+/* The one-time welcome: numbered steps with a little air between them. */
+.welcome-steps { padding-left: 1.4em; margin: 0.5rem 0 1rem; }
+.welcome-steps li { margin-bottom: 0.5rem; }

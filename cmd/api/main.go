@@ -192,6 +192,7 @@ func main() {
 	mux.HandleFunc("POST /auth/logout", logout(pool))
 	mux.HandleFunc("GET /me", requireSignIn(pool, getMe(pool)))
 	mux.HandleFunc("PUT /me", requireSignIn(pool, putMe(pool)))
+	mux.HandleFunc("POST /me/welcomed", requireSignIn(pool, markWelcomed(pool)))
 	mux.HandleFunc("POST /me/learners", requireSignIn(pool, addLearner(pool)))
 	mux.HandleFunc("PUT /me/learners/{id}", requireSignIn(pool, updateLearner(pool)))
 	mux.HandleFunc("POST /me/learners/{id}/archive", requireSignIn(pool, archiveLearner(pool)))

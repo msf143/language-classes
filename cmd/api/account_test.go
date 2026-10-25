@@ -170,3 +170,31 @@ func TestArchiveLearnerRace(t *testing.T) {
 		t.Error("the child was archived while booked")
 	}
 }
+
+// The one-time welcome: /me says not welcomed, POST /me/welcomed records it
+// (twice keeps the first time), then /me says welcomed.
+func TestWelcomed(t *testing.T) {
+	pool := testPool(t)
+	s := newStudent(t, pool, 0, false)
+	welcomed := func() bool {
+		var m struct {
+			Account account `json:"account"`
+		}
+		json.Unmarshal(me(s, requireSignIn(pool, getMe(pool)), "GET", "", "").Body.Bytes(), &m)
+		return m.Account.Welcomed
+	}
+	if welcomed() {
+		t.Fatal("a new account is already welcomed")
+	}
+	if rec := me(s, requireSignIn(pool, markWelcomed(pool)), "POST", "", ""); rec.Code != 200 {
+		t.Fatalf("%d %s", rec.Code, rec.Body)
+	}
+	var first time.Time
+	pool.QueryRow(context.Background(), `SELECT welcomed_at FROM account WHERE id = $1`, s.accountID).Scan(&first)
+	me(s, requireSignIn(pool, markWelcomed(pool)), "POST", "", "")
+	var second time.Time
+	pool.QueryRow(context.Background(), `SELECT welcomed_at FROM account WHERE id = $1`, s.accountID).Scan(&second)
+	if !welcomed() || !first.Equal(second) {
+		t.Errorf("welcomed %v; first %v, after again %v", welcomed(), first, second)
+	}
+}

@@ -222,6 +222,14 @@ const STRINGS = {
     peopleHint: "You can book classes for anyone listed here, including yourself. Add your children or others in your household: they don't need their own account.",
     you: "you",
     myAccountTooltip: "My account: your name and the people you book for",
+
+    // The one-time welcome (after a first sign-in)
+    welcomeTitle: "Welcome to Hablemos!",
+    welcomeName: "Tap your name at the top to set how you'd like to be called, and to add your children or others you'll book for.",
+    welcomeBook: "Then choose a group class, or a private time with the teacher, further down the page.",
+    welcomeCredit: "Classes are paid with credit: Buy credit is at the top.",
+    setMyName: "Set my name",
+    gotIt: "Got it",
     addPerson: "Add a Family Member",
     editPerson: "Edit Person",
     personName: "Name",
@@ -570,6 +578,13 @@ const STRINGS = {
     peopleHint: "Puedes reservar clases para cualquiera de esta lista, incluido tú. Agrega a tus hijos u otras personas de tu hogar: no necesitan cuenta propia.",
     you: "tú",
     myAccountTooltip: "Mi cuenta: tu nombre y las personas para quienes reservas",
+
+    welcomeTitle: "¡Te damos la bienvenida a Hablemos!",
+    welcomeName: "Toca tu nombre arriba para elegir cómo quieres que te llamen y para agregar a tus hijos u otras personas para quienes vayas a reservar.",
+    welcomeBook: "Luego elige una clase grupal, o un horario privado con el profesor, más abajo en la página.",
+    welcomeCredit: "Las clases se pagan con crédito: «Comprar crédito» está arriba.",
+    setMyName: "Poner mi nombre",
+    gotIt: "Entendido",
     addPerson: "Agregar un familiar",
     editPerson: "Editar persona",
     personName: "Nombre",

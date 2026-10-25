@@ -40,6 +40,10 @@ const state = {
     status: "idle",                // "idle" | "sending"
     error: null,                   // { key, requestId? } when the last attempt failed
   },
+  welcome: {
+    open: false,                   // is the one-time welcome showing? (opened by loadMe)
+    done: false,                   // seen in this page already: never reopen it, even before /me catches up
+  },
   account: {
     open: false,                   // is the My Account dialog showing?
     editingId: null,               // the person being edited, or null (the form adds a new one)
@@ -78,6 +82,7 @@ const cancelDialogEl = document.querySelector("#cancel-dialog");
 const cancelFormEl = document.querySelector("#cancel-form");
 const buyDialogEl = document.querySelector("#buy-dialog");
 const accountDialogEl = document.querySelector("#account-dialog");
+const welcomeDialogEl = document.querySelector("#welcome-dialog");
 const nameFormEl = document.querySelector("#name-form");
 const personFormEl = document.querySelector("#person-form");
 const buyFormEl = document.querySelector("#buy-form");
@@ -124,6 +129,7 @@ async function loadMe() {
       }
     } catch { /* storage blocked: nothing waiting */ }
     state.me = { ...res.data.account, balanceCents: res.data.balance_cents, learners: res.data.learners };
+    if (!state.me.welcomed && !state.welcome.done) state.welcome.open = true;   // first visit: say hello once
     loadMyBookings();   // signed in: fetch the "My bookings" list too
   } else {
     if (res.status !== 401) console.error("loadMe failed", res);   // 401 just means signed out
@@ -259,6 +265,7 @@ function render() {
   renderCancel();
   renderBuy();
   renderAccountDialog();
+  renderWelcome();
   renderFilters();
   renderStatus();
   renderMyBookings();
@@ -994,6 +1001,24 @@ async function removePerson(id) {
   render();
 }
 
+// ---------- The one-time welcome ----------
+
+function renderWelcome() {
+  const open = state.welcome.open && !!state.me;
+  if (open && !welcomeDialogEl.open) welcomeDialogEl.showModal();
+  if (!open && welcomeDialogEl.open) welcomeDialogEl.close();
+  document.querySelector("#welcome-credit").hidden = !state.payments;   // only where credit can be bought
+}
+
+// The welcome has been seen (Got it, Set my name, or Escape): close it and
+// tell the server, so it doesn't come back here or on another device. If that
+// request fails, the welcome simply shows once more next time.
+function welcomeSeen() {
+  if (state.welcome.done) return;
+  state.welcome = { open: false, done: true };
+  api("POST", "/me/welcomed").then((res) => { if (!res.ok) console.error("welcomed failed", res); });
+}
+
 function renderAccountDialog() {
   const a = state.account;
   if (a.open && !accountDialogEl.open) accountDialogEl.showModal();
@@ -1245,6 +1270,8 @@ document.addEventListener("click", (e) => {
   if (action === "close-buy") { state.buy.open = false; render(); }
   if (action === "open-account" && state.me) openAccount();
   if (action === "close-account") { state.account.open = false; render(); }
+  if (action === "close-welcome") { welcomeSeen(); render(); }
+  if (action === "welcome-set-name") { welcomeSeen(); openAccount(); }   // openAccount renders
   if (action === "edit-person") {
     const l = state.me.learners.find((x) => x.id === e.target.closest("[data-person-id]").dataset.personId);
     if (l) { fillPersonForm(l); state.account.error = null; render(); }
@@ -1324,6 +1351,7 @@ bookDialogEl.addEventListener("close", () => { state.book.open = false; });
 cancelDialogEl.addEventListener("close", () => { state.cancel.open = false; });
 buyDialogEl.addEventListener("close", () => { state.buy.open = false; });
 accountDialogEl.addEventListener("close", () => { state.account.open = false; });
+welcomeDialogEl.addEventListener("close", () => { if (state.welcome.open) welcomeSeen(); });   // Escape
 
 // Back from Stripe's page without paying: the browser may show this page from
 // its memory (the "back-forward cache"), frozen as it was when we left, with

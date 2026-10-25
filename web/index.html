@@ -255,6 +255,21 @@
     </div>
   </dialog>
 
+  <!-- The one-time welcome, after a first sign-in (account.welcomed_at empty).
+       However it closes, app.js tells the server it has been seen. -->
+  <dialog id="welcome-dialog" class="dialog" aria-labelledby="welcome-title">
+    <h2 id="welcome-title" data-i18n="welcomeTitle"></h2>
+    <ol class="welcome-steps">
+      <li data-i18n="welcomeName"></li>
+      <li data-i18n="welcomeBook"></li>
+      <li id="welcome-credit" data-i18n="welcomeCredit"></li>
+    </ol>
+    <div class="dialog-actions">
+      <button type="button" class="btn-secondary" data-action="close-welcome" data-i18n="gotIt"></button>
+      <button type="button" class="btn-primary" data-action="welcome-set-name" data-i18n="setMyName"></button>
+    </div>
+  </dialog>
+
   <div id="toast" class="toast" role="status" hidden></div>
 </body>
 </html>
