@@ -39,7 +39,7 @@ const STRINGS = {
     balanceShort: (now) => `Your credit: ${now}. That's not enough for this booking.`,
     bookFor: (total) => `Book for ${total}`,
     booking: "Booking…",
-    booked: (title) => `Booked: ${title}. See you in class!`,
+    booked: (what, when) => `Booked! ${what}, ${when}`,
     // Why a booking was refused (by the error code the server sends)
     errInsufficientCredit: "You don't have enough credit for this booking.",
     errSessionFull: "Sorry, there aren't enough seats left in this class.",
@@ -431,7 +431,7 @@ const STRINGS = {
     balanceShort: (now) => `Tu crédito: ${now}. No alcanza para esta reserva.`,
     bookFor: (total) => `Reservar por ${total}`,
     booking: "Reservando…",
-    booked: (title) => `Reservado: ${title}. ¡Nos vemos en clase!`,
+    booked: (what, when) => `¡Reservado! ${what}, ${when}`,
     errInsufficientCredit: "No tienes suficiente crédito para esta reserva.",
     errSessionFull: "Lo sentimos, no quedan suficientes cupos en esta clase.",
     errSessionNotOpen: "Lo sentimos, esta clase ya no está abierta para reservas.",

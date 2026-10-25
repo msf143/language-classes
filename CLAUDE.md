@@ -623,7 +623,10 @@ For what's already built, read the code and `git log`. Next, in order:
    Checked in headless Chrome (virtual authenticator): offer → add; button; autofill; no second offer; removed →
    "not registered". Note: Chrome's virtual authenticator answers conditional requests at once (a phone waits for a tap),
    so browser checks switch autofill off where they test something else. **Passkeys done**; try on a phone on dev. Relying party ID = the site's own host (hablemos.live, dev.hablemos.live,
-   localhost), so each environment's passkeys are its own. Then: the wife's oddities.
+   localhost), so each environment's passkeys are its own. Look and feel (2026-10-25): toasts are a rounded box (not a pill), as wide as the text, at
+   most 28rem and the screen minus 16px a side; the booked toast says what and when ("Booked! …, Mon, Oct 26, 12:00 PM").
+   Next: a calmer My Bookings card (language tag, date heading, seat actions as text links on one line, Cancel booking
+   quiet at the bottom). Then: the wife's oddities.
 9. **Friends in private classes** (done 2026-10-24; design agreed the same day). A private booking holds **seats** (1–4,
    `booking.party_size`), all **paid by the payer when added**, at the per-person price for that party size. A seat
    is filled by one of the payer's own learners or **open with an invite link**; a friend opens it, signs in (free

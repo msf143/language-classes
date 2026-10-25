@@ -788,7 +788,7 @@ async function submitBooking() {
   if (res.ok) {   // 201 booked now, or 200 = this attempt had already gone through
     b.open = false;
     render();
-    showToast(t("booked", targetTitle(tg)));
+    showToast(t("booked", targetTitle(tg), shortWhen(targetStart(tg))));
     loadMe();             // new balance and My bookings
     loadSessions();       // new seat counts
     loadPrivateSlots();   // a private booking takes its time off the list
@@ -812,6 +812,18 @@ async function submitBooking() {
 }
 
 // "Conversational Spanish – Beginners", or "Private class · Learn Spanish".
+// When the class being booked starts (ISO text from the server).
+function targetStart(tg) {
+  return tg.kind === "group" ? state.sessions.find((s) => s.id === tg.id)?.starts_at : tg.starts_at;
+}
+
+// "Mon, Oct 26, 12:00 PM" / "lun, 26 oct, 12:00 p. m.": short, for a toast.
+function shortWhen(iso) {
+  return new Intl.DateTimeFormat(state.uiLang, {
+    weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit", hour12: true,
+  }).format(new Date(iso));
+}
+
 function targetTitle(tg) {
   if (tg.kind === "group") return state.sessions.find((s) => s.id === tg.id)?.title ?? "";
   return `${t("privateClass")} · ${tg.target_language === "es" ? t("learnSpanish") : t("learnEnglish")}`;
