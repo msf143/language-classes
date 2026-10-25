@@ -128,10 +128,17 @@
     <h2 id="signin-title" data-i18n="signinTitle"></h2>
 
     <form id="signin-form" novalidate>
+      <!-- Passkey first, where the browser can (app.js shows it). -->
+      <div id="passkey-signin" class="passkey-signin" hidden>
+        <button type="button" class="btn-primary" id="passkey-signin-button" data-action="passkey-signin"></button>
+        <p class="muted small" data-i18n="orEmail"></p>
+      </div>
       <p data-i18n="signinIntro"></p>
       <label class="field">
         <span data-i18n="emailLabel"></span>
-        <input type="email" name="email" autocomplete="email" required>
+        <!-- "webauthn": phones may also offer a saved passkey right here, in
+             the keyboard's suggestions (app.js starts that "autofill" request). -->
+        <input type="email" name="email" autocomplete="email webauthn" required>
       </label>
       <p id="signin-error" class="form-error" aria-live="polite"></p>
       <div class="dialog-actions">
@@ -275,6 +282,17 @@
     <p id="account-error" class="form-error" aria-live="polite"></p>
     <div class="dialog-actions">
       <button type="button" class="btn-secondary" data-action="close-account" data-i18n="close"></button>
+    </div>
+  </dialog>
+
+  <!-- The passkey offer: once per device, after signing in by email, where the
+       device has Face ID, a fingerprint reader or a PIN. -->
+  <dialog id="offer-dialog" class="dialog" aria-labelledby="offer-title">
+    <h2 id="offer-title" data-i18n="offerTitle"></h2>
+    <p data-i18n="offerText"></p>
+    <div class="dialog-actions">
+      <button type="button" class="btn-secondary" data-action="offer-no" data-i18n="offerNo"></button>
+      <button type="button" class="btn-primary" id="offer-yes" data-action="offer-yes"></button>
     </div>
   </dialog>
 

@@ -612,7 +612,14 @@ For what's already built, read the code and `git log`. Next, in order:
    `POST /me/passkeys/{id}/remove` → status removed, mine only; list with added / last used, Add a passkey (hidden where
    `getPublicKey` is missing), Remove with `confirm()`; `toB64` / `fromB64` / `passkeysSupported` / `deviceName` in
    `common.js`; checked in headless Chrome with a virtual authenticator: add, same device again → "already", remove);
-   [ ] 4b "Sign in with a passkey" in the sign-in dialog + the one-time offer after an email sign-in. Relying party ID = the site's own host (hablemos.live, dev.hablemos.live,
+   [x] 4b sign-in dialog: "Sign in with a passkey" above the email box + passkey autofill (email input
+   `autocomplete="email webauthn"`, a `mediation: "conditional"` request while the dialog is open, stopped with an
+   AbortController by the button and on close; only one passkey request at a time) + the offer (`#offer-dialog`, once per
+   device in localStorage `passkeyOffered`, after an email sign-in: code, or the link via `/#signed-in`; after the welcome;
+   only where `isUserVerifyingPlatformAuthenticatorAvailable`); `addPasskey(onError)` shared by My Account and the offer.
+   Checked in headless Chrome (virtual authenticator): offer → add; button; autofill; no second offer; removed →
+   "not registered". Note: Chrome's virtual authenticator answers conditional requests at once (a phone waits for a tap),
+   so browser checks switch autofill off where they test something else. **Passkeys done**; try on a phone on dev. Relying party ID = the site's own host (hablemos.live, dev.hablemos.live,
    localhost), so each environment's passkeys are its own. Then: the wife's oddities.
 9. **Friends in private classes** (done 2026-10-24; design agreed the same day). A private booking holds **seats** (1–4,
    `booking.party_size`), all **paid by the payer when added**, at the per-person price for that party size. A seat

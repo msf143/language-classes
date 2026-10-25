@@ -40,6 +40,8 @@ const state = {
     status: "idle",                // "idle" | "sending"
     error: null,                   // { key, requestId? } when the last attempt failed
   },
+  emailSignIn: false,              // signed in by email in this page just now (may offer a passkey)
+  offer: { open: false },          // is the passkey offer showing?
   welcome: {
     open: false,                   // is the one-time welcome showing? (opened by loadMe)
     done: false,                   // seen in this page already: never reopen it, even before /me catches up
@@ -67,10 +69,11 @@ const state = {
                                    // status "checking" | "done" | "failed" | "slow" | "cancelled" | "signin"
   signin: {
     open: false,                   // is the sign-in dialog showing?
-    status: "idle",                // "idle" | "sending" | "sent" | "error"
-    email: "",                     // where the link went (for the "sent" message)
+    status: "idle",                // "idle" | "sending" | "sent" | "checking" | "error"
+    email: "",                     // where the code went (for the "sent" message)
     expiresInMinutes: 0,
     error: null,                   // { key, requestId? } when status is "error"
+    passkeyBusy: false,            // the passkey button's request is waiting for the device or server
   },
 };
 
@@ -89,6 +92,7 @@ const cancelFormEl = document.querySelector("#cancel-form");
 const buyDialogEl = document.querySelector("#buy-dialog");
 const accountDialogEl = document.querySelector("#account-dialog");
 const welcomeDialogEl = document.querySelector("#welcome-dialog");
+const offerDialogEl = document.querySelector("#offer-dialog");
 const nameFormEl = document.querySelector("#name-form");
 const personFormEl = document.querySelector("#person-form");
 const buyFormEl = document.querySelector("#buy-form");
@@ -137,6 +141,7 @@ async function loadMe() {
     state.me = { ...res.data.account, balanceCents: res.data.balance_cents, learners: res.data.learners };
     if (!state.me.welcomed && !state.welcome.done) state.welcome.open = true;   // first visit: say hello once
     loadMyBookings();   // signed in: fetch the "My bookings" list too
+    maybeOfferPasskey();
   } else {
     if (res.status !== 401) console.error("loadMe failed", res);   // 401 just means signed out
     state.me = null;
@@ -256,6 +261,7 @@ async function verifyCode(code) {
   if (res.ok) {
     state.signin.open = false;
     state.signin.status = "idle";
+    state.emailSignIn = true;
     showToast(t("signedInToast"));
     await loadMe();
     return;
@@ -300,6 +306,7 @@ function render() {
   renderBuy();
   renderAccountDialog();
   renderWelcome();
+  renderOffer();
   renderFilters();
   renderStatus();
   renderMyBookings();
@@ -529,6 +536,10 @@ function renderSignin() {
   const codeSubmit = document.querySelector("#code-submit");
   codeSubmit.textContent = s.status === "checking" ? t("checkingCode") : t("verifyCode");
   codeSubmit.disabled = s.status === "checking";
+  document.querySelector("#passkey-signin").hidden = !passkeysSupported;
+  const passkeyButton = document.querySelector("#passkey-signin-button");
+  passkeyButton.textContent = s.passkeyBusy ? t("addingPasskey") : t("signInPasskey");
+  passkeyButton.disabled = !!s.passkeyBusy;
 
   const err = s.error;
   const errText = err ? t(err.key) + (err.requestId ? ` ${t("reference")}: ${err.requestId}` : "") : "";
@@ -986,16 +997,16 @@ async function loadPasskeys() {
 // Add a passkey: ask the server for options, hand them to the device (Face ID
 // etc.), send back what it made. The options' byte fields arrive as base64url
 // text and must become bytes for navigator.credentials.create(); the answer's
-// bytes become text again for the server.
-async function addPasskey() {
+// bytes become text again for the server. onError(key, requestId) says what
+// went wrong where the caller shows it. True when a passkey was added.
+async function addPasskey(onError) {
   const p = state.passkeys;
   const fail = (key, requestId) => {
     p.adding = false;
-    state.account.error = { key, requestId };
-    render();
+    onError(key, requestId);
+    return false;
   };
   p.adding = true;
-  state.account.error = null;
   render();
   const start = await api("POST", "/me/passkeys/start");
   if (!start.ok) return fail("errPasskeyFailed", start.requestId);
@@ -1012,7 +1023,7 @@ async function addPasskey() {
   } catch (err) {
     // NotAllowedError: they cancelled, or let it time out. Nothing to say.
     // InvalidStateError: this device already holds one of theirs (excludeCredentials).
-    if (err.name === "NotAllowedError") { p.adding = false; return render(); }
+    if (err.name === "NotAllowedError") { p.adding = false; render(); return false; }
     console.error("credentials.create failed", err);
     return fail(err.name === "InvalidStateError" ? "errPasskeyExists" : "errPasskeyFailed");
   }
@@ -1032,6 +1043,144 @@ async function addPasskey() {
   p.adding = false;
   showToast(t("passkeyAdded"));
   await loadPasskeys();
+  return true;
+}
+
+// Adding from My Account: errors show in the dialog.
+function addPasskeyInAccount() {
+  state.account.error = null;
+  addPasskey((key, requestId) => { state.account.error = { key, requestId }; render(); });
+}
+
+// ---------- signing in with a passkey ----------
+
+// The options from POST /auth/passkey/start, with the challenge as bytes.
+function passkeyGetOptions(o) {
+  return { challenge: fromB64(o.challenge), rpId: o.rpId, timeout: o.timeout,
+    userVerification: o.userVerification, allowCredentials: [] };
+}
+
+// Send the device's signed answer; signed in → like an emailed code.
+async function finishPasskeySignin(cred) {
+  const r = cred.response;
+  const res = await api("POST", "/auth/passkey", {
+    id: toB64(cred.rawId),
+    client_data_json: toB64(r.clientDataJSON),
+    authenticator_data: toB64(r.authenticatorData),
+    signature: toB64(r.signature),
+    user_handle: r.userHandle ? toB64(r.userHandle) : "",
+    timezone: visitorTimeZone,
+  });
+  state.signin.passkeyBusy = false;
+  if (res.ok) {
+    state.signin.open = false;
+    state.signin.status = "idle";
+    showToast(t("signedInToast"));
+    await loadMe();
+    return;
+  }
+  state.signin.status = "error";
+  state.signin.error = res.data.code === "passkey_unknown" ? { key: "errPasskeyUnknown" }
+    : { key: "errPasskeySignin", requestId: res.requestId };
+  render();
+}
+
+// Passkey autofill ("conditional mediation"): while the sign-in dialog is
+// open, a quiet request waits in the background; the phone shows the saved
+// passkey in the email box's keyboard suggestions, and picking it answers the
+// request. Only one passkey request may run at a time, so the button and
+// closing the dialog stop it first (AbortController, the standard "cancel
+// this" switch for browser requests).
+let autofill = null;   // the AbortController of the waiting request, if any
+
+async function startPasskeyAutofill() {
+  if (!passkeysSupported || autofill || !state.signin.open) return;
+  if (!(await PublicKeyCredential.isConditionalMediationAvailable?.())) return;
+  const controller = new AbortController();
+  autofill = controller;
+  const start = await api("POST", "/auth/passkey/start");
+  try {
+    if (!start.ok || controller.signal.aborted) return;
+    const cred = await navigator.credentials.get({
+      publicKey: passkeyGetOptions(start.data), mediation: "conditional", signal: controller.signal });
+    if (autofill === controller) autofill = null;
+    await finishPasskeySignin(cred);
+  } catch (err) {
+    if (err.name !== "AbortError" && err.name !== "NotAllowedError") console.error("passkey autofill failed", err);
+  } finally {
+    if (autofill === controller) autofill = null;
+  }
+}
+
+function stopPasskeyAutofill() {
+  autofill?.abort();
+  autofill = null;
+}
+
+// The "Sign in with a passkey" button: the device's own passkey sheet.
+async function signInWithPasskey() {
+  stopPasskeyAutofill();
+  const s = state.signin;
+  s.passkeyBusy = true;
+  s.error = null;
+  render();
+  const start = await api("POST", "/auth/passkey/start");
+  if (!start.ok) {
+    s.passkeyBusy = false;
+    s.status = "error";
+    s.error = { key: "errPasskeySignin", requestId: start.requestId };
+    return render();
+  }
+  let cred;
+  try {
+    cred = await navigator.credentials.get({ publicKey: passkeyGetOptions(start.data) });
+  } catch (err) {
+    // NotAllowedError: cancelled, timed out, or no passkey of ours on this device.
+    if (err.name !== "NotAllowedError") console.error("credentials.get failed", err);
+    s.passkeyBusy = false;
+    render();
+    startPasskeyAutofill();
+    return;
+  }
+  await finishPasskeySignin(cred);
+}
+
+// ---------- the passkey offer (once per device, after an email sign-in) ----------
+
+// Offer when: signed in by email just now (code, or link via /#signed-in), the
+// browser and device can do it, the welcome isn't showing, and this device
+// hasn't been asked before. Remembered in this browser only: a passkey belongs
+// to a device, so another device deserves its own offer.
+const offeredKey = "passkeyOffered";
+
+async function maybeOfferPasskey() {
+  if (!state.emailSignIn || !state.me || state.welcome.open || !passkeysSupported) return;
+  state.emailSignIn = false;
+  try { if (localStorage.getItem(offeredKey)) return; } catch { return; }
+  if (!(await PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable())) return;
+  state.offer.open = true;
+  render();
+}
+
+function offerDone() {
+  state.offer.open = false;
+  try { localStorage.setItem(offeredKey, "1"); } catch { /* storage blocked: may ask again */ }
+}
+
+async function acceptOffer() {
+  await addPasskey((key, requestId) =>
+    showToast(t(key) + (requestId ? ` ${t("reference")}: ${requestId}` : "")));
+  offerDone();   // asked once, whatever the answer
+  render();
+}
+
+function renderOffer() {
+  const open = state.offer.open && !!state.me;
+  if (open && !offerDialogEl.open) offerDialogEl.showModal();
+  if (!open && offerDialogEl.open) offerDialogEl.close();
+  const yes = document.querySelector("#offer-yes");
+  yes.disabled = state.passkeys.adding;
+  yes.textContent = state.passkeys.adding ? t("addingPasskey") : t("addPasskey");
 }
 
 async function removePasskeyById(id) {
@@ -1335,8 +1484,9 @@ async function leaveClass(seatId) {
 }
 
 function openSignin() {
-  state.signin = { open: true, status: "idle", email: "", expiresInMinutes: 0, error: null };
+  state.signin = { open: true, status: "idle", email: "", expiresInMinutes: 0, error: null, passkeyBusy: false };
   render();
+  startPasskeyAutofill();
 }
 
 // ---------- events (delegated listeners for the whole page) ----------
@@ -1410,14 +1560,21 @@ document.addEventListener("click", (e) => {
   if (action === "close-buy") { state.buy.open = false; render(); }
   if (action === "open-account" && state.me) openAccount();
   if (action === "close-account") { state.account.open = false; render(); }
-  if (action === "close-welcome") { welcomeSeen(); render(); }
-  if (action === "welcome-set-name") { welcomeSeen(); openAccount(); }   // openAccount renders
+  if (action === "close-welcome") { welcomeSeen(); render(); maybeOfferPasskey(); }   // then the passkey offer, if due
+  if (action === "welcome-set-name") {
+    welcomeSeen();
+    state.emailSignIn = false;   // My Account has its own Add a passkey; no second dialog on top
+    openAccount();               // openAccount renders
+  }
   if (action === "edit-person") {
     const l = state.me.learners.find((x) => x.id === e.target.closest("[data-person-id]").dataset.personId);
     if (l) { fillPersonForm(l); state.account.error = null; render(); }
   }
   if (action === "cancel-edit-person") { fillPersonForm(null); render(); }
-  if (action === "add-passkey" && !state.passkeys.adding) addPasskey();
+  if (action === "add-passkey" && !state.passkeys.adding) addPasskeyInAccount();
+  if (action === "passkey-signin" && !state.signin.passkeyBusy) signInWithPasskey();
+  if (action === "offer-yes" && !state.passkeys.adding) acceptOffer();
+  if (action === "offer-no") { offerDone(); render(); }
   if (action === "remove-passkey") removePasskeyById(e.target.closest("[data-passkey-id]").dataset.passkeyId);
   if (action === "remove-person" && !state.account.sending) removePerson(e.target.closest("[data-person-id]").dataset.personId);
   if (action === "dismiss-paid") { state.paid = null; render(); }
@@ -1503,12 +1660,17 @@ document.addEventListener("change", (e) => {
 
 // Esc closes a <dialog> on its own; keep state in step when that happens.
 // ("close" doesn't bubble, so these listeners sit on the dialogs themselves.)
-dialogEl.addEventListener("close", () => { state.signin.open = false; });
+dialogEl.addEventListener("close", () => { state.signin.open = false; stopPasskeyAutofill(); });
 bookDialogEl.addEventListener("close", () => { state.book.open = false; });
 cancelDialogEl.addEventListener("close", () => { state.cancel.open = false; });
 buyDialogEl.addEventListener("close", () => { state.buy.open = false; });
 accountDialogEl.addEventListener("close", () => { state.account.open = false; });
-welcomeDialogEl.addEventListener("close", () => { if (state.welcome.open) welcomeSeen(); });   // Escape
+welcomeDialogEl.addEventListener("close", () => {   // Escape
+  if (!state.welcome.open) return;
+  welcomeSeen();
+  maybeOfferPasskey();
+});
+offerDialogEl.addEventListener("close", () => { if (state.offer.open) offerDone(); });   // Escape
 
 // Back from Stripe's page without paying: the browser may show this page from
 // its memory (the "back-forward cache"), frozen as it was when we left, with
@@ -1527,6 +1689,11 @@ window.addEventListener("pageshow", (e) => {
 if (location.hash === "#signin") {
   history.replaceState(null, "", location.pathname);
   state.signin.open = true;
+  setTimeout(startPasskeyAutofill, 0);   // after the first render has opened the dialog
+}
+if (location.hash === "#signed-in") {   // from signin.html: signed in by the emailed link
+  history.replaceState(null, "", location.pathname);
+  state.emailSignIn = true;
 }
 if (location.hash === "#joined") {
   history.replaceState(null, "", location.pathname);

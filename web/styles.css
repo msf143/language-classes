@@ -337,3 +337,8 @@ a.link { color: var(--accent); font-weight: 600; text-decoration: none; }
 /* The sign-in code box: big, spaced digits, easy to check at a glance. */
 .code-input { font-size: 1.6rem; letter-spacing: 0.3em; text-align: center; max-width: 12rem; font-variant-numeric: tabular-nums; }
 .code-links { display: flex; flex-wrap: wrap; gap: 0.25rem 1.25rem; }
+
+/* Passkey sign-in, above the email box: a full-width button and an "or" line. */
+.passkey-signin { margin-bottom: 0.75rem; }
+.passkey-signin .btn-primary { width: 100%; }
+.passkey-signin p { margin: 0.75rem 0 0; }

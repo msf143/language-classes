@@ -37,7 +37,7 @@ async function verify() {
   if (res.ok) {
     // The server set the session cookie. replace() (not assign) so the back
     // button doesn't return to this page with its spent token.
-    location.replace("/");
+    location.replace("/#signed-in");   // the main page may offer a passkey (signed in by email)
     return;
   }
   if (res.status === 400) {
