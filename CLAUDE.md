@@ -589,9 +589,12 @@ For what's already built, read the code and `git log`. Next, in order:
    link still works after the tries); `signInEmail` shared with the link; gated race test (fails with read-then-raise);
    [x] code page (the Sign-in dialog's second step `#code-form`: `inputmode="numeric"` + `autocomplete="one-time-code"`,
    the 6th digit submits by itself, Send a new code / Use a different email, errors translated; signed in → `loadMe`
-   (a waiting friend's invitation still wins); checked in headless Chrome, phone + Spanish: wrong code, then right); [ ] passkeys (WebAuthn, standard
-   library only: `passkey` + challenge tables, register, sign in, page offer + My Account list; checked with Chrome's
-   virtual authenticator). Then: the wife's oddities.
+   (a waiting friend's invitation still wins); checked in headless Chrome, phone + Spanish: wrong code, then right); passkeys (WebAuthn, standard library only; checked
+   with Chrome's virtual authenticator): [x] migration 000013 (`passkey`: credential_id, SPKI public key, COSE alg -7/-257,
+   sign_count, name, status active/removed; `passkey_challenge`: 32 random bytes, single-use, purpose register (with the
+   account) / signin (none)); [ ] register (server); [ ] sign in (server); [ ] page (offer after an email sign-in,
+   "Sign in with a passkey", My Account list). Relying party ID = the site's own host (hablemos.live, dev.hablemos.live,
+   localhost), so each environment's passkeys are its own. Then: the wife's oddities.
 9. **Friends in private classes** (done 2026-10-24; design agreed the same day). A private booking holds **seats** (1–4,
    `booking.party_size`), all **paid by the payer when added**, at the per-person price for that party size. A seat
    is filled by one of the payer's own learners or **open with an invite link**; a friend opens it, signs in (free
