@@ -201,6 +201,11 @@ func runWorker(ctx context.Context, pool *pgxpool.Pool, appEnv, resendKey, siteU
 	} else if tokens+sessions > 0 {
 		slog.Info("expired sign-ins purged", "login_tokens", tokens, "web_sessions", sessions)
 	}
+	if n, err := purgePasskeyChallenges(ctx, pool); err != nil {
+		slog.Error("purge passkey challenges failed", "err", err)
+	} else if n > 0 {
+		slog.Info("old passkey challenges purged", "count", n)
+	}
 
 	stats, err := drainOutbox(ctx, pool, notifyHandler(pool, send, siteURL), 500)
 	slog.Info("worker run done", "processed", stats.Processed, "failed", stats.Failed, "skipped", stats.Skipped)

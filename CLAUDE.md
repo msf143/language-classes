@@ -70,6 +70,7 @@ cmd/api/            main.go    server wiring, middleware, shared helpers (writeJ
                     teacher_classes.go POST /teacher/sessions (new group class), POST /teacher/sessions/{id}/cancel
                     account.go PUT /me (name), /me/learners (add, edit, archive family members)
                     passkeys.go WebAuthn: add a passkey (start + finish; checks without CBOR or a library)
+                    passkeys_signin.go sign in with a passkey (signature check, counter, web session)
                     admin.go   requireAdmin; admin routes (teachers: list, profile, activate/deactivate)
                     invites.go teacher invitations: create (email sent at once), list, cancel; accept (7g-2)
                     slots.go   bookableStarts: blocks minus busy sessions → slot start times (pure)
@@ -600,7 +601,14 @@ For what's already built, read the code and `git log`. Next, in order:
    challenge claimed (conditional UPDATE, own statement) → authenticator data (rpID hash, UP + UV flags, credential ID)
    → key (P-256 / RSA ≥ 2048) → insert under the account lock (≤ 10); codes `challenge_invalid`, `passkey_invalid`
    (reason logged), `passkey_exists`, `too_many_passkeys`; tests use a Go `fakeAuthenticator`, checked to fail with the
-   UV or origin check off); [ ] sign in (server); [ ] page (offer after an email sign-in,
+   UV or origin check off); [x] sign in (server, `cmd/api/passkeys_signin.go`:
+   `POST /auth/passkey/start` (public; challenge, rpId, user verification required, no allowCredentials: discoverable)
+   → `POST /auth/passkey` {id, client_data_json, authenticator_data, signature, user_handle, timezone}: client data →
+   challenge claimed → authenticator data → passkey `FOR UPDATE` (active only, else `passkey_unknown`) → user handle =
+   account → signature over authData ‖ SHA-256(clientData) (`ecdsa.VerifyASN1` / `rsa.VerifyPKCS1v15`) → counter must
+   go up when the device keeps one (else refused + Warn log) → `signInEmail`; mutation-checked (no signature check: a
+   wrong key signs in; no lock: both of two same-counter sign-ins pass); worker `purgePasskeyChallenges` (a day past
+   expiry)); [ ] page (offer after an email sign-in,
    "Sign in with a passkey", My Account list). Relying party ID = the site's own host (hablemos.live, dev.hablemos.live,
    localhost), so each environment's passkeys are its own. Then: the wife's oddities.
 9. **Friends in private classes** (done 2026-10-24; design agreed the same day). A private booking holds **seats** (1–4,

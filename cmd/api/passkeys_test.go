@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"crypto"
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
@@ -21,8 +22,10 @@ var testRP = relyingPartyFor("https://site.test")
 
 // fakeAuthenticator stands in for a phone: it holds a key pair and answers
 // the way a real device and browser do (the same bytes, the same JSON).
+// crypto.Signer is what both kinds of private key have in common.
 type fakeAuthenticator struct {
-	key    *ecdsa.PrivateKey
+	key    crypto.Signer
+	alg    int // coseES256 or coseRS256
 	credID []byte
 }
 
@@ -34,7 +37,19 @@ func newFakeAuthenticator(t *testing.T) *fakeAuthenticator {
 	}
 	id := make([]byte, 16)
 	rand.Read(id)
-	return &fakeAuthenticator{key: key, credID: id}
+	return &fakeAuthenticator{key: key, alg: coseES256, credID: id}
+}
+
+// newRSAFakeAuthenticator: like some Windows Hello keys.
+func newRSAFakeAuthenticator(t *testing.T) *fakeAuthenticator {
+	t.Helper()
+	key, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		t.Fatal(err)
+	}
+	id := make([]byte, 16)
+	rand.Read(id)
+	return &fakeAuthenticator{key: key, alg: coseRS256, credID: id}
 }
 
 // authData builds the authenticator data (layout in passkeys.go) for rpID.
@@ -62,13 +77,13 @@ func clientDataJSON(typ string, challenge []byte, origin string) []byte {
 // registration is the body the page sends to POST /me/passkeys, as a map so a
 // test can spoil one field.
 func (a *fakeAuthenticator) registration(challenge []byte) map[string]any {
-	der, _ := x509.MarshalPKIXPublicKey(&a.key.PublicKey)
+	der, _ := x509.MarshalPKIXPublicKey(a.key.Public())
 	return map[string]any{
 		"id":                   b64.EncodeToString(a.credID),
 		"client_data_json":     b64.EncodeToString(clientDataJSON("webauthn.create", challenge, testRP.origin)),
 		"authenticator_data":   b64.EncodeToString(a.authData(testRP.id, flagUserPresent|flagUserVerified|flagAttestedData, 0, true)),
 		"public_key":           b64.EncodeToString(der),
-		"public_key_algorithm": coseES256,
+		"public_key_algorithm": a.alg,
 		"name":                 "iPhone · Safari",
 	}
 }
