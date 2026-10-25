@@ -587,7 +587,9 @@ For what's already built, read the code and `git log`. Next, in order:
    `POST /auth/verify-code {email, code, timezone}` (newest current code only; every try counted first in one
    conditional UPDATE, 5 per code, 20 per address per day; `code_wrong` / `code_expired` / 429 `too_many_tries`; the
    link still works after the tries); `signInEmail` shared with the link; gated race test (fails with read-then-raise);
-   [ ] code page (the dialog asks for the code, `autocomplete="one-time-code"`); [ ] passkeys (WebAuthn, standard
+   [x] code page (the Sign-in dialog's second step `#code-form`: `inputmode="numeric"` + `autocomplete="one-time-code"`,
+   the 6th digit submits by itself, Send a new code / Use a different email, errors translated; signed in → `loadMe`
+   (a waiting friend's invitation still wins); checked in headless Chrome, phone + Spanish: wrong code, then right); [ ] passkeys (WebAuthn, standard
    library only: `passkey` + challenge tables, register, sign in, page offer + My Account list; checked with Chrome's
    virtual authenticator). Then: the wife's oddities.
 9. **Friends in private classes** (done 2026-10-24; design agreed the same day). A private booking holds **seats** (1–4,

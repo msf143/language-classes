@@ -140,13 +140,27 @@
       </div>
     </form>
 
-    <div id="signin-sent" hidden>
+    <!-- After "Email me a code": type the 6 digits from the email. autocomplete
+         "one-time-code" lets phones offer the code from the email above the
+         keyboard; inputmode "numeric" brings up the number pad. -->
+    <form id="code-form" hidden novalidate>
       <p id="signin-sent-text"></p>
-      <p id="signin-sent-hint" class="muted"></p>
+      <label class="field">
+        <span data-i18n="codeLabel"></span>
+        <input type="text" name="code" class="code-input" inputmode="numeric" autocomplete="one-time-code"
+               maxlength="7" required>
+      </label>
+      <p id="code-error" class="form-error" aria-live="polite"></p>
+      <p id="signin-sent-hint" class="muted small"></p>
+      <p class="code-links">
+        <button type="button" class="link-button" data-action="new-code" data-i18n="newCode"></button>
+        <button type="button" class="link-button" data-action="other-email" data-i18n="otherEmail"></button>
+      </p>
       <div class="dialog-actions">
-        <button type="button" class="btn-primary" data-action="close-signin" data-i18n="close"></button>
+        <button type="button" class="btn-secondary" data-action="close-signin" data-i18n="cancel"></button>
+        <button type="submit" class="btn-primary" id="code-submit"></button>
       </div>
-    </div>
+    </form>
   </dialog>
 
   <!-- Book dialog. app.js fills in the class, builds one checkbox per learner when

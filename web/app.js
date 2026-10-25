@@ -76,6 +76,7 @@ const toastEl = document.querySelector("#toast");
 const accountEl = document.querySelector("#account-area");
 const dialogEl = document.querySelector("#signin-dialog");
 const signinFormEl = document.querySelector("#signin-form");
+const codeFormEl = document.querySelector("#code-form");
 const bookDialogEl = document.querySelector("#book-dialog");
 const bookFormEl = document.querySelector("#book-form");
 const cancelDialogEl = document.querySelector("#cancel-dialog");
@@ -224,7 +225,10 @@ async function requestLink(email) {
     state.signin.status = "sent";
     state.signin.email = email;
     state.signin.expiresInMinutes = res.data.expires_in_minutes;
-    signinFormEl.reset();
+    codeFormEl.reset();
+    render();
+    codeFormEl.elements.code.focus();   // ready to type (or for the phone to offer the code)
+    return;
   } else {
     state.signin.status = "error";
     state.signin.error =
@@ -232,6 +236,31 @@ async function requestLink(email) {
       res.status === 429 ? { key: "tooManyLinks" } :
       { key: "somethingWrong", requestId: res.requestId };
   }
+  render();
+}
+
+// The 6 digits from the email. Signed in: the server has set the cookie, so
+// loading /me shows the page signed in (and sends a friend with a waiting
+// invitation back to it). Wrong: say why; the box keeps what was typed.
+async function verifyCode(code) {
+  const s = state.signin;
+  s.status = "checking";
+  s.error = null;
+  render();
+  const res = await api("POST", "/auth/verify-code", { email: s.email, code, timezone: visitorTimeZone });
+  if (res.ok) {
+    state.signin.open = false;
+    state.signin.status = "idle";
+    showToast(t("signedInToast"));
+    await loadMe();
+    return;
+  }
+  s.status = "sent";
+  s.error =
+    res.data.code === "code_wrong" ? { key: "errCodeWrong" } :
+    res.data.code === "code_expired" ? { key: "errCodeExpired" } :
+    res.data.code === "too_many_tries" ? { key: "errTooManyTries" } :
+    { key: "somethingWrong", requestId: res.requestId };
   render();
 }
 
@@ -484,17 +513,22 @@ function renderSignin() {
   if (s.open && !dialogEl.open) dialogEl.showModal();
   if (!s.open && dialogEl.open) dialogEl.close();
 
-  const sent = s.status === "sent";
+  // Two steps: the email form, then (once a code was sent) the code form.
+  const sent = s.status === "sent" || s.status === "checking";
   signinFormEl.hidden = sent;
-  document.querySelector("#signin-sent").hidden = !sent;
+  codeFormEl.hidden = !sent;
 
   const submit = document.querySelector("#signin-submit");
   submit.textContent = s.status === "sending" ? t("sending") : t("sendLink");
   submit.disabled = s.status === "sending";
+  const codeSubmit = document.querySelector("#code-submit");
+  codeSubmit.textContent = s.status === "checking" ? t("checkingCode") : t("verifyCode");
+  codeSubmit.disabled = s.status === "checking";
 
   const err = s.error;
-  document.querySelector("#signin-error").textContent =
-    err ? t(err.key) + (err.requestId ? ` ${t("reference")}: ${err.requestId}` : "") : "";
+  const errText = err ? t(err.key) + (err.requestId ? ` ${t("reference")}: ${err.requestId}` : "") : "";
+  document.querySelector("#signin-error").textContent = sent ? "" : errText;
+  document.querySelector("#code-error").textContent = sent ? errText : "";
 
   if (sent) {
     document.querySelector("#signin-sent-text").textContent = t("signinSent", s.email);
@@ -1263,6 +1297,13 @@ document.addEventListener("click", (e) => {
   if (action === "close-cancel") { state.cancel.open = false; render(); }
   if (action === "open-signin") openSignin();
   if (action === "close-signin") { state.signin.open = false; render(); }
+  if (action === "new-code" && state.signin.status === "sent") requestLink(state.signin.email);
+  if (action === "other-email") {
+    state.signin.status = "idle";
+    state.signin.error = null;
+    render();
+    signinFormEl.elements.email.focus();
+  }
   if (action === "open-buy" && state.me) {
     state.book.open = false;   // from the Book dialog: one dialog at a time
     openBuy();
@@ -1313,6 +1354,15 @@ document.addEventListener("submit", (e) => {
     if (state.buy.status === "ready" && state.buy.packId) submitBuy();
     return;
   }
+  if (e.target === codeFormEl) {
+    e.preventDefault();
+    const code = String(new FormData(codeFormEl).get("code")).replace(/\s/g, "");
+    if (!/^\d{6}$/.test(code)) {
+      state.signin.error = { key: "errCodeWrong" };
+      render();
+    } else if (state.signin.status === "sent") verifyCode(code);
+    return;
+  }
   if (e.target !== signinFormEl) return;
   e.preventDefault();
   const email = String(new FormData(signinFormEl).get("email")).trim();
@@ -1323,6 +1373,12 @@ document.addEventListener("submit", (e) => {
     return;
   }
   requestLink(email);
+});
+
+// The 6th digit typed, or the whole code filled in by the phone: sign in
+// without another tap ("input" fires on every change to a text box).
+codeFormEl.elements.code.addEventListener("input", (e) => {
+  if (/^\d{6}$/.test(e.target.value.replace(/\s/g, "")) && state.signin.status === "sent") codeFormEl.requestSubmit();
 });
 
 // Ticking or unticking a box in the Book dialog: copy who's ticked into state
