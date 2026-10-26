@@ -488,8 +488,10 @@ For what's already built, read the code and `git log`. Next, in order:
    Credit expiry (see Business rules) and a bilingual **policies page** (cancellation, refunds,
    credit expiry period, children) that reads its numbers from the same config the code uses.
 7. **← resume here: 7e, the rollout** (all else in step 7, and steps 8 and 9, done 2026-10-24; then turn prod `payments = true` for good). Before announcing the site: Stripe
-   public details (support email hola@; consider a PO box instead of the home address), accountant/lawyer on credit
-   expiry and taxes. Design (agreed 2026-10-24): the **teacher manages his own profile, prices and classes on his
+   public details (support email hola@; consider a PO box instead of the home address; Mike, 2026-10-25/26), the
+   logos (light and dark theme, before launch; Mike's draft: `Hablemos.live_logos.png` in the repo root), then 7e with
+   the teacher. Accountant/lawyer on credit expiry and taxes: decided 2026-10-25 to wait until there are more than a
+   couple of real customers. Design (agreed 2026-10-24): the **teacher manages his own profile, prices and classes on his
    page**; he becomes a teacher only by a command (`api teacher -email … [-name …] [-timezone …]`, `cmd/api/setup.go`)
    run on prod as a one-off execution of the `migrate` job with `--args` (no web path to becoming a teacher).
    Steps: [x] 7a the command (one transaction: find/create account by lower(email), teacher row with lengths
@@ -628,7 +630,10 @@ For what's already built, read the code and `git log`. Next, in order:
    My Bookings card: language tag (+ "Private"), title, when, one line of facts (private payer: seats + paid, no
    "For:"), seats one per line with text-link actions (Copy link · Remove), Cancel / Leave as a quiet link at the bottom;
    text links 44px tall to tap; seat list ≤ 32rem (actions stay near names on a monitor); `dotted()` keeps "1:00 p. m."
-   and amounts whole when lines wrap. Checked at 390px (es, en) and 1440px. Then: the wife's oddities.
+   and amounts whole when lines wrap. Checked at 390px (es, en) and 1440px.
+   Staging fixes (2026-10-26, from the logs: the teacher in Colombia was never signed in; Mike's press worked but stayed
+   on the main page): signed out, the test banner says "Sign in to add test credit or to become the test teacher";
+   "Become the test teacher" goes straight to teacher.html. Then: the wife's oddities.
 9. **Friends in private classes** (done 2026-10-24; design agreed the same day). A private booking holds **seats** (1–4,
    `booking.party_size`), all **paid by the payer when added**, at the per-person price for that party size. A seat
    is filled by one of the payer's own learners or **open with an invite link**; a friend opens it, signs in (free

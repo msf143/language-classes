@@ -125,7 +125,6 @@ const STRINGS = {
     inviteInvalid: "This invitation link isn't valid any more (it may have been replaced or cancelled). Please ask for a new one.",
     pendingNote: "Welcome! Set up your profile, prices and classes. Students will see you once an admin activates your profile.",
     becomeTestTeacher: "Become the test teacher",
-    testTeacherDone: "You're now the test teacher. Open the Teacher page.",
     backToClasses: "← Back to classes",
     teacherTitle: "Teacher Dashboard",
     tzNoteTeacher: (tz) => `Times are in your time zone (${tz}).`,
@@ -294,6 +293,7 @@ const STRINGS = {
 
     // Test-site banner (staging and dev only)
     testBanner: "Test site: classes and credit here are not real.",
+    testSigninHint: "to add test credit or to become the test teacher.",
     yourCredit: (amount) => `Your credit: ${amount}`,
     policiesTitle: "Policies",
     policiesIntro: "How booking, cancelling and credit work. Questions? Write to us any time.",
@@ -515,7 +515,6 @@ const STRINGS = {
     inviteInvalid: "Este enlace de invitación ya no es válido (quizás se reemplazó o se canceló). Pide uno nuevo.",
     pendingNote: "¡Bienvenido! Configura tu perfil, tus precios y tus clases. Los estudiantes te verán cuando un administrador active tu perfil.",
     becomeTestTeacher: "Ser el profesor de prueba",
-    testTeacherDone: "Ahora eres el profesor de prueba. Abre la página del profesor.",
     backToClasses: "← Volver a las clases",
     teacherTitle: "Panel del profesor",
     tzNoteTeacher: (tz) => `Los horarios están en tu zona horaria (${tz}).`,
@@ -681,6 +680,7 @@ const STRINGS = {
     minorNote: "Asiste un menor: un adulto responsable debe estar cerca.",
 
     testBanner: "Sitio de prueba: las clases y el crédito aquí no son reales.",
+    testSigninHint: "para añadir crédito de prueba o ser el profesor de prueba.",
     yourCredit: (amount) => `Tu crédito: ${amount}`,
     policiesTitle: "Políticas",
     policiesIntro: "Cómo funcionan las reservas, las cancelaciones y el crédito. ¿Preguntas? Escríbenos cuando quieras.",

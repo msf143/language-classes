@@ -204,8 +204,7 @@ async function becomeTestTeacher() {
     showToast(`${t("somethingWrong")} ${t("reference")}: ${res.requestId}`);
     return;
   }
-  showToast(t("testTeacherDone"));
-  loadMe();
+  location.assign("teacher.html");   // straight to what they asked to try
 }
 
 // Test sites only: +$50 of fake credit (the server refuses beyond $500).
@@ -496,6 +495,9 @@ function renderBanner() {
   const teacherBtn = document.querySelector("#test-teacher-btn");
   teacherBtn.hidden = !signedIn || state.me.is_teacher;
   teacherBtn.textContent = t("becomeTestTeacher");
+  // Signed out: "Sign in to add test credit or to become the test teacher."
+  // (Not while /me is still loading: state.me undefined.)
+  document.querySelector("#test-signin-hint").hidden = state.me !== null;
 }
 
 // A small person icon, drawn (SVG), so it looks the same on every device
