@@ -194,7 +194,7 @@ function renderPhoto() {
 // An <img> for a photo, or nothing if there isn't one. The address never changes
 // for one photo, so the browser redraws it from its cache without flicker.
 function photoImg(id, alt, cssClass) {
-  return id ? h("img", { class: cssClass, src: `/photos/${id}`, alt, width: "96", height: "96" }) : "";
+  return id ? h("img", { class: cssClass, src: `/photos/${id}`, alt, width: "96", height: "96", loading: "lazy" }) : "";
 }
 
 // A photo chosen. Clearing the input lets the same file be chosen again later.

@@ -146,6 +146,7 @@ func main() {
 	mux.HandleFunc("GET /about-page", getAboutPage(pool))
 	mux.HandleFunc("PUT /about-page", requireAdmin(pool, putAboutPage(pool)))
 	mux.HandleFunc("POST /admin/photos/remove", requireAdmin(pool, adminRemovePhoto(pool)))
+	mux.HandleFunc("POST /admin/students/search", requireAdmin(pool, searchAdminStudents(pool)))
 	mux.HandleFunc("POST /admin/teachers/{id}/activate", requireAdmin(pool, setTeacherStatus(pool, true)))
 	mux.HandleFunc("POST /admin/teachers/{id}/deactivate", requireAdmin(pool, setTeacherStatus(pool, false)))
 

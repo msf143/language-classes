@@ -16,6 +16,9 @@ const state = {
   inviting: false,     // a POST /admin/invites is on its way
   inviteError: null,   // { key, requestId? }
   inviteResult: null,  // { email, link, sent } right after inviting: the link is shown this once
+  students: [],        // POST /admin/students/search: the newest, or the search's matches
+  studentsTotal: 0,    // how many match in all (more than are listed, past 100)
+  studentQuery: "",    // the search that's showing
 };
 
 // ---------- data ----------
@@ -25,7 +28,7 @@ async function load() {
   if (me.status === 401) { state.status = "signedOut"; return render(); }
   if (!me.ok) { state.status = "error"; state.error = { requestId: me.requestId }; return render(); }
   if (!me.data.account.is_admin) { state.status = "notAdmin"; return render(); }
-  await loadTeachers();
+  await Promise.all([loadTeachers(), loadStudents()]);
 }
 
 async function loadTeachers() {
@@ -42,22 +45,52 @@ async function loadTeachers() {
 
 const inviteFormEl = document.querySelector("#invite-form");
 
-// An admin removes someone's photo. Asks first: there's no undo.
-const photoRemoveFormEl = document.querySelector("#photo-remove-form");
+// ---------- students ----------
 
-async function removeSomeonesPhoto() {
-  const email = String(new FormData(photoRemoveFormEl).get("email")).trim();
-  const errorEl = document.querySelector("#photo-remove-error");
-  errorEl.textContent = "";
-  if (!email) { errorEl.textContent = t("invalidEmail"); return; }
+const studentSearchEl = document.querySelector("#student-search");
+
+// The newest students, or those matching the search box.
+async function loadStudents() {
+  const res = await api("POST", "/admin/students/search", { q: state.studentQuery });
+  if (!res.ok) {
+    showToast(`${t("somethingWrong")} ${t("reference")}: ${res.requestId}`);
+    return;
+  }
+  state.students = res.data.students;
+  state.studentsTotal = res.data.total;
+  render();
+}
+
+// Delete someone's photo (a student's or a teacher's). Asks first: there's no undo.
+async function removeSomeonesPhoto(email) {
   if (!confirm(t("adminPhotoConfirm", email))) return;
   const res = await api("POST", "/admin/photos/remove", { email });
   if (!res.ok) {
-    errorEl.textContent = res.status === 400 ? t("invalidEmail") : `${t("somethingWrong")} ${t("reference")}: ${res.requestId}`;
+    showToast(`${t("somethingWrong")} ${t("reference")}: ${res.requestId}`);
     return;
   }
-  photoRemoveFormEl.reset();
   showToast(t(res.data.removed ? "adminPhotoRemoved" : "adminPhotoNone", email));
+  // Reload what's showing, so the photo goes from the screen.
+  if (state.selected) await openTeacher(state.selected.id);
+  await Promise.all([loadTeachers(), loadStudents()]);
+}
+
+function renderStudents() {
+  const shown = state.students.length;
+  document.querySelector("#students-count").textContent = t("studentsCount", shown, state.studentsTotal);
+  const joined = (iso) => fmt(iso, { year: "numeric", month: "short", day: "numeric" });
+  document.querySelector("#student-list").replaceChildren(...state.students.map((s) =>
+    h("li", { class: "my-booking plain person-card" },
+      personPhoto(s.photo_id),
+      h("div", { class: "person-card-body" },
+        cardHead([s.display_name, " ", s.status === "disabled" ? h("span", { class: "tag tag-status-inactive" }, t("studentDisabled")) : ""],
+          s.photo_id ? h("button", { type: "button", class: "btn-secondary btn-small", "data-action": "remove-photo-of", "data-email": s.email }, t("photoRemove")) : null),
+        h("p", { class: "my-booking-detail" }, s.email),
+        h("p", { class: "my-booking-detail" }, ...dotted([
+          t("studentJoined", joined(s.joined_at)), t("studentBookings", s.bookings),
+          ...(s.children ? [t("studentChildren", s.children)] : []),
+        ])),
+      ))));
 }
 
 async function invite() {
@@ -195,7 +228,7 @@ function render() {
   document.querySelector("#teacher-list-view").hidden = !ready || state.selected !== null;
   document.querySelector("#teacher-view").hidden = !ready || state.selected === null;
   if (!ready) return;
-  if (state.selected) renderTeacher(); else { renderList(); renderInvites(); }
+  if (state.selected) renderTeacher(); else { renderList(); renderInvites(); renderStudents(); }
 }
 
 // One row per teacher: name, email, status, and what he has set up. Inactive
@@ -253,7 +286,8 @@ function renderTeacher() {
 
   document.querySelector("#teacher-view").replaceChildren(
     h("button", { type: "button", class: "link-button", "data-action": "back-to-list" }, t("allTeachers")),
-    h("div", { class: "person-heading" }, personPhoto(tr.photo_id), h("h2", {}, tr.display_name, " ", statusTag(tr.status))),
+    h("div", { class: "person-heading" }, personPhoto(tr.photo_id), h("h2", {}, tr.display_name, " ", statusTag(tr.status)),
+      tr.photo_id ? h("button", { type: "button", class: "link-button quiet", "data-action": "remove-photo-of", "data-email": tr.email }, t("photoRemove")) : ""),
     h("div", { class: "admin-actions" }, button, h("span", { class: "muted small" }, t(active ? "deactivateHint" : "activateHint"))),
     refusal,
     section(t("profileTitle"),
@@ -287,6 +321,7 @@ document.addEventListener("click", (e) => {
   if (action === "open-teacher") openTeacher(e.target.closest("[data-teacher-id]").dataset.teacherId);
   if (action === "back-to-list") { state.selected = null; state.refusal = null; render(); }
   if (action === "toggle-inactive") { state.showInactive = !state.showInactive; render(); }
+  if (action === "remove-photo-of") removeSomeonesPhoto(e.target.closest("[data-email]").dataset.email);
   if (action === "copy-link") copyLink();
   if (action === "cancel-invite") cancelInvite(e.target.closest("[data-invite-id]").dataset.inviteId);
   if (action === "activate" && !state.busy) setStatus(true);
@@ -294,9 +329,10 @@ document.addEventListener("click", (e) => {
 });
 
 document.addEventListener("submit", (e) => {
-  if (e.target === photoRemoveFormEl) {
+  if (e.target === studentSearchEl) {
     e.preventDefault();
-    removeSomeonesPhoto();
+    state.studentQuery = String(new FormData(studentSearchEl).get("q")).trim();
+    loadStudents();
     return;
   }
   if (e.target !== inviteFormEl) return;

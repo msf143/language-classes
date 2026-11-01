@@ -45,14 +45,15 @@
       <div id="invite-result" class="notice invite-result" role="status" hidden></div>
       <ul id="invite-list" class="block-list"></ul>
 
-      <!-- Any account's photo, by email (it really deletes the picture). -->
-      <h2 data-i18n="adminPhotoTitle"></h2>
-      <form id="photo-remove-form" class="add-block account-form" novalidate>
-        <label class="field"><span data-i18n="adminPhotoEmail"></span>
-          <input type="email" name="email" autocomplete="off" required></label>
-        <button type="submit" class="btn-danger" id="photo-remove-submit" data-i18n="photoRemove"></button>
+      <!-- Students: the newest, or whoever the search finds (admin.js builds the rows). -->
+      <h2 data-i18n="studentsTitle"></h2>
+      <form id="student-search" class="add-block account-form" novalidate>
+        <label class="field"><span data-i18n="studentSearchLabel"></span>
+          <input type="search" name="q" maxlength="100" autocomplete="off"></label>
+        <button type="submit" class="btn-primary" data-i18n="studentSearch"></button>
       </form>
-      <p id="photo-remove-error" class="form-error" aria-live="polite"></p>
+      <p id="students-count" class="muted small" aria-live="polite"></p>
+      <ul id="student-list" class="block-list"></ul>
     </section>
     <section id="teacher-view" hidden></section>
   </main>
