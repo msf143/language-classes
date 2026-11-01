@@ -1,0 +1,1 @@
+DELETE FROM about_page_version WHERE id = '01900000-0000-7000-8000-00000000ab02';

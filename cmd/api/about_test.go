@@ -27,6 +27,19 @@ func TestAboutPage(t *testing.T) {
 		!strings.HasPrefix(first.BodyES, "# Personas reales.") {
 		t.Errorf("the first text: %q / %q", first.BodyEN, first.BodyES)
 	}
+	// The text as corrected: what it promises must stay true of the site.
+	for _, tt := range []struct {
+		body, want, notWant string
+	}{
+		{first.BodyEN, "two brothers-in-law", "two brothers,"},
+		{first.BodyEN, "In a private class, the cost per student decreases", "As additional students join"},
+		{first.BodyES, "dos cuñados", "dos hermanos"},
+		{first.BodyES, "En una clase privada, el costo por estudiante baja", "A medida que más estudiantes"},
+	} {
+		if !strings.Contains(tt.body, tt.want) || strings.Contains(tt.body, tt.notWant) {
+			t.Errorf("want %q and not %q in:\n%s", tt.want, tt.notWant, tt.body)
+		}
+	}
 
 	admin := newStudent(t, pool, 0, false)
 	pool.Exec(ctx, `UPDATE account SET is_admin = true WHERE id = $1`, admin.accountID)
@@ -42,6 +55,7 @@ func TestAboutPage(t *testing.T) {
 	}
 	good := `{"body_en": "  # Hello\n\nWorld  ", "body_es": "# Hola\n\nMundo"}`
 	versions := func() int { return count(t, pool, `SELECT count(*) FROM about_page_version`) }
+	before := versions()
 
 	tests := []struct {
 		name   string
@@ -64,8 +78,8 @@ func TestAboutPage(t *testing.T) {
 			}
 		})
 	}
-	if n := versions(); n != 1 {
-		t.Fatalf("%d versions after refused saves, want 1", n)
+	if n := versions(); n != before {
+		t.Fatalf("%d versions after refused saves, want %d", n, before)
 	}
 	if got := get(); got.BodyEN != first.BodyEN {
 		t.Error("a refused save changed the page")
@@ -78,8 +92,8 @@ func TestAboutPage(t *testing.T) {
 	if got := get(); got.BodyEN != "# Hello\n\nWorld" || got.BodyES != "# Hola\n\nMundo" {
 		t.Errorf("after saving: %+v", got)
 	}
-	if n := versions(); n != 2 {
-		t.Errorf("%d versions, want 2 (the old one kept)", n)
+	if n := versions(); n != before+1 {
+		t.Errorf("%d versions, want %d (the old ones kept)", n, before+1)
 	}
 	if n := count(t, pool, `SELECT count(*) FROM about_page_version WHERE saved_by = $1`, admin.accountID); n != 1 {
 		t.Error("who saved it wasn't recorded")

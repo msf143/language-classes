@@ -663,7 +663,8 @@ For what's already built, read the code and `git log`. Next, in order:
    000016 with Mike's text + a draft Spanish; `GET`/`PUT /about-page`; both languages required, ≤ 10000 chars); [x] 2
    `about.html` + `about.js` (`aboutElements`: "# " line = h2, blank line = new paragraph, only ever text; Edit page for admins,
    two text boxes; footer link on main + policies pages); checked in headless Chrome as visitor, student (403) and admin,
-   incl. markup shown as text. Open: Mike to confirm "two brothers" and the price sentence (true of private classes only).
+   incl. markup shown as text. Migration 000017 corrects the first text (brothers-in-law; lower price per person only in
+   private classes). Open: a native speaker to read the Spanish, on the page or in `i18n.js`.
    Then: the wife's oddities.
 9. **Friends in private classes** (done 2026-10-24; design agreed the same day). A private booking holds **seats** (1–4,
    `booking.party_size`), all **paid by the payer when added**, at the per-person price for that party size. A seat
