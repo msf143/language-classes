@@ -69,6 +69,7 @@ cmd/api/            main.go    server wiring, middleware, shared helpers (writeJ
                     teacher_prices.go GET/PUT /teacher/prices (versioned price_tier rows)
                     teacher_classes.go POST /teacher/sessions (new group class), POST /teacher/sessions/{id}/cancel
                     account.go PUT /me (name), /me/learners (add, edit, archive family members)
+                    about.go   GET/PUT /about-page (plain text, both languages; admins edit; every save kept)
                     photos.go  profile photos: upload (re-encoded), serve (who may see), remove, admin remove
                     passkeys.go WebAuthn: add a passkey (start + finish; checks without CBOR or a library)
                     passkeys_signin.go sign in with a passkey (signature check, counter, web session)
@@ -656,7 +657,10 @@ For what's already built, read the code and `git log`. Next, in order:
    group cards a small photo and "With …"; [x] 4 My Account photo (the photo code moved to `common.js`: `choosePhoto`, `removePhoto`, `renderPhoto`, `photoImg`);
    `GET /teacher/sessions` attendees have `photo_id` (the account holder's row only, never a child's), shown on My Classes;
    admin "Remove a Photo" form by email; policies "Photos" section. Checked in headless Chrome end to end. **Photos done.**
-   Then: the wife's oddities.
+   About page (decided 2026-11-01): plain text, "#" line = heading, public to read, admins edit on the page; each save a new
+   `about_page_version` row, newest shown (journal-style; no restore button). [x] 1 server (`cmd/api/about.go`, migration
+   000016 with Mike's text + a draft Spanish; `GET`/`PUT /about-page`; both languages required, ≤ 10000 chars); [ ] 2
+   `about.html` + `about.js`, footer link. Then: the wife's oddities.
 9. **Friends in private classes** (done 2026-10-24; design agreed the same day). A private booking holds **seats** (1–4,
    `booking.party_size`), all **paid by the payer when added**, at the per-person price for that party size. A seat
    is filled by one of the payer's own learners or **open with an invite link**; a friend opens it, signs in (free
