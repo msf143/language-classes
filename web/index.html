@@ -247,6 +247,23 @@
        or Edit is clicked. -->
   <dialog id="account-dialog" class="dialog" aria-labelledby="account-title">
     <h2 id="account-title" data-i18n="accountTitle"></h2>
+    <!-- Your photo: saved as soon as it's chosen. Same block as the teacher page. -->
+    <div class="photo-editor">
+      <img id="photo-image" class="photo" alt="" hidden>
+      <div id="photo-empty" class="photo photo-empty" aria-hidden="true"></div>
+      <div class="photo-controls">
+        <strong data-i18n="photoLabel"></strong>
+        <div class="photo-buttons">
+          <label class="btn-secondary btn-small photo-choose">
+            <span id="photo-choose-text"></span>
+            <input type="file" id="photo-input" accept="image/*">
+          </label>
+          <button type="button" class="link-button quiet" id="photo-remove" data-action="remove-photo" data-i18n="photoRemove"></button>
+        </div>
+        <p class="muted small" id="photo-hint"></p>
+        <p id="photo-error" class="form-error" aria-live="polite"></p>
+      </div>
+    </div>
     <form id="name-form" class="account-form" novalidate>
       <label class="field"><span data-i18n="yourName"></span>
         <input type="text" name="display_name" maxlength="60" required></label>

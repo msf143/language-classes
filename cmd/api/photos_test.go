@@ -424,3 +424,53 @@ func TestTeacherOnPublicLists(t *testing.T) {
 		t.Errorf("inactive teacher's photo offered: %v", *s.TeacherPhotoID)
 	}
 }
+
+// My Classes: the account holder attending shows their photo; their child, and
+// someone with no photo, show none. A teacher may open the photo it names.
+func TestClassListPhotos(t *testing.T) {
+	pool := testPool(t)
+	teacherID, teacher := teacherLogin(t, pool)
+	parent := newStudent(t, pool, 5000, false, true) // themself, and a child
+	photo := mustPhoto(t, pool, parent)
+	noPhoto := newStudent(t, pool, 5000, false)
+	session := newSession(t, pool, teacherID, sessionOpts{audience: "all"})
+	bookOK(t, pool, parent, session)
+	bookOK(t, pool, noPhoto, session)
+	pool.Exec(context.Background(), `UPDATE learner SET display_name = 'Child' WHERE account_id = $1 AND is_minor`, parent.accountID)
+	pool.Exec(context.Background(), `UPDATE account SET display_name = 'Parent' WHERE id = $1`, parent.accountID)
+	pool.Exec(context.Background(), `UPDATE learner SET display_name = 'Parent' WHERE account_id = $1 AND is_account_holder`, parent.accountID)
+	pool.Exec(context.Background(), `UPDATE account SET display_name = 'NoPhoto' WHERE id = $1`, noPhoto.accountID)
+	pool.Exec(context.Background(), `UPDATE learner SET display_name = 'NoPhoto' WHERE account_id = $1`, noPhoto.accountID)
+
+	rec := call(requireTeacher(pool, listTeacherSessions(pool)), "GET", "/teacher/sessions", teacher.cookie)
+	var classes []struct {
+		ID        string               `json:"id"`
+		Attendees []teacherAttendeeDTO `json:"attendees"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &classes); err != nil {
+		t.Fatalf("%d %s", rec.Code, rec.Body)
+	}
+	got := map[string]*string{}
+	for _, c := range classes {
+		if c.ID == session {
+			for _, a := range c.Attendees {
+				got[a.DisplayName] = a.PhotoID
+			}
+		}
+	}
+	if len(got) != 3 {
+		t.Fatalf("attendees %v", got)
+	}
+	if got["Parent"] == nil || *got["Parent"] != photo {
+		t.Errorf("the parent: %v, want %s", got["Parent"], photo)
+	}
+	if got["Child"] != nil {
+		t.Error("a child's row names a photo")
+	}
+	if got["NoPhoto"] != nil {
+		t.Error("someone without a photo has one")
+	}
+	if code := getPhoto(pool, photo, teacher.cookie).Code; code != 200 {
+		t.Errorf("the teacher opening it: %d", code)
+	}
+}

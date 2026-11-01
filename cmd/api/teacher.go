@@ -268,8 +268,9 @@ type teacherSessionDTO struct {
 }
 
 type teacherAttendeeDTO struct {
-	DisplayName string `json:"display_name"`
-	IsMinor     bool   `json:"is_minor"` // the policy: a parent nearby for minors on video
+	DisplayName string  `json:"display_name"`
+	IsMinor     bool    `json:"is_minor"` // the policy: a parent nearby for minors on video
+	PhotoID     *string `json:"photo_id"` // the account holder's own photo; never on a child's row
 }
 
 // listTeacherSessions handles GET /teacher/sessions (wrapped in requireTeacher):
@@ -284,7 +285,11 @@ func listTeacherSessions(pool *pgxpool.Pool) http.HandlerFunc {
 			                 WHERE b.session_id = s.id AND b.status = 'confirmed'), 0)::int,
 			       -- who's coming: joined learners of confirmed bookings, as JSON
 			       (SELECT COALESCE(json_agg(json_build_object(
-			                   'display_name', l.display_name, 'is_minor', l.is_minor)
+			                   'display_name', l.display_name, 'is_minor', l.is_minor,
+			                   -- photos belong to account holders only: a child (or anyone else
+			                   -- on the account) attending shows none
+			                   'photo_id', (SELECT ph.id::text FROM profile_photo ph
+			                                WHERE ph.account_id = l.account_id AND l.is_account_holder AND NOT l.is_minor))
 			                   ORDER BY l.display_name), '[]')
 			        FROM booking b
 			        JOIN booking_attendee a ON a.booking_id = b.id AND a.status = 'joined'

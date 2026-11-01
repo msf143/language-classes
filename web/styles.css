@@ -282,6 +282,9 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .card-head .my-booking-title { flex: 1 1 14em; margin: 0; min-width: 0; overflow-wrap: break-word; }
 .card-head .btn-small { flex: none; margin-left: auto; }
 .my-booking .minor-note { margin: 6px 0 0; }
+/* Who's in a class: names, with a small photo where the account holder has one. */
+.class-people { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; }
+.class-person { display: inline-flex; align-items: center; gap: 6px; }
 .my-booking-foot { margin-top: 8px; border-top: 1px solid var(--border); }
 .my-booking-foot .link-button { margin-left: -6px; }
 /* A quiet text link: grey until hovered (Cancel booking, Leave class). */

@@ -137,6 +137,74 @@ async function savePhoto(file) {
   return { error: { key: "errPhotoFailed", requestId: res.requestId } };
 }
 
+// The photo block (.photo-editor), the same on the teacher page and in My Account.
+// A photo saves as soon as it's chosen. Each page has state.me, state.photoBusy,
+// state.photoError, render() and showToast().
+
+async function choosePhoto(file) {
+  state.photoBusy = true;
+  state.photoError = null;
+  render();
+  const result = await savePhoto(file);
+  state.photoBusy = false;
+  if (result.error) state.photoError = result.error;
+  else {
+    state.me.photo_id = result.photoId;
+    showToast(t("photoSaved"));
+  }
+  render();
+}
+
+async function removePhoto() {
+  if (!confirm(t("confirmRemovePhoto"))) return;
+  state.photoBusy = true;
+  state.photoError = null;
+  render();
+  const res = await api("POST", "/me/photo/remove");
+  state.photoBusy = false;
+  if (res.ok) {
+    state.me.photo_id = null;
+    showToast(t("photoRemoved"));
+  } else {
+    state.photoError = { key: "errPhotoFailed", requestId: res.requestId };
+  }
+  render();
+}
+
+function renderPhoto() {
+  const id = state.me.photo_id;
+  const image = document.querySelector("#photo-image");
+  // Only when it changes: setting src again would flicker on every render.
+  const src = id ? `/photos/${id}` : "";
+  if (image.getAttribute("src") !== src) image.setAttribute("src", src);
+  image.hidden = !id;
+  image.alt = t("photoLabel");
+  document.querySelector("#photo-empty").hidden = Boolean(id);
+  document.querySelector("#photo-choose-text").textContent =
+    state.photoBusy ? t("photoSaving") : id ? t("photoChange") : t("photoChoose");
+  document.querySelector("#photo-input").disabled = state.photoBusy;
+  const remove = document.querySelector("#photo-remove");
+  remove.hidden = !id;
+  remove.disabled = state.photoBusy;
+  const err = state.photoError;
+  document.querySelector("#photo-error").textContent =
+    err ? t(err.key) + (err.requestId ? ` ${t("reference")}: ${err.requestId}` : "") : "";
+}
+
+// An <img> for a photo, or nothing if there isn't one. The address never changes
+// for one photo, so the browser redraws it from its cache without flicker.
+function photoImg(id, alt, cssClass) {
+  return id ? h("img", { class: cssClass, src: `/photos/${id}`, alt, width: "96", height: "96" }) : "";
+}
+
+// A photo chosen. Clearing the input lets the same file be chosen again later.
+// (Scripts here run after the page is parsed; pages without the block skip this.)
+document.querySelector("#photo-input")?.addEventListener("change", (e) => {
+  const file = e.target.files[0];
+  e.target.value = "";
+  if (file) choosePhoto(file);
+});
+
 // ---------- passkeys (WebAuthn) ----------
 // The browser's passkey functions speak raw bytes (ArrayBuffer); our server
 // speaks base64url text (base64 with - and _ instead of + and /, no padding).

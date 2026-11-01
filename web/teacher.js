@@ -410,58 +410,6 @@ function byDay(items, startOf) {
 
 // ---------- rendering ----------
 
-// ---------- my photo (saved at once, apart from the profile form) ----------
-
-async function choosePhoto(file) {
-  state.photoBusy = true;
-  state.photoError = null;
-  render();
-  const result = await savePhoto(file);
-  state.photoBusy = false;
-  if (result.error) state.photoError = result.error;
-  else {
-    state.me.photo_id = result.photoId;
-    showToast(t("photoSaved"));
-  }
-  render();
-}
-
-async function removePhoto() {
-  if (!confirm(t("confirmRemovePhoto"))) return;
-  state.photoBusy = true;
-  state.photoError = null;
-  render();
-  const res = await api("POST", "/me/photo/remove");
-  state.photoBusy = false;
-  if (res.ok) {
-    state.me.photo_id = null;
-    showToast(t("photoRemoved"));
-  } else {
-    state.photoError = { key: "errPhotoFailed", requestId: res.requestId };
-  }
-  render();
-}
-
-function renderPhoto() {
-  const id = state.me.photo_id;
-  const image = document.querySelector("#photo-image");
-  // Only when it changes: setting src again would flicker on every render.
-  const src = id ? `/photos/${id}` : "";
-  if (image.getAttribute("src") !== src) image.setAttribute("src", src);
-  image.hidden = !id;
-  image.alt = t("photoLabel");
-  document.querySelector("#photo-empty").hidden = Boolean(id);
-  document.querySelector("#photo-choose-text").textContent =
-    state.photoBusy ? t("photoSaving") : id ? t("photoChange") : t("photoChoose");
-  document.querySelector("#photo-input").disabled = state.photoBusy;
-  const remove = document.querySelector("#photo-remove");
-  remove.hidden = !id;
-  remove.disabled = state.photoBusy;
-  const err = state.photoError;
-  document.querySelector("#photo-error").textContent =
-    err ? t(err.key) + (err.requestId ? ` ${t("reference")}: ${err.requestId}` : "") : "";
-}
-
 function render() {
   renderStaticText();
   document.querySelector("#tz-note").textContent = state.me?.is_teacher ? t("tzNoteTeacher", tz()) : "";
@@ -534,7 +482,6 @@ function renderClasses() {
     return;
   }
   list.replaceChildren(...state.classes.map((c) => {
-    const names = c.attendees.map((a) => (a.is_minor ? `${a.display_name} (${t("child")})` : a.display_name));
     const hasMinor = c.attendees.some((a) => a.is_minor);
     return h("li", { class: "my-booking plain" },
       cardHead([classTitle(c)],
@@ -545,7 +492,12 @@ function renderClasses() {
           : null),
       h("p", { class: "my-booking-detail" },
         ...dotted([dayText(c.starts_at), `${timeText(c.starts_at)} – ${timeText(c.ends_at)}`, t("seatsOf", c.seats_taken, c.max_seats)])),
-      h("p", { class: "my-booking-detail" }, names.length ? t("forWhom", names.join(", ")) : t("noOneYet")),
+      c.attendees.length
+        ? h("p", { class: "my-booking-detail class-people" }, t("forWhom", ""), ...c.attendees.map((a, i) =>
+            h("span", { class: "class-person" },
+              photoImg(a.photo_id, "", "photo-small"),
+              (a.is_minor ? `${a.display_name} (${t("child")})` : a.display_name) + (i < c.attendees.length - 1 ? "," : ""))))
+        : h("p", { class: "my-booking-detail" }, t("noOneYet")),
       hasMinor ? h("p", { class: "minor-note" }, t("minorNote")) : "",
     );
   }));
@@ -602,10 +554,3 @@ load();
 
 // Esc closes a <dialog> on its own; keep state in step ("close" doesn't bubble).
 cancelClassDialogEl.addEventListener("close", () => { state.cancelClass.open = false; });
-
-// A photo chosen. Clearing the input lets the same file be chosen again later.
-document.querySelector("#photo-input").addEventListener("change", (e) => {
-  const file = e.target.files[0];
-  e.target.value = "";
-  if (file) choosePhoto(file);
-});

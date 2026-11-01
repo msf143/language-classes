@@ -70,6 +70,7 @@ function sections() {
       t("polCreditCash"),
     ]],
     ["polKidsTitle", [t("polKidsProfiles"), t("polKidsAudience"), t("polKidsParent")]],
+    ["polPhotosTitle", [t("polPhotosWho"), t("polPhotosKids"), t("polPhotosRemove")]],
   ];
   const list = topics.map(([title, points]) =>
     h("section", { class: "policy" },

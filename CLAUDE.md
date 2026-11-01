@@ -69,6 +69,7 @@ cmd/api/            main.go    server wiring, middleware, shared helpers (writeJ
                     teacher_prices.go GET/PUT /teacher/prices (versioned price_tier rows)
                     teacher_classes.go POST /teacher/sessions (new group class), POST /teacher/sessions/{id}/cancel
                     account.go PUT /me (name), /me/learners (add, edit, archive family members)
+                    photos.go  profile photos: upload (re-encoded), serve (who may see), remove, admin remove
                     passkeys.go WebAuthn: add a passkey (start + finish; checks without CBOR or a library)
                     passkeys_signin.go sign in with a passkey (signature check, counter, web session)
                     admin.go   requireAdmin; admin routes (teachers: list, profile, activate/deactivate)
@@ -225,6 +226,9 @@ then find the link in the log.
   **One name (decided 2026-10-25):** that learner's name *is* the account name: `PUT /me` and editing your own row
   (`PUT /me/learners/{id}`) each write both, in one transaction; migration 000014 repaired accounts where they had
   drifted apart (the account name won). Test helpers follow it too (`newStudent`'s holder carries the account's name).
+- **Profile photos (decided 2026-11-01):** account holders only, never children. A teacher's is public; a student's is seen
+  only by themself, admins, and a teacher they have a non-cancelled booking with. Removing really deletes it. Admins can
+  remove any photo; there's no review step before one appears.
 - **Children:** a parent's account holds learner profiles; kids never log in. Kids' group
   sessions use `audience = 'kids'`. Policy: a parent nearby for minors on video.
 - **Audience values:** `adults` (adults only), `kids` (minors only), and `all` ("All ages" in
@@ -649,8 +653,10 @@ For what's already built, read the code and `git log`. Next, in order:
    square, 512 px, JPEG, upright via the browser's own EXIF handling, white behind transparency; `api()` sends a Blob as
    it is; checked in headless Chrome with a sideways JPEG, a transparent PNG, a tiny picture, a non-picture); [x] 3 main page: `GET /private-slots` has `teacher_photo_id` + `bio_en/es`, `GET /sessions` has `teacher_name` +
    `teacher_photo_id` (active teachers only); private classes show photo, name, bio (page's language, else the other);
-   group cards a small photo and "With …"; [ ] 4 My Account photo, on the teacher's My Classes; admin Remove form;
-   policies sentence. Then: the wife's oddities.
+   group cards a small photo and "With …"; [x] 4 My Account photo (the photo code moved to `common.js`: `choosePhoto`, `removePhoto`, `renderPhoto`, `photoImg`);
+   `GET /teacher/sessions` attendees have `photo_id` (the account holder's row only, never a child's), shown on My Classes;
+   admin "Remove a Photo" form by email; policies "Photos" section. Checked in headless Chrome end to end. **Photos done.**
+   Then: the wife's oddities.
 9. **Friends in private classes** (done 2026-10-24; design agreed the same day). A private booking holds **seats** (1–4,
    `booking.party_size`), all **paid by the payer when added**, at the per-person price for that party size. A seat
    is filled by one of the payer's own learners or **open with an invite link**; a friend opens it, signs in (free

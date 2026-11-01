@@ -42,6 +42,24 @@ async function loadTeachers() {
 
 const inviteFormEl = document.querySelector("#invite-form");
 
+// An admin removes someone's photo. Asks first: there's no undo.
+const photoRemoveFormEl = document.querySelector("#photo-remove-form");
+
+async function removeSomeonesPhoto() {
+  const email = String(new FormData(photoRemoveFormEl).get("email")).trim();
+  const errorEl = document.querySelector("#photo-remove-error");
+  errorEl.textContent = "";
+  if (!email) { errorEl.textContent = t("invalidEmail"); return; }
+  if (!confirm(t("adminPhotoConfirm", email))) return;
+  const res = await api("POST", "/admin/photos/remove", { email });
+  if (!res.ok) {
+    errorEl.textContent = res.status === 400 ? t("invalidEmail") : `${t("somethingWrong")} ${t("reference")}: ${res.requestId}`;
+    return;
+  }
+  photoRemoveFormEl.reset();
+  showToast(t(res.data.removed ? "adminPhotoRemoved" : "adminPhotoNone", email));
+}
+
 async function invite() {
   const email = String(new FormData(inviteFormEl).get("email")).trim();
   if (!email) { state.inviteError = { key: "invalidEmail" }; return render(); }
@@ -269,6 +287,11 @@ document.addEventListener("click", (e) => {
 });
 
 document.addEventListener("submit", (e) => {
+  if (e.target === photoRemoveFormEl) {
+    e.preventDefault();
+    removeSomeonesPhoto();
+    return;
+  }
   if (e.target !== inviteFormEl) return;
   e.preventDefault();
   if (!state.inviting) invite();

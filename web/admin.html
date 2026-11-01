@@ -44,6 +44,15 @@
       <p id="invite-error" class="form-error" aria-live="polite"></p>
       <div id="invite-result" class="notice invite-result" role="status" hidden></div>
       <ul id="invite-list" class="block-list"></ul>
+
+      <!-- Any account's photo, by email (it really deletes the picture). -->
+      <h2 data-i18n="adminPhotoTitle"></h2>
+      <form id="photo-remove-form" class="add-block account-form" novalidate>
+        <label class="field"><span data-i18n="adminPhotoEmail"></span>
+          <input type="email" name="email" autocomplete="off" required></label>
+        <button type="submit" class="btn-danger" id="photo-remove-submit" data-i18n="photoRemove"></button>
+      </form>
+      <p id="photo-remove-error" class="form-error" aria-live="polite"></p>
     </section>
     <section id="teacher-view" hidden></section>
   </main>

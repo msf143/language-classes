@@ -41,6 +41,8 @@ const state = {
     status: "idle",                // "idle" | "sending"
     error: null,                   // { key, requestId? } when the last attempt failed
   },
+  photoBusy: false,                // my photo: shrinking and uploading, or removing
+  photoError: null,                // { key, requestId? } when the last attempt failed
   emailSignIn: false,              // signed in by email in this page just now (may offer a passkey)
   offer: { open: false },          // is the passkey offer showing?
   welcome: {
@@ -350,7 +352,7 @@ function renderPrivate() {
       const bio = (state.uiLang === "es" ? tr.bio_es || tr.bio_en : tr.bio_en || tr.bio_es);
       rows.push(h("li", { class: "private-teacher" },
         h("div", { class: "teacher-intro" },
-          teacherPhoto(tr.teacher_photo_id, tr.teacher_name, "photo"),
+          photoImg(tr.teacher_photo_id, tr.teacher_name, "photo"),
           h("div", { class: "teacher-about" },
             h("span", { class: "teacher-name" }, t("withTeacher", tr.teacher_name)),
             bio ? h("p", { class: "teacher-bio" }, bio) : "",
@@ -373,12 +375,6 @@ function renderPrivate() {
     }
   }
   document.querySelector("#private-days").replaceChildren(...rows);
-}
-
-// A teacher's picture, or nothing if there isn't one. The address is the same
-// whenever it's drawn, so the browser shows it from its cache without flicker.
-function teacherPhoto(id, name, cssClass) {
-  return id ? h("img", { class: cssClass, src: `/photos/${id}`, alt: name, width: "96", height: "96" }) : "";
 }
 
 // Group slots by the visitor's local calendar day, keeping time order.
@@ -661,7 +657,7 @@ function sessionCard(s) {
     ),
     h("h3", { class: "card-title" }, title),
     h("p", { class: "card-teacher" },
-      teacherPhoto(s.teacher_photo_id, "", "photo-small"),
+      photoImg(s.teacher_photo_id, "", "photo-small"),
       t("withTeacher", s.teacher_name)),
     h("p", { class: "card-when" },
       h("span", { class: "card-date" }, dateText),
@@ -1035,6 +1031,7 @@ async function submitCancel() {
 // empty (ready to add someone).
 function openAccount() {
   state.account = { open: true, editingId: null, sending: false, error: null };
+  state.photoError = null;
   nameFormEl.elements.display_name.value = state.me.display_name;
   fillPersonForm(null);
   render();
@@ -1363,6 +1360,8 @@ function renderAccountDialog() {
   if (a.open && !accountDialogEl.open) accountDialogEl.showModal();
   if (!a.open && accountDialogEl.open) accountDialogEl.close();
   if (!a.open || !state.me) return;
+  renderPhoto();
+  document.querySelector("#photo-hint").textContent = t(state.me.is_teacher ? "photoHintTeacher" : "photoHintStudent");
   document.querySelector("#people-list").replaceChildren(...state.me.learners.map((l) =>
     h("li", { class: "person", "data-person-id": l.id },
       // You're on the list too (you can book for yourself), marked by the
@@ -1629,6 +1628,7 @@ document.addEventListener("click", (e) => {
     if (l) { fillPersonForm(l); state.account.error = null; render(); }
   }
   if (action === "cancel-edit-person") { fillPersonForm(null); render(); }
+  if (action === "remove-photo" && !state.photoBusy) removePhoto();
   if (action === "add-passkey" && !state.passkeys.adding) addPasskeyInAccount();
   if (action === "passkey-signin" && !state.signin.passkeyBusy) signInWithPasskey();
   if (action === "offer-yes" && !state.passkeys.adding) acceptOffer();
