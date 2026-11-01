@@ -645,7 +645,9 @@ For what's already built, read the code and `git log`. Next, in order:
    no review step. Pieces: [x] 1 server (`cmd/api/photos.go`, migration 000015 `profile_photo`, in Postgres; `PUT /me/photo`
    raw JPEG ≤ 512 KiB, 64–1024 px, decoded + re-encoded so metadata can't survive; new id on replace; really deleted on
    remove (personal data, not a business record); `GET /photos/{id}`; `POST /admin/photos/remove {email}`; `/me` `photo_id`);
-   [ ] 2 teacher page (choose, 512 px square in the browser, preview, remove); [ ] 3 main page shows the teacher's photo
+   [x] 2 teacher page (`.photo-editor`, saved as soon as chosen; `savePhoto` / `photoToJpeg` in `common.js`: the middle
+   square, 512 px, JPEG, upright via the browser's own EXIF handling, white behind transparency; `api()` sends a Blob as
+   it is; checked in headless Chrome with a sideways JPEG, a transparent PNG, a tiny picture, a non-picture); [ ] 3 main page shows the teacher's photo
    and bio (the bio reaches no student page today); [ ] 4 My Account photo, on the teacher's My Classes; admin Remove form;
    policies sentence. Then: the wife's oddities.
 9. **Friends in private classes** (done 2026-10-24; design agreed the same day). A private booking holds **seats** (1–4,

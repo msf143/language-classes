@@ -13,6 +13,8 @@ const state = {
   adding: false,            // a publish request is on its way
   addError: null,           // { key } when the last publish failed
   profile: null,            // GET /teacher/profile (incl. allowed_lengths, max_break_minutes)
+  photoBusy: false,         // shrinking and uploading, or removing
+  photoError: null,         // { key, requestId? } when the last attempt failed
   savingProfile: false,     // a PUT is on its way
   profileError: null,       // { key, requestId? } when the last save failed
   prices: null,             // GET /teacher/prices (prices valid now + the form's limits)
@@ -408,6 +410,58 @@ function byDay(items, startOf) {
 
 // ---------- rendering ----------
 
+// ---------- my photo (saved at once, apart from the profile form) ----------
+
+async function choosePhoto(file) {
+  state.photoBusy = true;
+  state.photoError = null;
+  render();
+  const result = await savePhoto(file);
+  state.photoBusy = false;
+  if (result.error) state.photoError = result.error;
+  else {
+    state.me.photo_id = result.photoId;
+    showToast(t("photoSaved"));
+  }
+  render();
+}
+
+async function removePhoto() {
+  if (!confirm(t("confirmRemovePhoto"))) return;
+  state.photoBusy = true;
+  state.photoError = null;
+  render();
+  const res = await api("POST", "/me/photo/remove");
+  state.photoBusy = false;
+  if (res.ok) {
+    state.me.photo_id = null;
+    showToast(t("photoRemoved"));
+  } else {
+    state.photoError = { key: "errPhotoFailed", requestId: res.requestId };
+  }
+  render();
+}
+
+function renderPhoto() {
+  const id = state.me.photo_id;
+  const image = document.querySelector("#photo-image");
+  // Only when it changes: setting src again would flicker on every render.
+  const src = id ? `/photos/${id}` : "";
+  if (image.getAttribute("src") !== src) image.setAttribute("src", src);
+  image.hidden = !id;
+  image.alt = t("photoLabel");
+  document.querySelector("#photo-empty").hidden = Boolean(id);
+  document.querySelector("#photo-choose-text").textContent =
+    state.photoBusy ? t("photoSaving") : id ? t("photoChange") : t("photoChoose");
+  document.querySelector("#photo-input").disabled = state.photoBusy;
+  const remove = document.querySelector("#photo-remove");
+  remove.hidden = !id;
+  remove.disabled = state.photoBusy;
+  const err = state.photoError;
+  document.querySelector("#photo-error").textContent =
+    err ? t(err.key) + (err.requestId ? ` ${t("reference")}: ${err.requestId}` : "") : "";
+}
+
 function render() {
   renderStaticText();
   document.querySelector("#tz-note").textContent = state.me?.is_teacher ? t("tzNoteTeacher", tz()) : "";
@@ -415,6 +469,7 @@ function render() {
   document.querySelector("#dashboard").hidden = state.status !== "ready";
   if (state.status !== "ready") return;
   document.querySelector("#pending-note").hidden = state.profile?.status !== "pending";
+  renderPhoto();
   renderProfile();
   renderPrices();
   renderBlocks();
@@ -511,6 +566,7 @@ document.addEventListener("click", (e) => {
   if (handleLangClick(e)) return render();
   const action = e.target.closest("[data-action]")?.dataset.action;
   if (action === "withdraw") withdraw(e.target.closest("[data-block-id]").dataset.blockId);
+  if (action === "remove-photo" && !state.photoBusy) removePhoto();
   if (action === "cancel-class") openCancelClass(e.target.closest("[data-class-id]").dataset.classId);
   if (action === "close-cancel-class") { state.cancelClass.open = false; render(); }
 });
@@ -546,3 +602,10 @@ load();
 
 // Esc closes a <dialog> on its own; keep state in step ("close" doesn't bubble).
 cancelClassDialogEl.addEventListener("close", () => { state.cancelClass.open = false; });
+
+// A photo chosen. Clearing the input lets the same file be chosen again later.
+document.querySelector("#photo-input").addEventListener("change", (e) => {
+  const file = e.target.files[0];
+  e.target.value = "";
+  if (file) choosePhoto(file);
+});

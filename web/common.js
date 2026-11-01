@@ -46,7 +46,10 @@ function renderStaticText() {
 async function api(method, path, body, headers = {}) {
   const requestId = crypto.randomUUID().replaceAll("-", "").slice(0, 16);
   const options = { method, headers: { ...headers, "X-Request-ID": requestId } };
-  if (body !== undefined) {
+  if (body instanceof Blob) {         // a file (a photo) goes as it is
+    options.headers["Content-Type"] = body.type;
+    options.body = body;
+  } else if (body !== undefined) {
     options.headers["Content-Type"] = "application/json";
     options.body = JSON.stringify(body);
   }
@@ -86,6 +89,52 @@ function dotted(pieces) {
 // A card's top row: the title on the left, its action on the right.
 function cardHead(title, action) {
   return h("div", { class: "card-head" }, h("h3", { class: "my-booking-title" }, ...title), action || "");
+}
+
+// ---------- profile photos ----------
+
+const photoSide = 512;   // pixels; the square the server is sent
+const photoMinSide = 64; // smaller than this is refused (the server's limit too)
+
+// Turn the chosen file into a 512 × 512 JPEG: the middle square of the picture,
+// shrunk, so a phone's several-MB photo uploads as about 50 KB. The browser does
+// the reading, so whatever it can open works (usually including iPhone HEIC),
+// and it applies the hidden "rotate me" tag phones add, so the result is upright.
+// Throws an Error whose message is an i18n key.
+async function photoToJpeg(file) {
+  const url = URL.createObjectURL(file);
+  try {
+    const img = new Image();
+    img.src = url;
+    await img.decode().catch(() => { throw new Error("errPhotoUnreadable"); });
+    const side = Math.min(img.naturalWidth, img.naturalHeight);
+    if (side < photoMinSide) throw new Error("errPhotoTooSmall");
+    const canvas = document.createElement("canvas");
+    canvas.width = canvas.height = photoSide;
+    const ctx = canvas.getContext("2d");
+    ctx.fillStyle = "#ffffff";   // a transparent PNG gets white behind it, not JPEG's black
+    ctx.fillRect(0, 0, photoSide, photoSide);
+    ctx.imageSmoothingQuality = "high";
+    ctx.drawImage(img, (img.naturalWidth - side) / 2, (img.naturalHeight - side) / 2, side, side, 0, 0, photoSide, photoSide);
+    const blob = await new Promise((resolve) => canvas.toBlob(resolve, "image/jpeg", 0.85));
+    if (!blob) throw new Error("errPhotoUnreadable");
+    return blob;
+  } finally {
+    URL.revokeObjectURL(url);
+  }
+}
+
+// Shrink and upload. Resolves to { photoId } or { error: { key, requestId? } }.
+async function savePhoto(file) {
+  let blob;
+  try {
+    blob = await photoToJpeg(file);
+  } catch (err) {
+    return { error: { key: err.message.startsWith("errPhoto") ? err.message : "errPhotoUnreadable" } };
+  }
+  const res = await api("PUT", "/me/photo", blob);
+  if (res.ok) return { photoId: res.data.photo_id };
+  return { error: { key: "errPhotoFailed", requestId: res.requestId } };
 }
 
 // ---------- passkeys (WebAuthn) ----------

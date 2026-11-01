@@ -38,6 +38,24 @@
       <section class="teacher-section">
         <h2 data-i18n="myProfile"></h2>
         <p class="muted" data-i18n="profileHint"></p>
+        <!-- Saved as soon as a photo is chosen, separately from the form below.
+             The real file input is hidden behind its label, which looks like a button. -->
+        <div class="photo-editor">
+          <img id="photo-image" class="photo" alt="" hidden>
+          <div id="photo-empty" class="photo photo-empty" aria-hidden="true"></div>
+          <div class="photo-controls">
+            <strong data-i18n="photoLabel"></strong>
+            <div class="photo-buttons">
+              <label class="btn-secondary btn-small photo-choose">
+                <span id="photo-choose-text"></span>
+                <input type="file" id="photo-input" accept="image/*">
+              </label>
+              <button type="button" class="link-button quiet" id="photo-remove" data-action="remove-photo" data-i18n="photoRemove"></button>
+            </div>
+            <p class="muted small" data-i18n="photoHintTeacher"></p>
+            <p id="photo-error" class="form-error" aria-live="polite"></p>
+          </div>
+        </div>
         <form id="profile-form" class="add-block profile-form" novalidate>
           <label class="field"><span data-i18n="profileName"></span>
             <input type="text" name="display_name" maxlength="60" required></label>
