@@ -419,12 +419,6 @@ function renderMyBookings() {
   }));
 }
 
-// Pieces of a line joined by " · ", each kept whole ("1:00 p. m.", "15,00 US$"),
-// so a narrow screen wraps between pieces, never inside one.
-function dotted(pieces) {
-  return pieces.flatMap((p, i) => [i ? " · " : "", h("span", { class: "nowrap" }, p)]);
-}
-
 // A payer's private booking: one line per seat, the name (or "Open seat") on
 // the left and its actions as small text links on the right: Copy link on an
 // open seat, Remove on any seat while there's more than one. Then Add a seat

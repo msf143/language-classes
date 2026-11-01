@@ -481,18 +481,17 @@ function renderClasses() {
   list.replaceChildren(...state.classes.map((c) => {
     const names = c.attendees.map((a) => (a.is_minor ? `${a.display_name} (${t("child")})` : a.display_name));
     const hasMinor = c.attendees.some((a) => a.is_minor);
-    return h("li", { class: "my-booking" },
-      h("span", { class: "my-booking-title" }, classTitle(c)),
-      h("span", { class: "my-booking-detail" },
-        `${dayText(c.starts_at)} · ${timeText(c.starts_at)} – ${timeText(c.ends_at)}`),
-      h("span", { class: "my-booking-detail" }, t("seatsOf", c.seats_taken, c.max_seats)),
-      h("span", { class: "my-booking-detail" }, names.length ? t("forWhom", names.join(", ")) : t("noOneYet")),
-      hasMinor ? h("span", { class: "minor-note" }, t("minorNote")) : "",
-      // Only classes that haven't started can be cancelled.
-      new Date(c.starts_at) > new Date()
-        ? h("button", { type: "button", class: "btn-secondary btn-small", "data-action": "cancel-class", "data-class-id": c.id },
-            t("cancelClass"))
-        : "",
+    return h("li", { class: "my-booking plain" },
+      cardHead([classTitle(c)],
+        // Only classes that haven't started can be cancelled.
+        new Date(c.starts_at) > new Date()
+          ? h("button", { type: "button", class: "btn-secondary btn-small", "data-action": "cancel-class", "data-class-id": c.id },
+              t("cancelClass"))
+          : null),
+      h("p", { class: "my-booking-detail" },
+        ...dotted([dayText(c.starts_at), `${timeText(c.starts_at)} – ${timeText(c.ends_at)}`, t("seatsOf", c.seats_taken, c.max_seats)])),
+      h("p", { class: "my-booking-detail" }, names.length ? t("forWhom", names.join(", ")) : t("noOneYet")),
+      hasMinor ? h("p", { class: "minor-note" }, t("minorNote")) : "",
     );
   }));
 }

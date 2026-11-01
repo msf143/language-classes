@@ -636,7 +636,10 @@ For what's already built, read the code and `git log`. Next, in order:
    "Become the test teacher" goes straight to teacher.html.
    Private times (2026-11-01): one line per day with a time dropdown and Book (disabled until a time is chosen), instead
    of a button per 15 minutes; choices kept in `state.private.picked`; rows rebuilt only when their content changes
-   (`privateRowsKey`), so a render can't close an open dropdown. Then: the wife's oddities.
+   (`privateRowsKey`), so a render can't close an open dropdown.
+   Teacher and admin cards (2026-11-01; the My Bookings rewrite had run their items together): `cardHead(title, action)`
+   in `common.js` (title left, action right; on a phone the button wraps under the title), then detail lines; `dotted()`
+   moved to `common.js`. Then: the wife's oddities.
 9. **Friends in private classes** (done 2026-10-24; design agreed the same day). A private booking holds **seats** (1–4,
    `booking.party_size`), all **paid by the payer when added**, at the per-person price for that party size. A seat
    is filled by one of the payer's own learners or **open with an invite link**; a friend opens it, signs in (free

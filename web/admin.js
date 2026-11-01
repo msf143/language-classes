@@ -110,11 +110,10 @@ function renderInvites() {
     return;
   }
   list.replaceChildren(...state.invites.map((i) =>
-    h("li", { class: "my-booking", "data-invite-id": i.id },
-      h("span", { class: "my-booking-title" }, i.email, " ",
-        i.expired ? h("span", { class: "tag tag-status-inactive" }, t("inviteExpiredTag")) : ""),
-      h("span", { class: "my-booking-detail" }, t("invitedBy", i.invited_by, fmt(i.expires_at, { month: "short", day: "numeric" }))),
-      h("button", { type: "button", class: "btn-secondary btn-small", "data-action": "cancel-invite" }, t("cancelInvite")),
+    h("li", { class: "my-booking plain", "data-invite-id": i.id },
+      cardHead([i.email, " ", i.expired ? h("span", { class: "tag tag-status-inactive" }, t("inviteExpiredTag")) : ""],
+        h("button", { type: "button", class: "btn-secondary btn-small", "data-action": "cancel-invite" }, t("cancelInvite"))),
+      h("p", { class: "my-booking-detail" }, t("invitedBy", i.invited_by, fmt(i.expires_at, { month: "short", day: "numeric" }))),
     )));
 }
 
@@ -195,11 +194,11 @@ function renderList() {
     return;
   }
   list.replaceChildren(...toggle, ...shown.map((tr) =>
-    h("li", { class: "my-booking", "data-teacher-id": tr.id },
-      h("span", { class: "my-booking-title" }, tr.display_name, " ", statusTag(tr.status)),
-      h("span", { class: "my-booking-detail" }, tr.email),
-      h("span", { class: "my-booking-detail" }, t("teacherCounts", tr.upcoming_classes, tr.booked_classes, tr.prices)),
-      h("button", { type: "button", class: "btn-secondary btn-small", "data-action": "open-teacher" }, t("viewTeacher")),
+    h("li", { class: "my-booking plain", "data-teacher-id": tr.id },
+      cardHead([tr.display_name, " ", statusTag(tr.status)],
+        h("button", { type: "button", class: "btn-secondary btn-small", "data-action": "open-teacher" }, t("viewTeacher"))),
+      h("p", { class: "my-booking-detail" }, tr.email),
+      h("p", { class: "my-booking-detail" }, t("teacherCounts", tr.upcoming_classes, tr.booked_classes, tr.prices)),
     )));
 }
 

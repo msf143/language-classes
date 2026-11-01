@@ -77,6 +77,17 @@ function h(tag, attrs, ...children) {
   return el;
 }
 
+// Pieces of a line joined by " · ", each kept whole ("1:00 p. m.", "15,00 US$"),
+// so a narrow screen wraps between pieces, never inside one.
+function dotted(pieces) {
+  return pieces.flatMap((p, i) => [i ? " · " : "", h("span", { class: "nowrap" }, p)]);
+}
+
+// A card's top row: the title on the left, its action on the right.
+function cardHead(title, action) {
+  return h("div", { class: "card-head" }, h("h3", { class: "my-booking-title" }, ...title), action || "");
+}
+
 // ---------- passkeys (WebAuthn) ----------
 // The browser's passkey functions speak raw bytes (ArrayBuffer); our server
 // speaks base64url text (base64 with - and _ instead of + and /, no padding).

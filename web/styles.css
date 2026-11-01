@@ -270,7 +270,16 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 }
 .my-booking-title { font-size: 1.05rem; margin: 8px 0 2px; }
 .my-booking-when { margin: 0; font-weight: 600; }
-.my-booking-detail { margin: 2px 0 0; color: var(--muted); font-size: 0.9rem; }
+.my-booking-detail { margin: 2px 0 0; color: var(--muted); font-size: 0.9rem; overflow-wrap: anywhere; }
+/* Teacher and admin cards: a top row (title left, action right), then detail
+   lines. No quiet footer here, so the normal padding at the bottom. */
+.my-booking.plain { padding-bottom: 14px; }
+/* Wraps when narrow: below about 14em of title room (phones), the button drops
+   under the title, on the right, instead of squeezing it. */
+.card-head { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 8px 16px; margin-bottom: 4px; }
+.card-head .my-booking-title { flex: 1 1 14em; margin: 0; min-width: 0; overflow-wrap: break-word; }
+.card-head .btn-small { flex: none; margin-left: auto; }
+.my-booking .minor-note { margin: 6px 0 0; }
 .my-booking-foot { margin-top: 8px; border-top: 1px solid var(--border); }
 .my-booking-foot .link-button { margin-left: -6px; }
 /* A quiet text link: grey until hovered (Cancel booking, Leave class). */
