@@ -30,14 +30,15 @@ const (
 
 // account is the signed-in person, as the API returns it (GET /me, POST /auth/verify).
 type account struct {
-	ID                string `json:"id"`
-	Email             string `json:"email"`
-	DisplayName       string `json:"display_name"`
-	PreferredLanguage string `json:"preferred_language"`
-	Timezone          string `json:"timezone"`
-	IsTeacher         bool   `json:"is_teacher"` // derived: has an active or pending teacher profile (may use the teacher page)
-	IsAdmin           bool   `json:"is_admin"`   // account.is_admin (set by `api admin`)
-	Welcomed          bool   `json:"welcomed"`   // has seen the one-time welcome (account.welcomed_at set)
+	ID                string  `json:"id"`
+	Email             string  `json:"email"`
+	DisplayName       string  `json:"display_name"`
+	PreferredLanguage string  `json:"preferred_language"`
+	Timezone          string  `json:"timezone"`
+	IsTeacher         bool    `json:"is_teacher"` // derived: has an active or pending teacher profile (may use the teacher page)
+	IsAdmin           bool    `json:"is_admin"`   // account.is_admin (set by `api admin`)
+	Welcomed          bool    `json:"welcomed"`   // has seen the one-time welcome (account.welcomed_at set)
+	PhotoID           *string `json:"photo_id"`   // profile_photo.id (shown at /photos/{id}); null = none
 }
 
 // accountColumns selects an account (aliased "a") in the field order of account.
@@ -45,7 +46,8 @@ type account struct {
 // from the teacher table.
 const accountColumns = `a.id::text, a.email, a.display_name, a.preferred_language, a.timezone,
 	EXISTS (SELECT 1 FROM teacher t WHERE t.account_id = a.id AND t.status IN ('active', 'pending')), a.is_admin,
-	a.welcomed_at IS NOT NULL`
+	a.welcomed_at IS NOT NULL,
+	(SELECT p.id::text FROM profile_photo p WHERE p.account_id = a.id)`
 
 // loginSender delivers a login link and its 6-digit code. In dev it writes
 // them to the log; in production it calls the email provider.
@@ -333,7 +335,7 @@ func signInEmail(ctx context.Context, tx pgx.Tx, email, timezone string) (accoun
 	var status string
 	if err := tx.QueryRow(ctx, `
 		SELECT `+accountColumns+`, a.status FROM account a WHERE lower(a.email) = $1`,
-		email).Scan(&acct.ID, &acct.Email, &acct.DisplayName, &acct.PreferredLanguage, &acct.Timezone, &acct.IsTeacher, &acct.IsAdmin, &acct.Welcomed, &status); err != nil {
+		email).Scan(&acct.ID, &acct.Email, &acct.DisplayName, &acct.PreferredLanguage, &acct.Timezone, &acct.IsTeacher, &acct.IsAdmin, &acct.Welcomed, &acct.PhotoID, &status); err != nil {
 		return acct, "", fmt.Errorf("load account: %w", err)
 	}
 	if status == "disabled" {
@@ -523,7 +525,7 @@ func signedIn(pool *pgxpool.Pool, next http.HandlerFunc) http.HandlerFunc {
 			FROM web_session s JOIN account a ON a.id = s.account_id
 			WHERE s.token_hash = $1 AND s.revoked_at IS NULL AND s.expires_at > now()
 			  AND a.status = 'active'`,
-			hashSecret(c.Value)).Scan(&a.ID, &a.Email, &a.DisplayName, &a.PreferredLanguage, &a.Timezone, &a.IsTeacher, &a.IsAdmin, &a.Welcomed)
+			hashSecret(c.Value)).Scan(&a.ID, &a.Email, &a.DisplayName, &a.PreferredLanguage, &a.Timezone, &a.IsTeacher, &a.IsAdmin, &a.Welcomed, &a.PhotoID)
 		if errors.Is(err, pgx.ErrNoRows) {
 			next(w, r)
 			return

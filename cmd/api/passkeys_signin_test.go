@@ -225,7 +225,7 @@ func TestPasskeySigninCounter(t *testing.T) {
 
 // The worker deletes challenges a day past their expiry, and keeps newer ones.
 func TestPurgePasskeyChallenges(t *testing.T) {
-	pool := migratedSchemaPool(t, 13)
+	pool := migratedSchemaPool(t, 4)
 	ctx := context.Background()
 	add := func(expiredAgo string) {
 		t.Helper()

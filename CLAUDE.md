@@ -639,7 +639,15 @@ For what's already built, read the code and `git log`. Next, in order:
    (`privateRowsKey`), so a render can't close an open dropdown.
    Teacher and admin cards (2026-11-01; the My Bookings rewrite had run their items together): `cardHead(title, action)`
    in `common.js` (title left, action right; on a phone the button wraps under the title), then detail lines; `dotted()`
-   moved to `common.js`. Then: the wife's oddities.
+   moved to `common.js`.
+   Profile photos (decided 2026-11-01): one per account, account holders only (never children); teachers' public, a student's
+   visible only to themself, admins and a teacher they have a non-cancelled booking with (else 404); an admin Remove,
+   no review step. Pieces: [x] 1 server (`cmd/api/photos.go`, migration 000015 `profile_photo`, in Postgres; `PUT /me/photo`
+   raw JPEG ≤ 512 KiB, 64–1024 px, decoded + re-encoded so metadata can't survive; new id on replace; really deleted on
+   remove (personal data, not a business record); `GET /photos/{id}`; `POST /admin/photos/remove {email}`; `/me` `photo_id`);
+   [ ] 2 teacher page (choose, 512 px square in the browser, preview, remove); [ ] 3 main page shows the teacher's photo
+   and bio (the bio reaches no student page today); [ ] 4 My Account photo, on the teacher's My Classes; admin Remove form;
+   policies sentence. Then: the wife's oddities.
 9. **Friends in private classes** (done 2026-10-24; design agreed the same day). A private booking holds **seats** (1–4,
    `booking.party_size`), all **paid by the payer when added**, at the per-person price for that party size. A seat
    is filled by one of the payer's own learners or **open with an invite link**; a friend opens it, signs in (free

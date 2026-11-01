@@ -143,6 +143,7 @@ func main() {
 	// Admins (admin.go): the teachers, and switching them on or off.
 	mux.HandleFunc("GET /admin/teachers", requireAdmin(pool, listAdminTeachers(pool)))
 	mux.HandleFunc("GET /admin/teachers/{id}", requireAdmin(pool, getAdminTeacher(pool)))
+	mux.HandleFunc("POST /admin/photos/remove", requireAdmin(pool, adminRemovePhoto(pool)))
 	mux.HandleFunc("POST /admin/teachers/{id}/activate", requireAdmin(pool, setTeacherStatus(pool, true)))
 	mux.HandleFunc("POST /admin/teachers/{id}/deactivate", requireAdmin(pool, setTeacherStatus(pool, false)))
 
@@ -201,6 +202,9 @@ func main() {
 	mux.HandleFunc("POST /me/passkeys", requireSignIn(pool, passkeyRegisterFinish(pool, rp)))
 	mux.HandleFunc("GET /me/passkeys", requireSignIn(pool, listPasskeys(pool)))
 	mux.HandleFunc("POST /me/passkeys/{id}/remove", requireSignIn(pool, removePasskey(pool)))
+	mux.HandleFunc("PUT /me/photo", requireSignIn(pool, uploadPhoto(pool)))
+	mux.HandleFunc("POST /me/photo/remove", requireSignIn(pool, removeMyPhoto(pool)))
+	mux.HandleFunc("GET /photos/{id}", signedIn(pool, servePhoto(pool)))
 	mux.HandleFunc("POST /me/learners", requireSignIn(pool, addLearner(pool)))
 	mux.HandleFunc("PUT /me/learners/{id}", requireSignIn(pool, updateLearner(pool)))
 	mux.HandleFunc("POST /me/learners/{id}/archive", requireSignIn(pool, archiveLearner(pool)))
