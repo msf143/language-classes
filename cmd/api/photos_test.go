@@ -474,3 +474,36 @@ func TestClassListPhotos(t *testing.T) {
 		t.Errorf("the teacher opening it: %d", code)
 	}
 }
+
+// The admin's teacher list and detail name each teacher's photo, whatever
+// their status (a pending teacher's isn't public, but an admin may open it).
+func TestAdminTeacherPhotos(t *testing.T) {
+	pool := migratedSchemaPool(t, 6)
+	ctx := context.Background()
+	admin := adminCookie(t, pool)
+	withPhoto, teacher := teacherLogin(t, pool)
+	photo := mustPhoto(t, pool, teacher)
+	pool.Exec(ctx, `UPDATE teacher SET status = 'pending' WHERE id = $1`, withPhoto)
+	without := newTeacher(t, pool)
+
+	var list []adminTeacherDTO
+	json.Unmarshal(adminSend(pool, listAdminTeachers(pool), "GET", "/admin/teachers", "", admin).Body.Bytes(), &list)
+	got := map[string]*string{}
+	for _, tr := range list {
+		got[tr.ID] = tr.PhotoID
+	}
+	if got[withPhoto] == nil || *got[withPhoto] != photo {
+		t.Errorf("with a photo: %v, want %s", got[withPhoto], photo)
+	}
+	if got[without] != nil {
+		t.Errorf("without a photo: %v", *got[without])
+	}
+	var one adminTeacherDTO
+	json.Unmarshal(adminSend(pool, getAdminTeacher(pool), "GET", "/admin/teachers/"+withPhoto, withPhoto, admin).Body.Bytes(), &one)
+	if one.PhotoID == nil || *one.PhotoID != photo {
+		t.Errorf("one teacher: %v", one.PhotoID)
+	}
+	if code := getPhoto(pool, photo, admin).Code; code != 200 {
+		t.Errorf("the admin opening a pending teacher's photo: %d", code)
+	}
+}

@@ -38,6 +38,7 @@ type adminTeacherDTO struct {
 	UpcomingClasses int       `json:"upcoming_classes"` // scheduled or confirmed, not yet ended
 	BookedClasses   int       `json:"booked_classes"`   // of those, with at least one booking
 	Prices          int       `json:"prices"`           // price cells valid now
+	PhotoID         *string   `json:"photo_id"`         // shown at /photos/{id}; null = none
 }
 
 // listAdminTeachers handles GET /admin/teachers: pending first (they're
@@ -46,6 +47,7 @@ func listAdminTeachers(pool *pgxpool.Pool) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		rows, err := pool.Query(r.Context(), `
 			SELECT t.id::text, a.display_name, a.email, t.status, t.created_at,
+			       (SELECT ph.id::text FROM profile_photo ph WHERE ph.account_id = a.id),
 			       (SELECT count(*) FROM session s WHERE s.teacher_id = t.id
 			          AND s.status IN ('scheduled', 'confirmed') AND s.ends_at > now())::int,
 			       (SELECT count(*) FROM session s WHERE s.teacher_id = t.id
@@ -61,7 +63,7 @@ func listAdminTeachers(pool *pgxpool.Pool) http.HandlerFunc {
 		}
 		list, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (adminTeacherDTO, error) {
 			var t adminTeacherDTO
-			err := row.Scan(&t.ID, &t.DisplayName, &t.Email, &t.Status, &t.CreatedAt,
+			err := row.Scan(&t.ID, &t.DisplayName, &t.Email, &t.Status, &t.CreatedAt, &t.PhotoID,
 				&t.UpcomingClasses, &t.BookedClasses, &t.Prices)
 			return t, err
 		})
@@ -134,9 +136,10 @@ func getAdminTeacher(pool *pgxpool.Pool) http.HandlerFunc {
 		}
 		err := pool.QueryRow(r.Context(), `
 			SELECT t.id::text, a.display_name, a.email, t.status, t.created_at, a.timezone,
+			       (SELECT ph.id::text FROM profile_photo ph WHERE ph.account_id = a.id),
 			       COALESCE(t.bio_en, ''), COALESCE(t.bio_es, ''), t.buffer_minutes, t.offered_durations
 			FROM teacher t JOIN account a ON a.id = t.account_id WHERE t.id = $1`, id).
-			Scan(&t.ID, &t.DisplayName, &t.Email, &t.Status, &t.CreatedAt, &t.Timezone,
+			Scan(&t.ID, &t.DisplayName, &t.Email, &t.Status, &t.CreatedAt, &t.Timezone, &t.PhotoID,
 				&t.BioEN, &t.BioES, &t.BreakMinutes, &t.OfferedLengths)
 		if errors.Is(err, pgx.ErrNoRows) {
 			writeErrorCode(w, r, http.StatusNotFound, "teacher_not_found", "no such teacher")

@@ -212,12 +212,19 @@ function renderList() {
     return;
   }
   list.replaceChildren(...toggle, ...shown.map((tr) =>
-    h("li", { class: "my-booking plain", "data-teacher-id": tr.id },
-      cardHead([tr.display_name, " ", statusTag(tr.status)],
-        h("button", { type: "button", class: "btn-secondary btn-small", "data-action": "open-teacher" }, t("viewTeacher"))),
-      h("p", { class: "my-booking-detail" }, tr.email),
-      h("p", { class: "my-booking-detail" }, t("teacherCounts", tr.upcoming_classes, tr.booked_classes, tr.prices)),
-    )));
+    h("li", { class: "my-booking plain person-card", "data-teacher-id": tr.id },
+      personPhoto(tr.photo_id),
+      h("div", { class: "person-card-body" },
+        cardHead([tr.display_name, " ", statusTag(tr.status)],
+          h("button", { type: "button", class: "btn-secondary btn-small", "data-action": "open-teacher" }, t("viewTeacher"))),
+        h("p", { class: "my-booking-detail" }, tr.email),
+        h("p", { class: "my-booking-detail" }, t("teacherCounts", tr.upcoming_classes, tr.booked_classes, tr.prices)),
+      ))));
+}
+
+// Someone's photo in an admin list, or an empty circle so the rows still line up.
+function personPhoto(id) {
+  return id ? photoImg(id, "", "photo-medium") : h("div", { class: "photo-medium photo-empty", "aria-hidden": "true" });
 }
 
 // One teacher in full: profile, prices, upcoming classes, and the switch.
@@ -246,7 +253,7 @@ function renderTeacher() {
 
   document.querySelector("#teacher-view").replaceChildren(
     h("button", { type: "button", class: "link-button", "data-action": "back-to-list" }, t("allTeachers")),
-    h("h2", {}, tr.display_name, " ", statusTag(tr.status)),
+    h("div", { class: "person-heading" }, personPhoto(tr.photo_id), h("h2", {}, tr.display_name, " ", statusTag(tr.status))),
     h("div", { class: "admin-actions" }, button, h("span", { class: "muted small" }, t(active ? "deactivateHint" : "activateHint"))),
     refusal,
     section(t("profileTitle"),
