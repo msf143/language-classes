@@ -234,6 +234,11 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 /* ---------- policies page + footer ---------- */
 .policies { padding-block: 32px 48px; max-width: 46rem; }
 .policies h1 { margin: 0 0 8px; }
+/* Our Teachers: one card per teacher, the photo beside the name and bio. */
+.teacher-cards { list-style: none; margin: 20px 0; padding: 0; display: flex; flex-direction: column; gap: 12px; max-width: 46rem; }
+.teacher-card { display: flex; align-items: flex-start; gap: 16px; padding: 16px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); }
+.teacher-card h2 { margin: 0; font-size: 1.2rem; overflow-wrap: anywhere; }
+.teachers-cta { display: inline-block; text-decoration: none; }
 /* About page: a readable column of text; pre-line keeps single line breaks as typed. */
 .about { padding-block: 24px 16px; }
 .about-text { max-width: 65ch; }

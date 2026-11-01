@@ -70,6 +70,7 @@ cmd/api/            main.go    server wiring, middleware, shared helpers (writeJ
                     teacher_classes.go POST /teacher/sessions (new group class), POST /teacher/sessions/{id}/cancel
                     account.go PUT /me (name), /me/learners (add, edit, archive family members)
                     about.go   GET/PUT /about-page (plain text, both languages; admins edit; every save kept)
+                    teachers_public.go GET /teachers (the public Our Teachers page)
                     admin_students.go POST /admin/students/search (the admin's student list)
                     photos.go  profile photos: upload (re-encoded), serve (who may see), remove, admin remove
                     passkeys.go WebAuthn: add a passkey (start + finish; checks without CBOR or a library)
@@ -92,7 +93,7 @@ scripts/prod-db.sh  migrate/psql against the prod database through the Cloud SQL
 web/                index.html + app.js (catalog, booking/cancel dialogs, my bookings), signin.html + signin.js
                     (emailed link lands here), teacher.html + teacher.js (teacher dashboard), policies.html + policies.js
                     (public rules, numbers from GET /policies), admin.html + admin.js (teachers: list, profile,
-                    activate/deactivate), invite.html + invite.js (accept a teacher invitation), about.html + about.js (About page,
+                    activate/deactivate), invite.html + invite.js (accept a teacher invitation), teachers.html + teachers.js (public Our Teachers), about.html + about.js (About page,
                     admins edit it there), common.js (shared
                     t/h/api helpers), i18n.js (all UI strings), styles.css
 ```
@@ -669,8 +670,8 @@ For what's already built, read the code and `git log`. Next, in order:
    People lists (decided 2026-11-01), in order: [x] 1 admin's teachers with photos (`photo_id` in `GET /admin/teachers` and
    `/{id}`; `personPhoto`, empty circle when none); [x] 2 admin's students (`cmd/api/admin_students.go`, `POST /admin/students/search {q}`
    in a body so searches stay out of the request log; any account that isn't a teacher; newest 100 + total; photo, name, email,
-   joined, bookings, children as a count only; Remove photo per row and on a teacher's page, replacing the email form); [ ] 3 public "Our Teachers" page (active teachers: photo, name,
-   bio; footer link). Later: messaging student → teacher (needs its own design: delivery, abuse, minors via the parent).
+   joined, bookings, children as a count only; Remove photo per row and on a teacher's page, replacing the email form); [x] 3 public "Our Teachers" page (`GET /teachers`, `web/teachers.html` + `teachers.js`: active teachers' photo, name,
+   bio; never an email; footer link on main, policies and About pages). Later: messaging student → teacher (needs its own design: delivery, abuse, minors via the parent).
    Then: the wife's oddities.
 9. **Friends in private classes** (done 2026-10-24; design agreed the same day). A private booking holds **seats** (1–4,
    `booking.party_size`), all **paid by the payer when added**, at the per-person price for that party size. A seat

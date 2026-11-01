@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Hablemos · Our Teachers</title>
+  <link rel="stylesheet" href="styles.css">
+  <script src="i18n.js" defer></script>
+  <script src="common.js" defer></script>
+  <script src="teachers.js" defer></script>
+</head>
+<body>
+  <header class="site-header">
+    <div class="wrap header-row">
+      <a class="brand" href="/">Hablemos</a>
+      <div class="header-actions">
+        <a class="link" href="/" data-i18n="backToClasses"></a>
+        <div class="lang-switch" role="group" aria-label="Interface language">
+          <button type="button" data-ui-lang="en">EN</button>
+          <button type="button" data-ui-lang="es">ES</button>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <main class="wrap about">
+    <h1 data-i18n="teachersPageTitle"></h1>
+    <p class="muted" data-i18n="teachersPageIntro"></p>
+    <!-- Loading / error / nobody yet -->
+    <div id="status" class="status" aria-live="polite"></div>
+    <!-- One card per active teacher, built by teachers.js from GET /teachers -->
+    <ul id="teachers" class="teacher-cards"></ul>
+    <p><a class="btn-primary teachers-cta" href="/" data-i18n="teachersSeeClasses"></a></p>
+  </main>
+
+  <footer class="site-footer">
+    <div class="wrap footer-row">
+      <a class="link" href="about.html" data-i18n="aboutTitle"></a>
+      <a class="link" href="policies.html" data-i18n="policiesLink"></a>
+      <a class="link" href="mailto:hola@hablemos.live">hola@hablemos.live</a>
+    </div>
+  </footer>
+</body>
+</html>

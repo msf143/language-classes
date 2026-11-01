@@ -143,6 +143,7 @@ func main() {
 	// Admins (admin.go): the teachers, and switching them on or off.
 	mux.HandleFunc("GET /admin/teachers", requireAdmin(pool, listAdminTeachers(pool)))
 	mux.HandleFunc("GET /admin/teachers/{id}", requireAdmin(pool, getAdminTeacher(pool)))
+	mux.HandleFunc("GET /teachers", listPublicTeachers(pool))
 	mux.HandleFunc("GET /about-page", getAboutPage(pool))
 	mux.HandleFunc("PUT /about-page", requireAdmin(pool, putAboutPage(pool)))
 	mux.HandleFunc("POST /admin/photos/remove", requireAdmin(pool, adminRemovePhoto(pool)))
