@@ -339,11 +339,21 @@ a.link { color: var(--accent); font-weight: 600; text-decoration: none; }
 /* ---------- private classes ---------- */
 .private { margin-top: 48px; }
 .private-prices { font-weight: 600; margin: 4px 0; }
-.slot-chip {
-  font: inherit; font-size: 0.95rem; padding: 6px 12px; border-radius: 999px; cursor: pointer;
-  border: 1px solid var(--border); background: var(--surface); color: var(--text);
+/* One line per day: name, times dropdown, Book. On a phone the name takes its
+   own line and the dropdown fills the width beside Book. 1rem text: iPhones
+   zoom the whole page when a smaller form control is tapped. */
+.slot-row { flex-wrap: nowrap; }
+.slot-row .day-name { flex: 0 0 17em; }   /* wide enough for "Miércoles, 30 de septiembre", so the dropdowns line up */
+.slot-select {
+  font: inherit; font-size: 1rem; min-height: 40px; padding: 6px 10px; min-width: 11em; border-radius: 10px;
+  border: 1px solid var(--border); background: var(--surface); color: var(--text); cursor: pointer;
 }
-.slot-chip:hover { border-color: var(--accent); color: var(--accent); }
+.slot-select:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+@media (max-width: 640px) {
+  .slot-row { flex-wrap: wrap; }
+  .slot-row .day-name { flex: 1 1 100%; min-width: 0; }
+  .slot-row .slot-select { flex: 1 1 0; min-width: 0; }
+}
 .teacher-name { color: var(--accent); font-weight: 600; } /* as big as the price line, in the accent orange */
 .private-teacher { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 16px; padding-top: 8px; }
 

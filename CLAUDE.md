@@ -633,7 +633,10 @@ For what's already built, read the code and `git log`. Next, in order:
    and amounts whole when lines wrap. Checked at 390px (es, en) and 1440px.
    Staging fixes (2026-10-26, from the logs: the teacher in Colombia was never signed in; Mike's press worked but stayed
    on the main page): signed out, the test banner says "Sign in to add test credit or to become the test teacher";
-   "Become the test teacher" goes straight to teacher.html. Then: the wife's oddities.
+   "Become the test teacher" goes straight to teacher.html.
+   Private times (2026-11-01): one line per day with a time dropdown and Book (disabled until a time is chosen), instead
+   of a button per 15 minutes; choices kept in `state.private.picked`; rows rebuilt only when their content changes
+   (`privateRowsKey`), so a render can't close an open dropdown. Then: the wife's oddities.
 9. **Friends in private classes** (done 2026-10-24; design agreed the same day). A private booking holds **seats** (1–4,
    `booking.party_size`), all **paid by the payer when added**, at the per-person price for that party size. A seat
    is filled by one of the payer's own learners or **open with an invite link**; a friend opens it, signs in (free

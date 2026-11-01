@@ -69,6 +69,7 @@ const STRINGS = {
 
     // Private classes (browsing free times)
     privateTitle: "Private Classes",
+    chooseTime: "Choose a time",
     privateIntro: "Just you, or you and up to 3 friends or family. Pick a time that suits you.",
     lengthLabel: "Length",
     pricePerPerson: (amounts) => `Per Person: ${amounts}`,
@@ -460,6 +461,7 @@ const STRINGS = {
     errNotCancellable: "Esta reserva ya no se puede cancelar.",
 
     privateTitle: "Clases privadas",
+    chooseTime: "Elige una hora",
     privateIntro: "Solo tú, o tú y hasta 3 amigos o familiares. Elige el horario que te convenga.",
     lengthLabel: "Duración",
     pricePerPerson: (amounts) => `Por persona: ${amounts}`,

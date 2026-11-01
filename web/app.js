@@ -14,6 +14,7 @@ const state = {
     minutes: 60,                   // class length: 30, 45 or 60
     status: "loading",             // "loading" | "ready" | "error"
     teachers: [],                  // [{ teacher_id, teacher_name, prices, slots }]
+    picked: {},                    // each day's dropdown choice: { "teacher|day": starts_at }
     error: null,                   // { requestId } when status is "error"
   },
 
@@ -315,6 +316,10 @@ function render() {
 
 // "Private classes": per teacher, a price line, then one row per day with a
 // button per free start time, all in the visitor's time zone (like the catalog).
+// The rows below are rebuilt only when what they show changes: rebuilding on
+// every render() would snap an open dropdown shut.
+let privateRowsKey = "";
+
 function renderPrivate() {
   const p = state.private;
   for (const group of document.querySelectorAll("[data-private]")) {
@@ -333,6 +338,10 @@ function renderPrivate() {
     p.status === "error" ? `${t("loadError")} ${t("reference")}: ${p.error.requestId}` :
     t("noTimes");
 
+  const rowsKey = JSON.stringify([state.uiLang, p.status, p.minutes, teachers]);
+  if (rowsKey === privateRowsKey) return;
+  privateRowsKey = rowsKey;
+
   const rows = [];
   if (p.status === "ready") {
     for (const tr of teachers) {
@@ -342,12 +351,16 @@ function renderPrivate() {
         h("span", { class: "private-prices" }, t("pricePerPerson", prices.join(" · "))),
       ));
       for (const slots of slotsByDay(tr.slots)) {
-        rows.push(h("li", { class: "day-row" },
-          h("span", { class: "day-name" }, formatWhen(slots[0]).dateText),
-          ...slots.map((s) => h("button", {
-            type: "button", class: "slot-chip", "data-action": "pick-slot",
-            "data-teacher-id": tr.teacher_id, "data-starts-at": s.starts_at,
-          }, formatWhen(s).timeText)),
+        // One line per day: its times in a dropdown, and Book once one is chosen.
+        const dateText = formatWhen(slots[0]).dateText;
+        const pickKey = `${tr.teacher_id}|${new Date(slots[0].starts_at).toDateString()}`;
+        const picked = slots.some((s) => s.starts_at === p.picked[pickKey]) ? p.picked[pickKey] : "";
+        rows.push(h("li", { class: "day-row slot-row", "data-teacher-id": tr.teacher_id },
+          h("span", { class: "day-name" }, dateText),
+          h("select", { class: "slot-select", "data-pick-key": pickKey, "aria-label": dateText },
+            h("option", { value: "" }, t("chooseTime")),
+            ...slots.map((s) => h("option", { value: s.starts_at, selected: s.starts_at === picked ? "" : null }, formatWhen(s).timeText))),
+          h("button", { type: "button", class: "btn-primary btn-small", "data-action": "book-slot", disabled: picked ? null : "" }, t("book")),
         ));
       }
     }
@@ -1561,11 +1574,11 @@ document.addEventListener("click", (e) => {
     else if (state.me) openBookGroup(sessionId);
   }
   if (action === "close-book") { state.book.open = false; render(); }
-  if (action === "pick-slot") {
-    // A free private time: same as Book on a card (sign in first if needed).
-    const chip = e.target.closest("[data-starts-at]");
+  if (action === "book-slot") {
+    // The day's chosen time: same as Book on a card (sign in first if needed).
+    const row = e.target.closest(".slot-row");
     if (state.me === null) openSignin();
-    else if (state.me) openBookPrivate(chip.dataset.teacherId, chip.dataset.startsAt);
+    else if (state.me) openBookPrivate(row.dataset.teacherId, row.querySelector(".slot-select").value);
   }
   if (action === "leave-class") leaveClass(e.target.closest("[data-seat-id]").dataset.seatId);
   if (action === "copy-seat-link") {
@@ -1678,6 +1691,11 @@ codeFormEl.elements.code.addEventListener("input", (e) => {
 // (FormData reads the checked boxes named "learner"), then re-render the price.
 // "change" bubbles, so one document listener catches it.
 document.addEventListener("change", (e) => {
+  if (e.target.matches(".slot-select")) {   // a private time chosen: remember it, Book wakes up
+    state.private.picked[e.target.dataset.pickKey] = e.target.value;
+    e.target.closest(".slot-row").querySelector("button").disabled = !e.target.value;
+    return;
+  }
   if (e.target.form === buyFormEl) {   // another pack = another purchase attempt
     state.buy.packId = new FormData(buyFormEl).get("pack");
     state.buy.key = crypto.randomUUID();
