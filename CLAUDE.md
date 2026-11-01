@@ -240,6 +240,8 @@ then find the link in the log.
   matching both Adults and Kids. At booking, check attendees against `learner.is_minor` for
   `adults`/`kids` sessions; `all` accepts anyone. The parent-nearby policy applies to any minor
   attending, including in `all` sessions.
+- **Video links (decided 2026-11-01):** visible only to the people in a class and its teacher, never public. Every class reads
+  `session.meeting_url`; today that's a copy of the teacher's one permanent room.
 - **Learner levels** use CEFR (A1–C2), set by the teacher. Session notes are either
   `shared` (student sees) or `private` (teacher only).
 - **Accounts required** (no guest checkout). Sign-in via emailed login links, no passwords.
@@ -677,7 +679,9 @@ For what's already built, read the code and `git log`. Next, in order:
    [x] 1 server (migration 000018 `teacher.meeting_link`; `meeting_link` in GET/PUT /teacher/profile, https only, `cleanMeetingLink`;
    new classes copy it; saving reaches upcoming classes, classes before the teacher row so it can't deadlock with a group
    booking (test fails with the other order); `meeting_url` in GET /bookings and GET /teacher/sessions, never public; booked,
-   reminder and friend emails `videoLineEN/ES`); [ ] 2 pages (field on the teacher page, Join button in My Bookings, link on My Classes). Later: messaging student → teacher (needs its own design: delivery, abuse, minors via the parent).
+   reminder and friend emails `videoLineEN/ES`); [x] 2 pages (room link + how-to on the teacher page; "Join video class" in My Bookings, https only, new tab; link on My
+   Classes, a note when there's none; checked in headless Chrome: bad link, no https://, student, teacher, removed).
+   A teacher should confirm that uninvited people must ask to enter his Meet room. Later: messaging student → teacher (needs its own design: delivery, abuse, minors via the parent).
    Then: the wife's oddities.
 9. **Friends in private classes** (done 2026-10-24; design agreed the same day). A private booking holds **seats** (1–4,
    `booking.party_size`), all **paid by the payer when added**, at the per-person price for that party size. A seat

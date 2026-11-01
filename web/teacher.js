@@ -112,6 +112,7 @@ function fillProfileForm() {
   f.display_name.value = p.display_name;
   f.bio_en.value = p.bio_en;
   f.bio_es.value = p.bio_es;
+  f.meeting_link.value = p.meeting_link;
   // Choices come from the server's limits: 0, 5, 10, 15 minutes; 30, 45, 60.
   const breaks = [];
   for (let m = 0; m <= p.max_break_minutes; m += 5) breaks.push(m);
@@ -132,6 +133,7 @@ async function saveProfile() {
     bio_es: String(form.get("bio_es")),
     break_minutes: Number(form.get("break_minutes")),
     offered_lengths: form.getAll("offered_lengths").map(Number),   // every ticked box
+    meeting_link: String(form.get("meeting_link")),
   };
   if (!body.display_name) {
     state.profileError = { key: "errProfileName" };
@@ -498,6 +500,9 @@ function renderClasses() {
               photoImg(a.photo_id, "", "photo-small"),
               (a.is_minor ? `${a.display_name} (${t("child")})` : a.display_name) + (i < c.attendees.length - 1 ? "," : ""))))
         : h("p", { class: "my-booking-detail" }, t("noOneYet")),
+      c.meeting_url?.startsWith("https://")
+        ? h("p", { class: "my-booking-detail" }, h("a", { class: "link", href: c.meeting_url, target: "_blank", rel: "noopener" }, t("joinVideo")))
+        : h("p", { class: "my-booking-detail" }, t("noVideoLinkTeacher")),
       hasMinor ? h("p", { class: "minor-note" }, t("minorNote")) : "",
     );
   }));

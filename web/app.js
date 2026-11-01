@@ -415,6 +415,10 @@ function renderMyBookings() {
       h("h3", { class: "my-booking-title" }, b.session.title ?? t("privateClass")),
       h("p", { class: "my-booking-when" }, ...dotted([dateText, timeText, t("minutes", b.session.duration_minutes)])),
       h("p", { class: "my-booking-detail" }, ...dotted(facts)),
+      // The video room, once the teacher has one. https only: it's a link people click.
+      b.session.meeting_url?.startsWith("https://")
+        ? h("p", { class: "join-row" }, h("a", { class: "btn-primary btn-small join-video", href: b.session.meeting_url, target: "_blank", rel: "noopener" }, t("joinVideo")))
+        : h("p", { class: "my-booking-detail" }, t("videoComing")),
       seats ? seatList(b) : "",
       // The rare, undoable action last and quiet (it still asks first). A
       // friend's class (guest): Leave instead of Cancel.
