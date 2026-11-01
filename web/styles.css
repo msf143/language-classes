@@ -150,6 +150,8 @@ body {
 .tag-en { background: var(--en-soft); color: var(--en); }
 
 .card-title { margin: 0; font-size: 1.1rem; line-height: 1.3; }
+.card-teacher { margin: 0; display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 0.9rem; }
+.photo-small { width: 28px; height: 28px; flex: none; border-radius: 50%; object-fit: cover; }
 .card-when { margin: 0; display: flex; flex-direction: column; }
 .card-date { font-weight: 600; }
 .card-time { color: var(--muted); font-size: 0.95rem; }
@@ -377,7 +379,11 @@ a.link { color: var(--accent); font-weight: 600; text-decoration: none; }
   .slot-row .slot-select { flex: 1 1 0; min-width: 0; }
 }
 .teacher-name { color: var(--accent); font-weight: 600; } /* as big as the price line, in the accent orange */
-.private-teacher { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 16px; padding-top: 8px; }
+.private-teacher { display: flex; flex-direction: column; gap: 10px; padding-top: 8px; }
+/* Photo beside the name and bio. pre-line keeps the line breaks he typed. */
+.teacher-intro { display: flex; align-items: flex-start; gap: 14px; }
+.teacher-about { min-width: 0; max-width: 65ch; }
+.teacher-bio { margin: 4px 0 0; white-space: pre-line; overflow-wrap: break-word; }
 
 /* The one-time welcome: numbered steps with a little air between them. */
 .welcome-steps { padding-left: 1.4em; margin: 0.5rem 0 1rem; }

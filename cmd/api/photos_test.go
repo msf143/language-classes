@@ -11,6 +11,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -343,5 +344,83 @@ func TestAdminRemovePhoto(t *testing.T) {
 	}
 	if got := getPhoto(pool, photo, owner.cookie).Code; got != 404 {
 		t.Errorf("after the admin removed it: %d", got)
+	}
+}
+
+// The public lists say who teaches: GET /sessions the name and photo, GET
+// /private-slots also the bio. An inactive teacher's photo isn't offered, since
+// GET /photos/{id} wouldn't show it to students.
+func TestTeacherOnPublicLists(t *testing.T) {
+	pool := testPool(t)
+	ctx := context.Background()
+	teacherID, teacher := teacherLogin(t, pool)
+	photo := mustPhoto(t, pool, teacher)
+	pool.Exec(ctx, `UPDATE account SET display_name = 'Gabriel' WHERE id = $1`, teacher.accountID)
+	pool.Exec(ctx, `UPDATE teacher SET bio_en = 'From Bogotá.', bio_es = 'De Bogotá.' WHERE id = $1`, teacherID)
+	session := newSession(t, pool, teacherID, sessionOpts{})
+
+	findSession := func(cookie *http.Cookie, id string) *sessionDTO {
+		t.Helper()
+		var all []sessionDTO
+		rec := call(signedIn(pool, listSessions(pool)), "GET", "/sessions", cookie)
+		if err := json.Unmarshal(rec.Body.Bytes(), &all); err != nil {
+			t.Fatalf("%d %s", rec.Code, rec.Body)
+		}
+		for i := range all {
+			if all[i].ID == id {
+				return &all[i]
+			}
+		}
+		t.Fatalf("session %s isn't listed", id)
+		return nil
+	}
+	s := findSession(nil, session)
+	if s.TeacherName != "Gabriel" || s.TeacherPhotoID == nil || *s.TeacherPhotoID != photo {
+		t.Errorf("group class, signed out: name %q, photo %v", s.TeacherName, s.TeacherPhotoID)
+	}
+
+	for size := 1; size <= 4; size++ {
+		if _, err := pool.Exec(ctx, `
+			INSERT INTO price_tier (id, teacher_id, kind, duration_minutes, party_size, price_per_person_cents)
+			VALUES ($1, $2, 'private', 60, $3, 2000)`, newUUIDv7(), teacherID, size); err != nil {
+			t.Fatal(err)
+		}
+	}
+	day := time.Now().UTC().Truncate(24*time.Hour).AddDate(0, 0, 40)
+	addBlock(t, pool, teacherID, day.Add(10*time.Hour), day.Add(12*time.Hour))
+	window := "&from=" + day.Format(time.RFC3339) + "&to=" + day.AddDate(0, 0, 1).Format(time.RFC3339)
+	mine := func() *teacherSlotsDTO {
+		t.Helper()
+		var all []teacherSlotsDTO
+		rec := call(listPrivateSlots(pool), "GET", "/private-slots?duration=60"+window, nil)
+		if err := json.Unmarshal(rec.Body.Bytes(), &all); err != nil {
+			t.Fatalf("%d %s", rec.Code, rec.Body)
+		}
+		for i := range all {
+			if all[i].TeacherID == teacherID {
+				return &all[i]
+			}
+		}
+		return nil
+	}
+	ts := mine()
+	if ts == nil || ts.TeacherPhotoID == nil || *ts.TeacherPhotoID != photo || ts.BioEN != "From Bogotá." || ts.BioES != "De Bogotá." {
+		t.Fatalf("private slots: %+v", ts)
+	}
+
+	// No photo: null, not an error.
+	me(teacher, requireSignIn(pool, removeMyPhoto(pool)), "POST", "", "")
+	if ts := mine(); ts == nil || ts.TeacherPhotoID != nil {
+		t.Errorf("after removing the photo: %+v", ts)
+	}
+	if s := findSession(nil, session); s.TeacherPhotoID != nil {
+		t.Errorf("group class after removing the photo: %v", *s.TeacherPhotoID)
+	}
+
+	// Not active: he still sees his own class in the list, without a photo offered.
+	mustPhoto(t, pool, teacher)
+	pool.Exec(ctx, `UPDATE teacher SET status = 'inactive' WHERE id = $1`, teacherID)
+	if s := findSession(teacher.cookie, session); s.TeacherPhotoID != nil {
+		t.Errorf("inactive teacher's photo offered: %v", *s.TeacherPhotoID)
 	}
 }

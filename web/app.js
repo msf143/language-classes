@@ -346,8 +346,15 @@ function renderPrivate() {
   if (p.status === "ready") {
     for (const tr of teachers) {
       const prices = tr.prices.map((pr) => t("pricePeople", pr.party_size, money(pr.price_per_person_cents, pr.currency)));
+      // The bio in the page's language, or the other one if he wrote only that.
+      const bio = (state.uiLang === "es" ? tr.bio_es || tr.bio_en : tr.bio_en || tr.bio_es);
       rows.push(h("li", { class: "private-teacher" },
-        h("span", { class: "teacher-name" }, t("withTeacher", tr.teacher_name)),
+        h("div", { class: "teacher-intro" },
+          teacherPhoto(tr.teacher_photo_id, tr.teacher_name, "photo"),
+          h("div", { class: "teacher-about" },
+            h("span", { class: "teacher-name" }, t("withTeacher", tr.teacher_name)),
+            bio ? h("p", { class: "teacher-bio" }, bio) : "",
+          )),
         h("span", { class: "private-prices" }, t("pricePerPerson", prices.join(" · "))),
       ));
       for (const slots of slotsByDay(tr.slots)) {
@@ -366,6 +373,12 @@ function renderPrivate() {
     }
   }
   document.querySelector("#private-days").replaceChildren(...rows);
+}
+
+// A teacher's picture, or nothing if there isn't one. The address is the same
+// whenever it's drawn, so the browser shows it from its cache without flicker.
+function teacherPhoto(id, name, cssClass) {
+  return id ? h("img", { class: cssClass, src: `/photos/${id}`, alt: name, width: "96", height: "96" }) : "";
 }
 
 // Group slots by the visitor's local calendar day, keeping time order.
@@ -647,6 +660,9 @@ function sessionCard(s) {
       booked ? h("span", { class: "tag tag-booked" }, t("youreBooked")) : "",
     ),
     h("h3", { class: "card-title" }, title),
+    h("p", { class: "card-teacher" },
+      teacherPhoto(s.teacher_photo_id, "", "photo-small"),
+      t("withTeacher", s.teacher_name)),
     h("p", { class: "card-when" },
       h("span", { class: "card-date" }, dateText),
       h("span", { class: "card-time" }, `${timeText} · ${t("minutes", s.duration_minutes)}`),

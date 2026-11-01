@@ -647,8 +647,9 @@ For what's already built, read the code and `git log`. Next, in order:
    remove (personal data, not a business record); `GET /photos/{id}`; `POST /admin/photos/remove {email}`; `/me` `photo_id`);
    [x] 2 teacher page (`.photo-editor`, saved as soon as chosen; `savePhoto` / `photoToJpeg` in `common.js`: the middle
    square, 512 px, JPEG, upright via the browser's own EXIF handling, white behind transparency; `api()` sends a Blob as
-   it is; checked in headless Chrome with a sideways JPEG, a transparent PNG, a tiny picture, a non-picture); [ ] 3 main page shows the teacher's photo
-   and bio (the bio reaches no student page today); [ ] 4 My Account photo, on the teacher's My Classes; admin Remove form;
+   it is; checked in headless Chrome with a sideways JPEG, a transparent PNG, a tiny picture, a non-picture); [x] 3 main page: `GET /private-slots` has `teacher_photo_id` + `bio_en/es`, `GET /sessions` has `teacher_name` +
+   `teacher_photo_id` (active teachers only); private classes show photo, name, bio (page's language, else the other);
+   group cards a small photo and "With …"; [ ] 4 My Account photo, on the teacher's My Classes; admin Remove form;
    policies sentence. Then: the wife's oddities.
 9. **Friends in private classes** (done 2026-10-24; design agreed the same day). A private booking holds **seats** (1–4,
    `booking.party_size`), all **paid by the payer when added**, at the per-person price for that party size. A seat

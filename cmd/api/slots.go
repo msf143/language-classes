@@ -90,6 +90,9 @@ func maxTime(a, b time.Time) time.Time {
 type teacherSlotsDTO struct {
 	TeacherID       string     `json:"teacher_id"`
 	TeacherName     string     `json:"teacher_name"`
+	TeacherPhotoID  *string    `json:"teacher_photo_id"` // shown at /photos/{id}; null = none
+	BioEN           string     `json:"bio_en"`           // "" = none
+	BioES           string     `json:"bio_es"`
 	DurationMinutes int        `json:"duration_minutes"`
 	Prices          []priceDTO `json:"prices"` // per person, by party size (1-4)
 	Slots           []slotDTO  `json:"slots"`
@@ -150,6 +153,8 @@ func privateSlots(ctx context.Context, pool *pgxpool.Pool, minutes int, length t
 	// with those prices (as JSON, like GET /sessions), and the database's clock.
 	rows, err := pool.Query(ctx, `
 		SELECT t.id::text, a.display_name,
+		       (SELECT ph.id::text FROM profile_photo ph WHERE ph.account_id = t.account_id),
+		       COALESCE(t.bio_en, ''), COALESCE(t.bio_es, ''),
 		       (SELECT json_agg(json_build_object(
 		                   'party_size', p.party_size,
 		                   'price_per_person_cents', p.price_per_person_cents,
@@ -171,7 +176,7 @@ func privateSlots(ctx context.Context, pool *pgxpool.Pool, minutes int, length t
 	var now time.Time
 	for rows.Next() {
 		ts := teacherSlotsDTO{DurationMinutes: minutes, Slots: []slotDTO{}}
-		if err := rows.Scan(&ts.TeacherID, &ts.TeacherName, &ts.Prices, &now); err != nil {
+		if err := rows.Scan(&ts.TeacherID, &ts.TeacherName, &ts.TeacherPhotoID, &ts.BioEN, &ts.BioES, &ts.Prices, &now); err != nil {
 			rows.Close()
 			return nil, err
 		}

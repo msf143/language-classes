@@ -23,6 +23,8 @@ type sessionDTO struct {
 	SeatsLeft       *int       `json:"seats_left"` // null when there is no cap
 	Status          string     `json:"status"`
 	Prices          []priceDTO `json:"prices"` // price in force now, per party size; [] = not bookable
+	TeacherName     string     `json:"teacher_name"`
+	TeacherPhotoID  *string    `json:"teacher_photo_id"` // shown at /photos/{id}; null = none
 }
 
 // priceDTO is the price per person for one party size. The total for a party
@@ -62,7 +64,11 @@ SELECT s.id::text,
         FROM price_tier p
         WHERE p.teacher_id = s.teacher_id AND p.kind = s.kind
           AND p.duration_minutes = EXTRACT(epoch FROM s.ends_at - s.starts_at)::int / 60
-          AND p.valid @> now()) AS prices
+          AND p.valid @> now()) AS prices,
+       (SELECT a.display_name FROM teacher t JOIN account a ON a.id = t.account_id WHERE t.id = s.teacher_id) AS teacher_name,
+       -- only an active teacher's photo is public (GET /photos/{id}'s rule)
+       (SELECT ph.id::text FROM teacher t JOIN profile_photo ph ON ph.account_id = t.account_id
+        WHERE t.id = s.teacher_id AND t.status = 'active') AS teacher_photo_id
 FROM session s
 LEFT JOIN booking b ON b.session_id = s.id
 WHERE s.status IN ('scheduled', 'confirmed')
@@ -126,7 +132,7 @@ func listSessions(pool *pgxpool.Pool) http.HandlerFunc {
 		for rows.Next() {
 			var s sessionDTO
 			if err := rows.Scan(&s.ID, &s.Kind, &s.TargetLanguage, &s.Audience, &s.Title,
-				&s.StartsAt, &s.EndsAt, &s.MaxSeats, &s.SeatsTaken, &s.Status, &s.Prices); err != nil {
+				&s.StartsAt, &s.EndsAt, &s.MaxSeats, &s.SeatsTaken, &s.Status, &s.Prices, &s.TeacherName, &s.TeacherPhotoID); err != nil {
 				logFrom(r).Error("list sessions: scan failed", "err", err)
 				writeError(w, r, http.StatusInternalServerError, "could not load sessions")
 				return
