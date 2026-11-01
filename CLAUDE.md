@@ -191,7 +191,9 @@ then find the link in the log.
 
 - **Payment model: dollar-valued credits.** Students buy credit packs (with a bonus, e.g.
   pay $50 get $55) and bookings debit the balance. Refunds go back as credit by default;
-  cash refund of unused credit on request.
+  cash refund of unused credit on request: **unused credit minus any pack bonus, never more than was paid** (decided
+  2026-11-01; paid $50, got $55, spent $20 → $30 back). By hand for now: refund in the Stripe Dashboard and record a
+  `cash_out` ledger entry, since the app doesn't hear about Stripe refunds (a refund alone leaves the site balance unchanged).
 - **Who collects (decided 2026-10-23):** Mike receives all payments in the US through **Stripe Checkout**
   (cards worldwide, Apple Pay, Google Pay; hosted page, so card data never touches our server) and pays the
   teacher in Colombia himself (e.g. Xoom), outside the app. So the app needs no payouts or splits.

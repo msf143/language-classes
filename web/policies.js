@@ -42,6 +42,17 @@ function render() {
   document.querySelector("#policies").replaceChildren(...(state.status === "ready" ? sections() : []));
 }
 
+// The cash-back rule, shown with a real pack that has a bonus: spend $20 of it.
+// All whole cents. Nothing to show if no pack on sale has a bonus.
+function cashBackExample() {
+  const k = state.packs.find((pack) => pack.credit_cents > pack.price_cents);
+  const spent = 2000;
+  if (!k || k.credit_cents <= spent) return [];
+  const m = (cents) => money(cents, k.currency);
+  const left = k.credit_cents - spent, bonus = k.credit_cents - k.price_cents, back = Math.max(left - bonus, 0);
+  return [t("polCreditCashExample", m(k.price_cents), m(k.credit_cents), m(spent), m(left), m(bonus), m(back))];
+}
+
 // One <section> per topic: a heading and its points (each a translated
 // sentence filled in with the server's numbers).
 function sections() {
@@ -68,6 +79,7 @@ function sections() {
       t("polCreditExpiry", p.credit_expire_months),
       t("polCreditReminder", p.credit_warn_days_before),
       t("polCreditCash"),
+      ...cashBackExample(),
     ]],
     ["polKidsTitle", [t("polKidsProfiles"), t("polKidsAudience"), t("polKidsParent")]],
     ["polPhotosTitle", [t("polPhotosWho"), t("polPhotosKids"), t("polPhotosRemove")]],
