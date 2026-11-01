@@ -227,6 +227,18 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 /* ---------- policies page + footer ---------- */
 .policies { padding-block: 32px 48px; max-width: 46rem; }
 .policies h1 { margin: 0 0 8px; }
+/* About page: a readable column of text; pre-line keeps single line breaks as typed. */
+.about { padding-block: 24px 16px; }
+.about-text { max-width: 65ch; }
+.about-text h2 { margin: 20px 0 8px; font-size: 1.3rem; line-height: 1.3; text-wrap: balance; overflow-wrap: break-word; }
+.about-text p { margin: 0 0 14px; white-space: pre-line; overflow-wrap: break-word; }
+.about-edit { margin-top: 8px; }
+.about-form { display: flex; flex-direction: column; gap: 12px; margin-top: 16px; max-width: 46rem; }
+.about-form p { margin: 0; }
+.about-form textarea {
+  font: inherit; font-weight: 400; padding: 10px 12px; border-radius: 10px; width: 100%; box-sizing: border-box;
+  border: 1px solid var(--border); background: var(--bg); color: var(--text); resize: vertical;
+}
 .policy { margin-top: 28px; }
 .policy h2 { font-size: 1.15rem; margin: 0 0 8px; }
 .policy ul { margin: 0; padding-left: 1.2em; display: flex; flex-direction: column; gap: 6px; }

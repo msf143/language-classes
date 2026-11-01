@@ -91,7 +91,8 @@ scripts/prod-db.sh  migrate/psql against the prod database through the Cloud SQL
 web/                index.html + app.js (catalog, booking/cancel dialogs, my bookings), signin.html + signin.js
                     (emailed link lands here), teacher.html + teacher.js (teacher dashboard), policies.html + policies.js
                     (public rules, numbers from GET /policies), admin.html + admin.js (teachers: list, profile,
-                    activate/deactivate), invite.html + invite.js (accept a teacher invitation), common.js (shared
+                    activate/deactivate), invite.html + invite.js (accept a teacher invitation), about.html + about.js (About page,
+                    admins edit it there), common.js (shared
                     t/h/api helpers), i18n.js (all UI strings), styles.css
 ```
 
@@ -659,8 +660,11 @@ For what's already built, read the code and `git log`. Next, in order:
    admin "Remove a Photo" form by email; policies "Photos" section. Checked in headless Chrome end to end. **Photos done.**
    About page (decided 2026-11-01): plain text, "#" line = heading, public to read, admins edit on the page; each save a new
    `about_page_version` row, newest shown (journal-style; no restore button). [x] 1 server (`cmd/api/about.go`, migration
-   000016 with Mike's text + a draft Spanish; `GET`/`PUT /about-page`; both languages required, ≤ 10000 chars); [ ] 2
-   `about.html` + `about.js`, footer link. Then: the wife's oddities.
+   000016 with Mike's text + a draft Spanish; `GET`/`PUT /about-page`; both languages required, ≤ 10000 chars); [x] 2
+   `about.html` + `about.js` (`aboutElements`: "# " line = h2, blank line = new paragraph, only ever text; Edit page for admins,
+   two text boxes; footer link on main + policies pages); checked in headless Chrome as visitor, student (403) and admin,
+   incl. markup shown as text. Open: Mike to confirm "two brothers" and the price sentence (true of private classes only).
+   Then: the wife's oddities.
 9. **Friends in private classes** (done 2026-10-24; design agreed the same day). A private booking holds **seats** (1–4,
    `booking.party_size`), all **paid by the payer when added**, at the per-person price for that party size. A seat
    is filled by one of the payer's own learners or **open with an invite link**; a friend opens it, signs in (free

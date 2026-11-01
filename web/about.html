@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Hablemos · About Us</title>
+  <link rel="stylesheet" href="styles.css">
+  <script src="i18n.js" defer></script>
+  <script src="common.js" defer></script>
+  <script src="about.js" defer></script>
+</head>
+<body>
+  <header class="site-header">
+    <div class="wrap header-row">
+      <a class="brand" href="/">Hablemos</a>
+      <div class="header-actions">
+        <a class="link" href="/" data-i18n="backToClasses"></a>
+        <div class="lang-switch" role="group" aria-label="Interface language">
+          <button type="button" data-ui-lang="en">EN</button>
+          <button type="button" data-ui-lang="es">ES</button>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <main class="wrap about">
+    <h1 data-i18n="aboutTitle"></h1>
+    <!-- Loading / error -->
+    <div id="status" class="status" aria-live="polite"></div>
+    <!-- The text, built by about.js from GET /about-page (never as HTML) -->
+    <div id="about-text" class="about-text"></div>
+
+    <!-- Admins only (the server refuses anyone else's save). The form owns its
+         text: about.js fills it when Edit is pressed, never while typing. -->
+    <button type="button" class="btn-secondary btn-small about-edit" id="about-edit" data-action="edit" data-i18n="aboutEdit" hidden></button>
+    <form id="about-form" class="about-form" novalidate hidden>
+      <p class="muted small" data-i18n="aboutHint"></p>
+      <label class="field"><span data-i18n="aboutEN"></span>
+        <textarea name="body_en" rows="16" maxlength="10000"></textarea></label>
+      <label class="field"><span data-i18n="aboutES"></span>
+        <textarea name="body_es" rows="16" maxlength="10000"></textarea></label>
+      <p id="about-error" class="form-error" aria-live="polite"></p>
+      <div class="dialog-actions">
+        <button type="button" class="btn-secondary" data-action="cancel-edit" data-i18n="cancel"></button>
+        <button type="submit" class="btn-primary" id="about-save"></button>
+      </div>
+    </form>
+  </main>
+
+  <footer class="site-footer">
+    <div class="wrap footer-row">
+      <a class="link" href="policies.html" data-i18n="policiesLink"></a>
+      <a class="link" href="mailto:hola@hablemos.live">hola@hablemos.live</a>
+    </div>
+  </footer>
+
+  <div id="toast" class="toast" role="status" hidden></div>
+</body>
+</html>
