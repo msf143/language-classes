@@ -340,7 +340,7 @@ func TestSeatEmails(t *testing.T) {
 		t.Fatalf("join: %d", rec.Code)
 	}
 	if sent := handle("seat_joined"); len(sent) != 2 || !contains(sent[0], "A friend joined", "Ana joined your class (Tomás)") ||
-		!contains(sent[1], "You're in", "For: Tomás", "Booked by Test (nothing to pay)") {
+		!contains(sent[1], "You're in", "For: Tomás", "Booked by Test (nothing to pay)", "The teacher will send you the video link", "El profesor te enviará el enlace") || strings.Contains(sent[1].Text, "%!") {
 		t.Errorf("joined: %+v", sent)
 	}
 

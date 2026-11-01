@@ -194,6 +194,7 @@ type mySessionDTO struct {
 	Audience        string    `json:"audience"`
 	StartsAt        time.Time `json:"starts_at"`
 	DurationMinutes int       `json:"duration_minutes"`
+	MeetingURL      *string   `json:"meeting_url"` // the video room; null = the teacher will send it
 }
 
 type attendeeDTO struct {
@@ -211,7 +212,7 @@ func listMyBookings(pool *pgxpool.Pool) http.HandlerFunc {
 		me, _ := accountFrom(r)
 		rows, err := pool.Query(r.Context(), `
 			SELECT b.id::text, b.party_size, b.total_cents, b.currency, b.created_at,
-			       s.id::text, s.kind, s.title, s.target_language, s.audience, s.starts_at, s.ends_at,
+			       s.id::text, s.kind, s.title, s.target_language, s.audience, s.starts_at, s.ends_at, s.meeting_url,
 			       -- who's attending, as a JSON array; pgx decodes it into []attendeeDTO
 			       (SELECT COALESCE(json_agg(json_build_object(
 			                   'learner_id', l.id, 'display_name', l.display_name)
@@ -250,7 +251,7 @@ func listMyBookings(pool *pgxpool.Pool) http.HandlerFunc {
 			var endsAt, now time.Time
 			if err := rows.Scan(&b.ID, &b.PartySize, &b.TotalCents, &b.Currency, &b.CreatedAt,
 				&b.Session.ID, &b.Session.Kind, &b.Session.Title, &b.Session.TargetLanguage,
-				&b.Session.Audience, &b.Session.StartsAt, &endsAt, &b.Attendees, &b.Seats, &now,
+				&b.Session.Audience, &b.Session.StartsAt, &endsAt, &b.Session.MeetingURL, &b.Attendees, &b.Seats, &now,
 				&b.Role, &b.PaidBy, &b.MySeats); err != nil {
 				logFrom(r).Error("list my bookings: scan failed", "err", err)
 				writeError(w, r, http.StatusInternalServerError, "could not load your bookings")

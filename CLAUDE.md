@@ -671,7 +671,13 @@ For what's already built, read the code and `git log`. Next, in order:
    `/{id}`; `personPhoto`, empty circle when none); [x] 2 admin's students (`cmd/api/admin_students.go`, `POST /admin/students/search {q}`
    in a body so searches stay out of the request log; any account that isn't a teacher; newest 100 + total; photo, name, email,
    joined, bookings, children as a count only; Remove photo per row and on a teacher's page, replacing the email form); [x] 3 public "Our Teachers" page (`GET /teachers`, `web/teachers.html` + `teachers.js`: active teachers' photo, name,
-   bio; never an email; footer link on main, policies and About pages). Later: messaging student → teacher (needs its own design: delivery, abuse, minors via the parent).
+   bio; never an email; footer link on main, policies and About pages).
+   Video links (decided 2026-11-01; Google Meet): a teacher's one permanent room, copied to each class's `session.meeting_url`,
+   the only thing students and emails read, so creating a room per class (Daily) later changes only where the value comes from.
+   [x] 1 server (migration 000018 `teacher.meeting_link`; `meeting_link` in GET/PUT /teacher/profile, https only, `cleanMeetingLink`;
+   new classes copy it; saving reaches upcoming classes, classes before the teacher row so it can't deadlock with a group
+   booking (test fails with the other order); `meeting_url` in GET /bookings and GET /teacher/sessions, never public; booked,
+   reminder and friend emails `videoLineEN/ES`); [ ] 2 pages (field on the teacher page, Join button in My Bookings, link on My Classes). Later: messaging student → teacher (needs its own design: delivery, abuse, minors via the parent).
    Then: the wife's oddities.
 9. **Friends in private classes** (done 2026-10-24; design agreed the same day). A private booking holds **seats** (1–4,
    `booking.party_size`), all **paid by the payer when added**, at the per-person price for that party size. A seat

@@ -110,7 +110,7 @@ func notifySeat(ctx context.Context, pool *pgxpool.Pool, send mailer, siteURL st
   For: %[4]s
   Booked by %[5]s (nothing to pay)
 
-The teacher will send you the video link before the class.
+%[11]s
 %[8]sYour bookings: %[6]s
 
 —
@@ -122,10 +122,11 @@ The teacher will send you the video link before the class.
   Para: %[4]s
   Reservada por %[5]s (no tienes que pagar nada)
 
-El profesor te enviará el enlace de la videollamada antes de la clase.
+%[12]s
 %[10]sTus reservas: %[6]s
 `, friend.name, en, whenEN(f.startsAt, f.endsAt, friend.loc), e.LearnerName, f.payer.name, siteURL,
-				es, breakLineEN(f.breakMinutes), whenES(f.startsAt, f.endsAt, friend.loc), breakLineES(f.breakMinutes)),
+				es, breakLineEN(f.breakMinutes), whenES(f.startsAt, f.endsAt, friend.loc), breakLineES(f.breakMinutes),
+				videoLineEN(f.meetingURL), videoLineES(f.meetingURL)),
 		})
 
 	case "seat_left":

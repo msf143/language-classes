@@ -42,7 +42,7 @@ func TestTeacherProfile(t *testing.T) {
 		if rec.Code != http.StatusOK {
 			t.Fatalf("%d %s", rec.Code, rec.Body)
 		}
-		want := teacherProfileDTO{"Carlos", "Hi! I'm Carlos.", "¡Hola! Soy Carlos.", 10, []int{30, 60}}
+		want := teacherProfileDTO{"Carlos", "Hi! I'm Carlos.", "¡Hola! Soy Carlos.", 10, []int{30, 60}, ""}
 		for _, got := range []teacherProfileDTO{decodeProfile(t, rec).teacherProfileDTO, decodeProfile(t, get()).teacherProfileDTO} {
 			if got.DisplayName != want.DisplayName || got.BioEN != want.BioEN || got.BioES != want.BioES ||
 				got.BreakMinutes != want.BreakMinutes || !slices.Equal(got.OfferedLengths, want.OfferedLengths) {

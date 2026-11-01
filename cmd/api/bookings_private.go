@@ -131,8 +131,9 @@ func bookPrivateSession(ctx context.Context, pool *pgxpool.Pool, payerID, key st
 		sessionID := newUUIDv7()
 		_, err = tx.Exec(ctx, `
 			INSERT INTO session (id, teacher_id, kind, target_language, audience,
-			                     starts_at, ends_at, occupied, min_seats, max_seats)
-			VALUES ($1, $2, 'private', $3, $4, $5, $6, tstzrange($5, $6), 1, $7)`,
+			                     starts_at, ends_at, occupied, min_seats, max_seats, meeting_url)
+			VALUES ($1, $2, 'private', $3, $4, $5, $6, tstzrange($5, $6), 1, $7,
+			        (SELECT meeting_link FROM teacher WHERE id = $2))`,
 			sessionID, p.TeacherID, p.TargetLanguage, audience, start, end, partySize)
 		var pgErr *pgconn.PgError
 		if errors.As(err, &pgErr) && pgErr.Code == exclusionViolate {

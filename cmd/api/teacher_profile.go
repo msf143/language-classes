@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/url"
 	"slices"
 	"strings"
 	"unicode/utf8"
@@ -19,9 +20,10 @@ import (
 var allowedLengths = []int{30, 45, 60} // private-class lengths a teacher may offer (and price, step 7c)
 
 const (
-	maxNameChars    = 60
-	maxBioChars     = 2000
-	maxBreakMinutes = 15 // a class may end this much early at most (the database allows up to 60)
+	maxNameChars        = 60
+	maxBioChars         = 2000
+	maxBreakMinutes     = 15 // a class may end this much early at most (the database allows up to 60)
+	maxMeetingLinkChars = 300
 )
 
 type teacherProfileDTO struct {
@@ -30,6 +32,7 @@ type teacherProfileDTO struct {
 	BioES          string `json:"bio_es"`
 	BreakMinutes   int    `json:"break_minutes"`   // teacher.buffer_minutes
 	OfferedLengths []int  `json:"offered_lengths"` // teacher.offered_durations, ascending
+	MeetingLink    string `json:"meeting_link"`    // his permanent video room; "" = none, he sends links himself
 }
 
 // The answer also says what the form may offer, so the page has no limits of its own.
@@ -57,9 +60,10 @@ func getTeacherProfile(pool *pgxpool.Pool) http.HandlerFunc {
 // page as "waiting for activation" while pending; never written by the page).
 func loadTeacherProfile(r *http.Request, pool *pgxpool.Pool) (p teacherProfileDTO, status string, err error) {
 	err = pool.QueryRow(r.Context(), `
-		SELECT a.display_name, COALESCE(t.bio_en, ''), COALESCE(t.bio_es, ''), t.buffer_minutes, t.offered_durations, t.status
+		SELECT a.display_name, COALESCE(t.bio_en, ''), COALESCE(t.bio_es, ''), t.buffer_minutes, t.offered_durations, t.status,
+		       COALESCE(t.meeting_link, '')
 		FROM teacher t JOIN account a ON a.id = t.account_id WHERE t.id = $1`, teacherFrom(r)).
-		Scan(&p.DisplayName, &p.BioEN, &p.BioES, &p.BreakMinutes, &p.OfferedLengths, &status)
+		Scan(&p.DisplayName, &p.BioEN, &p.BioES, &p.BreakMinutes, &p.OfferedLengths, &status, &p.MeetingLink)
 	slices.Sort(p.OfferedLengths)
 	return p, status, err
 }
@@ -86,12 +90,29 @@ func putTeacherProfile(pool *pgxpool.Pool) http.HandlerFunc {
 				WHERE id = (SELECT account_id FROM teacher WHERE id = $1)`, teacherFrom(r), p.DisplayName); err != nil {
 				return err
 			}
+			// The link reaches his upcoming classes. Classes first, then the teacher
+			// row: booking a group class locks its class and then reads the teacher
+			// row, so the other order could deadlock with it.
+			updateClasses := func() error {
+				_, err := tx.Exec(r.Context(), `
+					UPDATE session SET meeting_url = NULLIF($2, '')
+					WHERE teacher_id = $1 AND status IN ('scheduled', 'confirmed') AND ends_at > now()
+					  AND meeting_url IS DISTINCT FROM NULLIF($2, '')`, teacherFrom(r), p.MeetingLink)
+				return err
+			}
+			if err := updateClasses(); err != nil {
+				return err
+			}
 			// NULLIF stores an empty bio as NULL ("no bio"), like a teacher who never wrote one.
-			_, err := tx.Exec(r.Context(), `
+			if _, err := tx.Exec(r.Context(), `
 				UPDATE teacher SET bio_en = NULLIF($2, ''), bio_es = NULLIF($3, ''),
-				       buffer_minutes = $4, offered_durations = $5
-				WHERE id = $1`, teacherFrom(r), p.BioEN, p.BioES, p.BreakMinutes, p.OfferedLengths)
-			return err
+				       buffer_minutes = $4, offered_durations = $5, meeting_link = NULLIF($6, '')
+				WHERE id = $1`, teacherFrom(r), p.BioEN, p.BioES, p.BreakMinutes, p.OfferedLengths, p.MeetingLink); err != nil {
+				return err
+			}
+			// Again: a private class booked while we waited for the teacher row
+			// copied the old link, and is committed by now.
+			return updateClasses()
 		})
 		if err != nil {
 			logFrom(r).Error("teacher profile: save failed", "err", err)
@@ -132,10 +153,33 @@ func checkTeacherProfile(p *teacherProfileDTO) string {
 	if p.BreakMinutes < 0 || p.BreakMinutes > maxBreakMinutes {
 		return fmt.Sprintf("break_minutes must be 0 to %d", maxBreakMinutes)
 	}
+	var msg string
+	if p.MeetingLink, msg = cleanMeetingLink(p.MeetingLink); msg != "" {
+		return msg
+	}
 	for _, l := range p.OfferedLengths {
 		if !slices.Contains(allowedLengths, l) {
 			return fmt.Sprintf("offered_lengths may only contain %v", allowedLengths)
 		}
 	}
 	return ""
+}
+
+// cleanMeetingLink tidies a video room link, and says what's wrong with it. A
+// link pasted without "https://" gets it added. Only https: these go into emails
+// and buttons people click, so nothing like "javascript:" may ever get through.
+func cleanMeetingLink(raw string) (link, problem string) {
+	link = strings.TrimSpace(raw)
+	if link == "" {
+		return "", ""
+	}
+	if !strings.Contains(link, "://") {
+		link = "https://" + link
+	}
+	u, err := url.Parse(link)
+	if err != nil || u.Scheme != "https" || !strings.Contains(u.Hostname(), ".") || u.User != nil ||
+		strings.ContainsAny(link, " \t\r\n<>\"") || len(link) > maxMeetingLinkChars {
+		return "", "meeting_link must be a web address like https://meet.google.com/abc-defg-hij"
+	}
+	return link, ""
 }

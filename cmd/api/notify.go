@@ -57,6 +57,7 @@ type bookingFacts struct {
 	attendees               string  // "Ana, Sofía"
 	cancelledBy             string  // from the event: "student", "system", ...
 	breakMinutes            int     // the teacher's break inside the class (teacher.buffer_minutes)
+	meetingURL              string  // the class's video room (session.meeting_url); "" = none yet
 	guests                  []guest // friends with people in the class (private classes, step 9)
 }
 
@@ -143,7 +144,7 @@ func loadBookingFacts(ctx context.Context, pool *pgxpool.Pool, bookingID string)
 	var payerZone, teacherZone string
 	err := pool.QueryRow(ctx, `
 		SELECT b.status, b.total_cents, b.refund_cents, b.currency,
-		       s.kind, s.target_language, s.title, s.starts_at, s.ends_at,
+		       s.kind, s.target_language, s.title, s.starts_at, s.ends_at, COALESCE(s.meeting_url, ''),
 		       pa.display_name, pa.email, pa.timezone,
 		       ta.display_name, ta.email, ta.timezone, t.buffer_minutes,
 		       COALESCE((SELECT string_agg(l.display_name, ', ' ORDER BY l.display_name)
@@ -156,7 +157,7 @@ func loadBookingFacts(ctx context.Context, pool *pgxpool.Pool, bookingID string)
 		JOIN account ta ON ta.id = t.account_id
 		WHERE b.id = $1`, bookingID).
 		Scan(&f.status, &f.totalCents, &f.refundCents, &f.currency,
-			&f.kind, &f.targetLanguage, &f.title, &f.startsAt, &f.endsAt,
+			&f.kind, &f.targetLanguage, &f.title, &f.startsAt, &f.endsAt, &f.meetingURL,
 			&f.payer.name, &f.payer.email, &payerZone,
 			&f.teacher.name, &f.teacher.email, &teacherZone, &f.breakMinutes,
 			&f.attendees)
@@ -208,7 +209,7 @@ func bookedEmails(f bookingFacts, siteURL string) (toPayer, toTeacher email) {
   For: %[4]s
   Paid: %[5]s
 
-The teacher will send you the video link before the class.
+%[12]s
 %[10]sYour bookings: %[6]s
 
 —
@@ -220,11 +221,11 @@ The teacher will send you the video link before the class.
   Para: %[4]s
   Pagado: %[9]s
 
-El profesor te enviará el enlace de la videollamada antes de la clase.
+%[13]s
 %[11]sTus reservas: %[6]s
 `, f.payer.name, en, whenEN(f.startsAt, f.endsAt, f.payer.loc), f.attendees, moneyEN(f.totalCents, f.currency),
 			siteURL, es, whenES(f.startsAt, f.endsAt, f.payer.loc), moneyES(f.totalCents, f.currency),
-			breakLineEN(f.breakMinutes), breakLineES(f.breakMinutes)),
+			breakLineEN(f.breakMinutes), breakLineES(f.breakMinutes), videoLineEN(f.meetingURL), videoLineES(f.meetingURL)),
 	}
 	toTeacher = email{
 		From: classesEmailFrom, To: f.teacher.email,
@@ -322,7 +323,7 @@ func reminderEmail(f bookingFacts, to person, attendees, siteURL string) email {
   %[3]s
   For: %[4]s
 
-The teacher will send you the video link before the class.
+%[10]s
 %[8]sYour bookings: %[5]s
 
 —
@@ -333,10 +334,11 @@ Hola, %[1]s: te recordamos que tu clase se acerca.
   %[7]s
   Para: %[4]s
 
-El profesor te enviará el enlace de la videollamada antes de la clase.
+%[11]s
 %[9]sTus reservas: %[5]s
 `, to.name, en, whenEN(f.startsAt, f.endsAt, to.loc), attendees, siteURL,
-			es, whenES(f.startsAt, f.endsAt, to.loc), breakLineEN(f.breakMinutes), breakLineES(f.breakMinutes)),
+			es, whenES(f.startsAt, f.endsAt, to.loc), breakLineEN(f.breakMinutes), breakLineES(f.breakMinutes),
+			videoLineEN(f.meetingURL), videoLineES(f.meetingURL)),
 	}
 }
 
@@ -424,6 +426,21 @@ Reserva una clase: %[5]s
 
 // breakLineEN / breakLineES: the "may end early" sentence with this class's
 // teacher's own break, as a line of its own; nothing when he takes none.
+// videoLineEN / videoLineES: how to join the class, or that the link is coming.
+func videoLineEN(meetingURL string) string {
+	if meetingURL == "" {
+		return "The teacher will send you the video link before the class."
+	}
+	return "Join the class by video: " + meetingURL
+}
+
+func videoLineES(meetingURL string) string {
+	if meetingURL == "" {
+		return "El profesor te enviará el enlace de la videollamada antes de la clase."
+	}
+	return "Entra a la clase por video: " + meetingURL
+}
+
 func breakLineEN(minutes int) string {
 	if minutes <= 0 {
 		return ""

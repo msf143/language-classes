@@ -98,8 +98,9 @@ func createGroupClass(pool *pgxpool.Pool) http.HandlerFunc {
 			ends := c.startsAt.Add(time.Duration(c.DurationMinutes) * time.Minute)
 			_, err := tx.Exec(r.Context(), `
 				INSERT INTO session (id, teacher_id, kind, target_language, audience, title,
-				                     starts_at, ends_at, occupied, min_seats, max_seats)
-				VALUES ($1, $2, 'group', $3, $4, $5, $6, $7, tstzrange($6, $7), $8, $9)`,
+				                     starts_at, ends_at, occupied, min_seats, max_seats, meeting_url)
+				VALUES ($1, $2, 'group', $3, $4, $5, $6, $7, tstzrange($6, $7), $8, $9,
+				        (SELECT meeting_link FROM teacher WHERE id = $2))`,
 				id, teacherID, c.TargetLanguage, c.Audience, c.Title, c.startsAt, ends, c.MinSeats, c.MaxSeats)
 			return err
 		})

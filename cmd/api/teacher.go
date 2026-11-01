@@ -265,6 +265,7 @@ type teacherSessionDTO struct {
 	MaxSeats       *int                 `json:"max_seats"`
 	SeatsTaken     int                  `json:"seats_taken"`
 	Attendees      []teacherAttendeeDTO `json:"attendees"`
+	MeetingURL     *string              `json:"meeting_url"`
 }
 
 type teacherAttendeeDTO struct {
@@ -280,7 +281,7 @@ func listTeacherSessions(pool *pgxpool.Pool) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		rows, err := pool.Query(r.Context(), `
 			SELECT s.id::text, s.kind, s.title, s.target_language, s.audience, s.starts_at, s.ends_at,
-			       s.status, s.max_seats,
+			       s.status, s.max_seats, s.meeting_url,
 			       COALESCE((SELECT SUM(b.party_size) FROM booking b
 			                 WHERE b.session_id = s.id AND b.status = 'confirmed'), 0)::int,
 			       -- who's coming: joined learners of confirmed bookings, as JSON
@@ -310,7 +311,7 @@ func listTeacherSessions(pool *pgxpool.Pool) http.HandlerFunc {
 		for rows.Next() {
 			var s teacherSessionDTO
 			if err := rows.Scan(&s.ID, &s.Kind, &s.Title, &s.TargetLanguage, &s.Audience, &s.StartsAt, &s.EndsAt,
-				&s.Status, &s.MaxSeats, &s.SeatsTaken, &s.Attendees); err != nil {
+				&s.Status, &s.MaxSeats, &s.MeetingURL, &s.SeatsTaken, &s.Attendees); err != nil {
 				logFrom(r).Error("teacher sessions: scan failed", "err", err)
 				writeError(w, r, http.StatusInternalServerError, "could not load your classes")
 				return
